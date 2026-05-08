@@ -22,6 +22,8 @@ export default function SectorRotationPage() {
   const [loading, setLoading] = useState(true)
   const [windowDays, setWindowDays]   = useState(20)
   const [sortBy, setSortBy]   = useState<'foreign' | 'delta' | 'value'>('foreign')
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -138,6 +140,8 @@ export default function SectorRotationPage() {
           <div className="h-[300px] flex items-center justify-center">
             <RefreshCw className="w-8 h-8 text-gold-400 animate-spin" />
           </div>
+        ) : !mounted ? (
+          <div className="shimmer h-[300px] rounded-xl" />
         ) : (
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={barData} margin={{ bottom: 60 }}>
