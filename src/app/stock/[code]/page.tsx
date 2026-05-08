@@ -242,101 +242,101 @@ export default function StockDetailPage() {
 
     try {
       const chart = lwc.createChart(chartContainerRef.current, {
-      height: 550,
-      layout: {
-        background: { type: 'solid', color: 'transparent' },
-        textColor: '#94a3b8',
-      },
-      grid: {
-        vertLines: { color: 'rgba(51,65,85,0.15)' },
-        horzLines: { color: 'rgba(51,65,85,0.15)' },
-      },
-      crosshair: { mode: 1 },
-      rightPriceScale: { borderColor: 'rgba(51,65,85,0.5)' },
-      timeScale: { 
-        borderColor: 'rgba(51,65,85,0.5)',
-        timeVisible: true,
-        secondsVisible: false,
-      },
-    })
+        height: 600,
+        autoSize: true,
+        layout: {
+          background: { type: 'solid', color: 'transparent' },
+          textColor: '#94a3b8',
+        },
+        grid: {
+          vertLines: { color: 'rgba(51,65,85,0.15)' },
+          horzLines: { color: 'rgba(51,65,85,0.15)' },
+        },
+        crosshair: { mode: 1 },
+        rightPriceScale: { borderColor: 'rgba(51,65,85,0.5)' },
+        timeScale: { 
+          borderColor: 'rgba(51,65,85,0.5)',
+          timeVisible: true,
+          secondsVisible: false,
+        },
+      })
 
-    // === CANDLE SERIES ===
-    chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.05, bottom: 0.55 } })
-    const candleSeries = chart.addCandlestickSeries({
-      upColor: '#22c55e',
-      downColor: '#ef4444',
-      borderVisible: false,
-      wickUpColor: '#22c55e',
-      wickDownColor: '#ef4444',
-    })
-    candleSeries.setData(historyData.map(d => ({
-      time: d.time,
-      open: d.open,
-      high: d.high,
-      low: d.low,
-      close: d.close,
-    })))
+      // === CANDLE SERIES ===
+      chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.05, bottom: 0.60 } })
+      const candleSeries = chart.addCandlestickSeries({
+        upColor: '#22c55e',
+        downColor: '#ef4444',
+        borderVisible: false,
+        wickUpColor: '#22c55e',
+        wickDownColor: '#ef4444',
+      })
+      candleSeries.setData(historyData.filter(d => d.time && d.close).map(d => ({
+        time: d.time,
+        open: d.open,
+        high: d.high,
+        low: d.low,
+        close: d.close,
+      })))
 
-    // === MARKERS ===
-    const markers: any[] = []
-    historyData.forEach(d => {
-      if (d.whale_signal || d.aov_ratio >= 1.5) {
-        markers.push({ time: d.time, position: 'aboveBar', color: '#10b981', shape: 'arrowDown', text: '🐋', size: 2 })
-      }
-      if (d.aov_ratio <= 0.6 && d.aov_ratio > 0) {
-        markers.push({ time: d.time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp', text: '🩸', size: 2 })
-      }
-      if (d.big_player_anomaly) {
-        markers.push({ time: d.time, position: 'belowBar', color: '#ec4899', shape: 'circle', text: '⚠️', size: 2 })
-      }
-    })
-    candleSeries.setMarkers(markers)
+      // === MARKERS ===
+      const markers: any[] = []
+      historyData.forEach(d => {
+        if (d.whale_signal || d.aov_ratio >= 1.5) {
+          markers.push({ time: d.time, position: 'aboveBar', color: '#10b981', shape: 'arrowDown' })
+        }
+        if (d.aov_ratio <= 0.6 && d.aov_ratio > 0) {
+          markers.push({ time: d.time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp' })
+        }
+        if (d.big_player_anomaly) {
+          markers.push({ time: d.time, position: 'belowBar', color: '#ec4899', shape: 'arrowUp' })
+        }
+      })
+      candleSeries.setMarkers(markers)
 
-    // === VWMA LINE ===
-    const vwmaSeries = chart.addLineSeries({
-      color: '#3b82f6',
-      lineWidth: 2,
-      lineStyle: 2,
-      crosshairMarkerVisible: false,
-      lastValueVisible: true,
-      priceLineVisible: false,
-    })
-    vwmaSeries.setData(historyData.filter(d => d.vwma > 0).map(d => ({ time: d.time, value: d.vwma })))
+      // === VWMA LINE ===
+      const vwmaSeries = chart.addLineSeries({
+        color: '#3b82f6',
+        lineWidth: 2,
+        lineStyle: 2,
+        crosshairMarkerVisible: false,
+        lastValueVisible: true,
+        priceLineVisible: false,
+      })
+      vwmaSeries.setData(historyData.filter(d => d.time && d.vwma > 0).map(d => ({ time: d.time, value: d.vwma })))
 
-    // === VOLUME ===
-    const volSeries = chart.addHistogramSeries({
-      priceScaleId: 'vol',
-      priceFormat: { type: 'volume' },
-    })
-    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.68, bottom: 0.15 } })
-    volSeries.setData(historyData.map(d => ({
-      time: d.time,
-      value: d.volume,
-      color: d.close >= d.open ? 'rgba(34,197,94,0.4)' : 'rgba(239,68,68,0.4)',
-    })))
+      // === AOV RATIO LINE ===
+      const aovSeries = chart.addLineSeries({ color: '#8b5cf6', lineWidth: 2, priceScaleId: 'aov' })
+      chart.priceScale('aov').applyOptions({ scaleMargins: { top: 0.45, bottom: 0.40 } })
+      aovSeries.setData(historyData.filter(d => d.time).map(d => ({ time: d.time, value: d.aov_ratio })))
+      aovSeries.createPriceLine({ price: 1.5, color: '#22c55e', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '🐋 1.5x' })
+      aovSeries.createPriceLine({ price: 0.6, color: '#ef4444', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '🩸 0.6x' })
 
-    // === NET FOREIGN ===
-    const foreignSeries = chart.addHistogramSeries({
-      priceScaleId: 'foreign',
-    })
-    chart.priceScale('foreign').applyOptions({ scaleMargins: { top: 0.88, bottom: 0.02 } })
-    foreignSeries.setData(historyData.map(d => ({
-      time: d.time,
-      value: d.net_foreign,
-      color: d.net_foreign >= 0 ? 'rgba(34,197,94,0.7)' : 'rgba(239,68,68,0.7)',
-    })))
+      // === VOLUME ===
+      const volSeries = chart.addHistogramSeries({
+        priceScaleId: 'vol',
+        priceFormat: { type: 'volume' },
+      })
+      chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.65, bottom: 0.20 } })
+      volSeries.setData(historyData.filter(d => d.time && d.volume).map(d => ({
+        time: d.time,
+        value: d.volume,
+        color: d.close >= d.open ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)',
+      })))
+
+      // === NET FOREIGN ===
+      const foreignSeries = chart.addHistogramSeries({
+        priceScaleId: 'foreign',
+      })
+      chart.priceScale('foreign').applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } })
+      foreignSeries.setData(historyData.filter(d => d.time && d.net_foreign !== undefined).map(d => ({
+        time: d.time,
+        value: d.net_foreign,
+        color: d.net_foreign >= 0 ? 'rgba(34,197,94,0.8)' : 'rgba(239,68,68,0.8)',
+      })))
 
       chart.timeScale().fitContent()
 
-      const handleResize = () => {
-        if (chartContainerRef.current) {
-          chart.applyOptions({ width: chartContainerRef.current.clientWidth })
-        }
-      }
-      window.addEventListener('resize', handleResize)
-
       return () => {
-        window.removeEventListener('resize', handleResize)
         chart.remove()
       }
     } catch (e) {
