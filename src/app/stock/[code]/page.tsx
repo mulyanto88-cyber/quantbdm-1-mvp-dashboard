@@ -88,10 +88,12 @@ export default function StockDetailPage() {
   const [ownershipData, setOwnershipData] = useState<any[]>([])
   const [foreignFlowData, setForeignFlowData] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [tabLoading, setTabLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const [chartReady, setChartReady] = useState(false)
+  const loadedTabs = useRef<Set<string>>(new Set())
 
   // ============================================================
   // LOAD LIGHTWEIGHT CHARTS
@@ -113,39 +115,40 @@ export default function StockDetailPage() {
   // ============================================================
   // FETCH ALL DATA
   // ============================================================
-  const fetchAllData = useCallback(async (code: string) => {
+  // ============================================================
+  // FETCH: CRITICAL DATA (parallel, runs immediately)
+  // ============================================================
+  const fetchCriticalData = useCallback(async (code: string) => {
     if (!code || code.length < 4) return
-    
     setIsLoading(true)
     setErrorMsg('')
+    loadedTabs.current = new Set(['technical'])
 
     try {
-      // 1. Latest stock data
-      const { data: latestData, error: latestErr } = await supabase
-        .from('daily_transactions')
-        .select('*')
-        .eq('stock_code', code)
-        .order('trading_date', { ascending: false })
-        .limit(1)
-        .single()
+      const [latestResult, historyResult] = await Promise.all([
+        supabase
+          .from('daily_transactions')
+          .select('*')
+          .eq('stock_code', code)
+          .order('trading_date', { ascending: false })
+          .limit(1)
+          .single(),
+        supabase
+          .from('daily_transactions')
+          .select('trading_date,open_price,high,low,close,volume,net_foreign_value,vwma_20d,aov_ratio_ma20,whale_signal,big_player_anomaly')
+          .eq('stock_code', code)
+          .order('trading_date', { ascending: false })
+          .limit(periodFilter),
+      ])
 
-      if (latestErr || !latestData) {
+      if (latestResult.error || !latestResult.data) {
         setErrorMsg(`Stock ${code} not found`)
-        setIsLoading(false)
         return
       }
-      setStockData(latestData)
+      setStockData(latestResult.data)
 
-      // 2. History data
-      const { data: historyRaw, error: historyErr } = await supabase
-        .from('daily_transactions')
-        .select('trading_date,open_price,high,low,close,volume,net_foreign_value,vwma_20d,aov_ratio_ma20,whale_signal,big_player_anomaly')
-        .eq('stock_code', code)
-        .order('trading_date', { ascending: false })
-        .limit(periodFilter)
-
-      if (!historyErr && historyRaw) {
-        setHistoryData(historyRaw.reverse().map((d: any) => ({
+      if (!historyResult.error && historyResult.data) {
+        setHistoryData(historyResult.data.reverse().map((d: any) => ({
           time: d.trading_date,
           open: Number(d.open_price) || Number(d.close) || 0,
           high: Number(d.high) || Number(d.close) || 0,
@@ -159,63 +162,6 @@ export default function StockDetailPage() {
           big_player_anomaly: d.big_player_anomaly || false,
         })))
       }
-
-      // 3. Smart Money Index (RPC)
-      const { data: smiData } = await supabase.rpc('get_smart_money_index', {
-        p_stock_code: code,
-        p_window: 30,
-      })
-      if (smiData?.length) setSmartMoneyIndex(smiData[0])
-
-      // 4. Whale Timing Analysis (RPC)
-      const { data: whaleRes } = await supabase.rpc('get_whale_timing_analysis', {
-        p_stock_code: code,
-      })
-      if (whaleRes) setWhaleData(whaleRes)
-
-      // 5. Lead Indicator (RPC)
-      const { data: leadRes } = await supabase.rpc('get_smart_money_lead_indicator', {
-        p_stock_code: code,
-        p_months: 6,
-      })
-      if (leadRes) setLeadIndicator(leadRes)
-
-      // 6. Volume Spike (RPC)
-      const { data: spikeRes } = await supabase.rpc('get_volume_spike', {
-        p_stock_code: code,
-        p_window: 30,
-        p_threshold: null, // auto
-      })
-      if (spikeRes) setVolumeSpikes(spikeRes.filter((d: any) => d.spike_type !== 'NORMAL'))
-
-      // 7. AOV Profile (RPC)
-      const { data: aovRes } = await supabase.rpc('get_aov_profile', {
-        p_stock_code: code,
-        p_window: 60,
-      })
-      if (aovRes) setAovProfile(aovRes)
-
-      // 8. Broker Divergence (RPC)
-      const { data: brokerRes } = await supabase.rpc('get_broker_divergence', {
-        p_stock_code: code,
-        p_start_date: '2026-01-01',
-      })
-      if (brokerRes) setBrokerData(brokerRes.slice(0, 10))
-
-      // 9. Ownership Structure (RPC) — from ksei_data1persen_mutasi
-      const { data: ownershipRes } = await supabase.rpc('get_ownership_structure', {
-        p_stock_code: code,
-        p_date: null,
-      })
-      if (ownershipRes) setOwnershipData(ownershipRes)
-
-      // 10. Stealth vs Foreign Divergence (RPC)
-      const { data: ffRes } = await supabase.rpc('get_stealth_vs_foreign_divergence', {
-        p_stock_code: code,
-        p_window: 30,
-      })
-      if (ffRes?.length) setForeignFlowData(ffRes)
-
     } catch (err: any) {
       console.error(err)
       setErrorMsg(err.message || 'Failed to fetch data')
@@ -224,10 +170,74 @@ export default function StockDetailPage() {
     }
   }, [periodFilter])
 
-  // Initial fetch
+  // ============================================================
+  // FETCH: TAB DATA (lazy, runs when tab first opened)
+  // ============================================================
+  const fetchTabData = useCallback(async (tab: DetailTab, code: string) => {
+    if (!code || loadedTabs.current.has(tab)) return
+    loadedTabs.current.add(tab)
+    setTabLoading(true)
+
+    try {
+      if (tab === 'smart-money') {
+        const [smiRes, leadRes] = await Promise.all([
+          supabase.rpc('get_smart_money_index', { p_stock_code: code, p_window: 30 }),
+          supabase.rpc('get_smart_money_lead_indicator', { p_stock_code: code, p_months: 6 }),
+        ])
+        if (smiRes.data?.length) setSmartMoneyIndex(smiRes.data[0])
+        if (leadRes.data) setLeadIndicator(leadRes.data)
+      }
+
+      if (tab === 'whale') {
+        const { data } = await supabase.rpc('get_whale_timing_analysis', { p_stock_code: code })
+        if (data) setWhaleData(data)
+      }
+
+      if (tab === 'volume') {
+        const [spikeRes, aovRes] = await Promise.all([
+          supabase.rpc('get_volume_spike', { p_stock_code: code, p_window: 30, p_threshold: null }),
+          supabase.rpc('get_aov_profile', { p_stock_code: code, p_window: 60 }),
+        ])
+        if (spikeRes.data) setVolumeSpikes(spikeRes.data.filter((d: any) => d.spike_type !== 'NORMAL'))
+        if (aovRes.data) setAovProfile(aovRes.data)
+      }
+
+      if (tab === 'broker') {
+        const { data } = await supabase.rpc('get_broker_divergence', { p_stock_code: code, p_start_date: '2026-01-01' })
+        if (data) setBrokerData(data.slice(0, 10))
+      }
+
+      if (tab === 'ownership') {
+        const { data } = await supabase.rpc('get_ownership_structure', { p_stock_code: code, p_date: null })
+        if (data) setOwnershipData(data)
+      }
+
+      if (tab === 'foreign-flow') {
+        const { data } = await supabase.rpc('get_stealth_vs_foreign_divergence', { p_stock_code: code, p_window: 30 })
+        if (data?.length) setForeignFlowData(data)
+      }
+    } catch (err) {
+      console.error(`Failed to fetch tab ${tab}:`, err)
+      loadedTabs.current.delete(tab)
+    } finally {
+      setTabLoading(false)
+    }
+  }, [])
+
+  // Initial fetch (critical only)
   useEffect(() => {
-    if (stockCode) fetchAllData(stockCode)
-  }, [stockCode, fetchAllData])
+    if (stockCode) {
+      loadedTabs.current = new Set()
+      fetchCriticalData(stockCode)
+    }
+  }, [stockCode, fetchCriticalData])
+
+  // Lazy fetch on tab switch
+  useEffect(() => {
+    if (stockCode && activeTab !== 'technical') {
+      fetchTabData(activeTab, stockCode)
+    }
+  }, [activeTab, stockCode, fetchTabData])
 
   // ============================================================
   // RENDER CHART
@@ -353,8 +363,6 @@ export default function StockDetailPage() {
   const isPositive = (stockData?.change_percent || 0) > 0
   const isNegative = (stockData?.change_percent || 0) < 0
   const smiScore = smartMoneyIndex?.smart_money_score || 0
-  const smiSignal = smartMoneyIndex?.signal || 'NEUTRAL'
-
   const signalBubbles = volumeSpikes.filter((s: any) => s.spike_type.includes('BULLISH')).length
   const signalDistributions = volumeSpikes.filter((s: any) => s.spike_type.includes('BEARISH') || s.spike_type.includes('DOWN')).length
 
@@ -408,13 +416,13 @@ export default function StockDetailPage() {
   if (!stockData) return null
 
   const tabs = [
-    { id: 'technical' as DetailTab, label: 'Chart', icon: Activity, count: historyData.length },
-    { id: 'smart-money' as DetailTab, label: 'Smart Money', icon: Radar, count: smiScore > 0 ? 1 : 0 },
-    { id: 'ownership' as DetailTab, label: 'Ownership', icon: PieChart, count: ownershipData.length },
-    { id: 'foreign-flow' as DetailTab, label: 'Foreign Flow', icon: Globe, count: foreignFlowData.length },
-    { id: 'whale' as DetailTab, label: 'Whale', icon: Eye, count: whaleData.length },
-    { id: 'volume' as DetailTab, label: 'Volume Spike', icon: Zap, count: signalBubbles + signalDistributions },
-    { id: 'broker' as DetailTab, label: 'Broker Intel', icon: Building2, count: brokerData.length },
+    { id: 'technical' as DetailTab, label: 'Chart', icon: Activity, count: 0 },
+    { id: 'smart-money' as DetailTab, label: 'Smart Money', icon: Radar, count: 0 },
+    { id: 'ownership' as DetailTab, label: 'Ownership', icon: PieChart, count: 0 },
+    { id: 'foreign-flow' as DetailTab, label: 'Foreign Flow', icon: Globe, count: 0 },
+    { id: 'whale' as DetailTab, label: 'Whale', icon: Eye, count: 0 },
+    { id: 'volume' as DetailTab, label: 'Volume Spike', icon: Zap, count: 0 },
+    { id: 'broker' as DetailTab, label: 'Broker Intel', icon: Building2, count: 0 },
   ]
 
   return (
@@ -541,6 +549,12 @@ export default function StockDetailPage() {
       {/* TAB 2: SMART MONEY */}
       {/* ============================================================ */}
       {activeTab === 'smart-money' && (
+        tabLoading ? (
+          <div className="space-y-4 animate-pulse">
+            <div className="glass rounded-2xl h-48 bg-accent/30" />
+            <div className="glass rounded-2xl h-64 bg-accent/30" />
+          </div>
+        ) : (
         <div className="space-y-6">
           {smartMoneyIndex ? (
             <>
@@ -621,12 +635,18 @@ export default function StockDetailPage() {
             </div>
           )}
         </div>
+        )
       )}
 
       {/* ============================================================ */}
       {/* TAB 3: WHALE TRACKER */}
       {/* ============================================================ */}
       {activeTab === 'whale' && (
+        tabLoading ? (
+          <div className="space-y-4 animate-pulse">
+            <div className="glass rounded-2xl h-64 bg-accent/30" />
+          </div>
+        ) : (
         <div className="glass rounded-2xl overflow-hidden border border-border/30">
           {whaleData.length > 0 ? (
             <div className="overflow-x-auto">
@@ -690,12 +710,22 @@ export default function StockDetailPage() {
             </div>
           )}
         </div>
+        )
       )}
 
       {/* ============================================================ */}
       {/* TAB 4: VOLUME SPIKES */}
       {/* ============================================================ */}
       {activeTab === 'volume' && (
+        tabLoading ? (
+          <div className="space-y-4 animate-pulse">
+            <div className="glass rounded-2xl h-48 bg-accent/30" />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="glass rounded-xl h-32 bg-accent/30" />
+              <div className="glass rounded-xl h-32 bg-accent/30" />
+            </div>
+          </div>
+        ) : (
         <div className="space-y-4">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-bold">
@@ -749,12 +779,18 @@ export default function StockDetailPage() {
             </div>
           )}
         </div>
+        )
       )}
 
       {/* ============================================================ */}
       {/* TAB 5: BROKER INTEL */}
       {/* ============================================================ */}
       {activeTab === 'broker' && (
+        tabLoading ? (
+          <div className="space-y-4 animate-pulse">
+            <div className="glass rounded-2xl h-64 bg-accent/30" />
+          </div>
+        ) : (
         <div className="glass rounded-2xl overflow-hidden border border-border/30">
           {brokerData.length > 0 ? (
             <div className="overflow-x-auto">
@@ -808,11 +844,20 @@ export default function StockDetailPage() {
             </div>
           )}
         </div>
+        )
       )}
       {/* ============================================================ */}
       {/* TAB 6: OWNERSHIP STRUCTURE */}
       {/* ============================================================ */}
       {activeTab === 'ownership' && (
+        tabLoading ? (
+          <div className="space-y-4 animate-pulse">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[...Array(4)].map((_, i) => <div key={i} className="glass rounded-2xl h-36 bg-accent/30" />)}
+            </div>
+            <div className="glass rounded-2xl h-48 bg-accent/30" />
+          </div>
+        ) : (
         <div className="space-y-6">
           {ownershipData.length > 0 ? (
             <>
@@ -888,12 +933,18 @@ export default function StockDetailPage() {
             </div>
           )}
         </div>
+        )
       )}
 
       {/* ============================================================ */}
       {/* TAB 7: FOREIGN FLOW DIVERGENCE */}
       {/* ============================================================ */}
       {activeTab === 'foreign-flow' && (
+        tabLoading ? (
+          <div className="space-y-4 animate-pulse">
+            <div className="glass rounded-2xl h-64 bg-accent/30" />
+          </div>
+        ) : (
         <div className="space-y-6">
           {foreignFlowData.length > 0 ? (
             <>
@@ -960,6 +1011,7 @@ export default function StockDetailPage() {
             </div>
           )}
         </div>
+        )
       )}
     </div>
   )
