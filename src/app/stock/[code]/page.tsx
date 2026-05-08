@@ -476,12 +476,12 @@ export default function StockDetailPage() {
               <div className="text-center px-4 py-2 rounded-xl bg-white/[0.03] border border-white/[0.08]">
                 <p className="text-[10px] text-muted-foreground uppercase">Smart Money Score</p>
                 <p className={`text-2xl font-black ${
-                  smiSignal === 'STRONG_BUY' ? 'text-emerald-400' : smiSignal === 'WATCH' ? 'text-amber-400' : 'text-slate-400'
+                  smartMoneyIndex?.signal === 'STRONG_BUY' ? 'text-emerald-400' : smartMoneyIndex?.signal === 'WATCH' ? 'text-amber-400' : 'text-slate-400'
                 }`}>{Math.round(smiScore)}</p>
               </div>
               <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${
-                smiSignal === 'STRONG_BUY' ? 'signal-strong-buy' : smiSignal === 'WATCH' ? 'signal-watch' : 'signal-neutral'
-              }`}>{smiSignal}</span>
+                smartMoneyIndex?.signal === 'STRONG_BUY' ? 'signal-strong-buy' : smartMoneyIndex?.signal === 'WATCH' ? 'signal-watch' : 'signal-neutral'
+              }`}>{smartMoneyIndex?.signal || 'NEUTRAL'}</span>
             </div>
           )}
         </div>
