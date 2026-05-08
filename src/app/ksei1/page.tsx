@@ -175,15 +175,11 @@ export default function Ksei1Page() {
     finally { setLoading(false) }
   }, [])
 
-  // ── Fetch Insider Alert ──────────────────────────────────────────────────────
+  // ── Fetch Whale Movement Alert ───────────────────────────────────────────────
   const fetchAlert = useCallback(async () => {
     setLoading(true); setError(null)
     try {
-      const { data, error: e } = await supabase.rpc('get_insider_alert', {
-        p_stock_code: null,
-        p_months: 3,
-        p_min_pct_chg: 0.5,
-      })
+      const { data, error: e } = await supabase.rpc('get_ksei_movement_alert')
       if (e) throw e
       setAlertData(data || [])
     } catch (e: any) { setError(e.message) }
@@ -252,7 +248,7 @@ export default function Ksei1Page() {
           {([
             ['ownership', '🏛️ Per Saham'],
             ['investors', '👤 Top Investor'],
-            ['alert',     '🚨 Insider Alert'],
+            ['alert',     '🐋 Whale Movement'],
             ['scripless', '⚡ Scripless Scanner'],
             ['portfolio', '🔎 Portfolio Investor'],
           ] as const).map(([v, label]) => (
@@ -525,76 +521,87 @@ export default function Ksei1Page() {
         )
       )}
 
-      {/* ═══════════════════ VIEW: INSIDER ALERT ════════════════════════ */}
+      {/* ═══════════════════ VIEW: WHALE MOVEMENT ════════════════════════════ */}
       {view === 'alert' && (
-        <div className="space-y-4">
-          <div className="glass rounded-xl p-4 border border-amber-500/20 flex items-center gap-3">
-            <Zap className="w-5 h-5 text-amber-400 flex-shrink-0" />
-            <div>
-              <p className="text-sm font-bold text-amber-400">Tentang Insider Alert</p>
-              <p className="text-xs text-muted-foreground">
-                Mendeteksi perubahan kepemilikan ≥0.5% oleh individu (≥1% KSEI). Karena data KSEI saat ini hanya 1 snapshot (Apr 2026), alert akan aktif saat data multi-periode tersedia.
-              </p>
-            </div>
-          </div>
-          {loading ? (
-            <div className="space-y-2">{Array.from({length:4}).map((_,i) => <div key={i} className="shimmer h-16 rounded-xl" />)}</div>
-          ) : alertData.length === 0 ? (
-            <div className="glass rounded-xl p-16 text-center text-muted-foreground">
-              <Shield className="w-16 h-16 mx-auto mb-4 opacity-20" />
-              <p className="font-bold">Belum ada Insider Alert</p>
-              <p className="text-xs mt-1">Alert akan muncul saat KSEI snapshot bulan berikutnya tersedia untuk dibandingkan</p>
-            </div>
-          ) : (
-            <div className="glass rounded-2xl overflow-hidden border border-border/30">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-white/[0.02] border-b border-white/[0.05] text-[10px] text-muted-foreground uppercase">
-                      <th className="p-4 text-left">Investor</th>
-                      <th className="p-4 text-left">Saham</th>
-                      <th className="p-4 text-right">Sebelum</th>
-                      <th className="p-4 text-right">Sekarang</th>
-                      <th className="p-4 text-right">Δ%</th>
-                      <th className="p-4 text-center">Aksi</th>
-                      <th className="p-4 text-center">Level</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {alertData.map((a: any, i: number) => (
-                      <tr key={i} className="tr-hover border-b border-white/[0.02]">
-                        <td className="p-4 max-w-[160px]">
-                          <p className="font-bold text-sm truncate">{a.investor_name}</p>
-                          <p className="text-[10px] text-muted-foreground">{a.investor_type}</p>
-                        </td>
-                        <td className="p-4">
-                          <Link href={`/stock/${a.share_code}`} className="font-mono font-black text-foreground hover:text-gold-400 transition-colors">
-                            {a.share_code}
-                          </Link>
-                        </td>
-                        <td className="p-4 text-right text-muted-foreground">{Number(a.prev_percentage).toFixed(2)}%</td>
-                        <td className="p-4 text-right font-bold">{Number(a.curr_percentage).toFixed(2)}%</td>
-                        <td className={`p-4 text-right font-black ${Number(a.pct_point_change) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {Number(a.pct_point_change) >= 0 ? '+' : ''}{Number(a.pct_point_change).toFixed(2)}%
-                        </td>
-                        <td className="p-4 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            a.action === 'BUYING' ? 'signal-strong-buy' : a.action === 'SELLING' ? 'signal-avoid' : 'signal-neutral'
-                          }`}>{a.action}</span>
-                        </td>
-                        <td className="p-4 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            a.alert_level === 'HIGH' ? 'bg-red-500/20 text-red-400' :
-                            a.alert_level === 'MEDIUM' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'
-                          }`}>{a.alert_level}</span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+        <div className="space-y-6">
+          <div className="glass rounded-2xl p-6 border border-border/30">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-3 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
+                <Target className="w-6 h-6 text-emerald-400" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-foreground">Whale Movement Alert</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Mendeteksi semua perubahan saldo Scripless yang dilakukan oleh entitas besar (≥1%) dari data KSEI hari sebelumnya ke hari terbaru.
+                </p>
               </div>
             </div>
-          )}
+
+            {loading ? (
+              <div className="h-64 flex flex-col items-center justify-center text-muted-foreground">
+                <RefreshCw className="w-8 h-8 animate-spin mb-4 text-emerald-400" />
+                <p>Memindai pergerakan paus...</p>
+              </div>
+            ) : alertData.length === 0 ? (
+              <div className="h-64 flex flex-col items-center justify-center text-center p-6 glass rounded-xl border border-dashed border-border/50">
+                <Shield className="w-12 h-12 mb-4 text-slate-500/50" />
+                <p className="text-foreground font-medium">Belum ada pergerakan Whale terdeteksi.</p>
+                <p className="text-sm text-muted-foreground max-w-md mt-2">
+                  (Jika Anda baru mengupload 1 tanggal data KSEI, fitur ini belum bisa membandingkan data. Silakan upload data KSEI untuk tanggal yang berbeda agar sistem bisa mendeteksi pergerakan).
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-border/30 overflow-hidden bg-black/20">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-white/[0.02] border-b border-border/30 text-muted-foreground">
+                      <tr>
+                        <th className="px-5 py-4 font-medium">Saham</th>
+                        <th className="px-5 py-4 font-medium">Nama Investor</th>
+                        <th className="px-5 py-4 font-medium">Tipe</th>
+                        <th className="px-5 py-4 font-medium text-right">Saldo Lama (Lot)</th>
+                        <th className="px-5 py-4 font-medium text-right">Saldo Baru (Lot)</th>
+                        <th className="px-5 py-4 font-medium text-right">Mutasi Bersih (Lot)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/20">
+                      {alertData.map((s, idx) => {
+                        const isAccumulating = Number(s.scripless_diff) > 0;
+                        return (
+                          <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
+                            <td className="px-5 py-4">
+                              <Link href={`/stock/${s.share_code}`} className="font-bold text-foreground hover:text-gold-400 transition-colors">
+                                {s.share_code}
+                              </Link>
+                            </td>
+                            <td className="px-5 py-4">
+                              <p className="font-medium text-foreground">{s.investor_name}</p>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">
+                                {new Date(s.old_date).toLocaleDateString('id-ID')} &rarr; {new Date(s.new_date).toLocaleDateString('id-ID')}
+                              </p>
+                            </td>
+                            <td className="px-5 py-4 text-muted-foreground text-xs">{s.investor_type}</td>
+                            <td className="px-5 py-4 text-right text-muted-foreground font-mono">
+                              {formatNumber(Number(s.old_scripless) / 100)}
+                            </td>
+                            <td className="px-5 py-4 text-right text-foreground font-bold font-mono">
+                              {formatNumber(Number(s.new_scripless) / 100)}
+                            </td>
+                            <td className={`px-5 py-4 text-right font-bold font-mono ${isAccumulating ? 'text-emerald-400' : 'text-red-400'}`}>
+                              <div className="flex items-center justify-end gap-1">
+                                {isAccumulating ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                                {isAccumulating ? '+' : ''}{formatNumber(Number(s.scripless_diff) / 100)}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
       {/* ── Scripless Scanner View ─────────────────────────────────────────────────── */}
