@@ -51,6 +51,8 @@ export default function Ksei1Page() {
   const [loading, setLoading]           = useState(false)
   const [error, setError]               = useState<string | null>(null)
   const [reportDate, setReportDate]     = useState('')
+  const [mounted, setMounted]           = useState(false)
+  useEffect(() => { setMounted(true) }, [])
 
   // ── Fetch Ownership ─────────────────────────────────────────────────────────
   const fetchOwnership = useCallback(async (code: string) => {
@@ -239,6 +241,9 @@ export default function Ksei1Page() {
                     <Target className="w-5 h-5 text-gold-400" /> Komposisi Kepemilikan
                     <span className="ml-auto text-xs text-muted-foreground font-normal">{stockSearch}</span>
                   </h3>
+                  {!mounted ? (
+                    <div className="shimmer rounded-xl" style={{ height: 220 }} />
+                  ) : (
                   <ResponsiveContainer width="100%" height={220}>
                     <PieChart>
                       <Pie data={pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={90}
@@ -253,6 +258,7 @@ export default function Ksei1Page() {
                       <Legend iconType="circle" iconSize={8} formatter={(v) => <span className="text-xs">{v}</span>} />
                     </PieChart>
                   </ResponsiveContainer>
+                  )}
                 </div>
 
                 {/* Category Detail */}
