@@ -46,6 +46,7 @@ export default function Ksei1Page() {
   const [stockSearch, setStockSearch]   = useState('AADI')
   const [inputCode, setInputCode]       = useState('AADI')
   const [ownership, setOwnership]       = useState<Ownership[]>([])
+  const [institutional, setInstitutional] = useState<any[]>([])
   const [topInvestors, setTopInvestors] = useState<TopInvestor[]>([])
   const [alertData, setAlertData]       = useState<any[]>([])
   const [loading, setLoading]           = useState(false)
@@ -66,6 +67,12 @@ export default function Ksei1Page() {
       if (e) throw e
       setOwnership(data || [])
       if (data?.[0]?.report_date) setReportDate(data[0].report_date)
+
+      const { data: instData } = await supabase.rpc('get_institutional_change', {
+        p_stock_code: code.toUpperCase(),
+        p_months: 6,
+      })
+      setInstitutional(instData || [])
     } catch (e: any) { setError(e.message) }
     finally { setLoading(false) }
   }, [])
@@ -146,6 +153,9 @@ export default function Ksei1Page() {
   const instLokPct = ownership.find(o => o.category === 'Institusi Lokal')?.total_percentage || 0
   const indvLokPct = ownership.find(o => o.category === 'Individu Lokal')?.total_percentage  || 0
   const instAsPct  = ownership.find(o => o.category === 'Institusi Asing')?.total_percentage || 0
+
+  const accumulating = institutional.filter(i => i.action === 'ACCUMULATING').length
+  const reducing     = institutional.filter(i => i.action === 'REDUCING').length
 
   return (
     <div className="space-y-6 animate-fade-in pb-10">
@@ -290,6 +300,42 @@ export default function Ksei1Page() {
                     ))}
                   </div>
                 </div>
+
+                {/* Institutional Change Timeline */}
+                {institutional.length > 0 && (
+                  <div className="glass rounded-2xl p-6 border border-border/30 lg:col-span-2">
+                    <h3 className="font-bold mb-1 flex items-center gap-2">
+                      <TrendingUp className="w-5 h-5 text-purple-400" /> Institutional Change (6M)
+                    </h3>
+                    <div className="flex gap-3 mb-4 text-xs">
+                      <span className="text-emerald-400 font-bold">↑ {accumulating} accumulating</span>
+                      <span className="text-red-400 font-bold">↓ {reducing} reducing</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {institutional
+                        .filter(i => i.action !== 'HOLDING' && i.action !== 'NEW_ENTRY')
+                        .slice(0, 12)
+                        .map((item: any, i: number) => (
+                          <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] transition-colors border border-white/[0.05]">
+                            <div className="flex-1 min-w-0 pr-2">
+                              <p className="text-xs font-bold text-foreground truncate">{item.investor_name}</p>
+                              <p className="text-[10px] text-muted-foreground">{item.investor_type} · {item.report_date}</p>
+                            </div>
+                            <div className="text-right">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                item.action === 'ACCUMULATING' ? 'bg-emerald-500/20 text-emerald-400' :
+                                item.action === 'REDUCING'     ? 'bg-red-500/20 text-red-400' :
+                                'bg-slate-500/20 text-slate-400'
+                              }`}>{item.action}</span>
+                              <p className={`text-xs font-bold mt-1 ${Number(item.pct_point_change) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {Number(item.pct_point_change) >= 0 ? '+' : ''}{Number(item.pct_point_change)?.toFixed(2)}%
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}
