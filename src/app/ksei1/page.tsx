@@ -42,13 +42,14 @@ const CAT_COLORS: Record<string, string> = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function Ksei1Page() {
-  const [view, setView]                 = useState<'ownership' | 'investors' | 'alert'>('ownership')
+  const [view, setView]                 = useState<'ownership' | 'investors' | 'alert' | 'scripless'>('ownership')
   const [stockSearch, setStockSearch]   = useState('AADI')
   const [inputCode, setInputCode]       = useState('AADI')
   const [ownership, setOwnership]       = useState<Ownership[]>([])
   const [institutional, setInstitutional] = useState<any[]>([])
   const [topInvestors, setTopInvestors] = useState<TopInvestor[]>([])
   const [alertData, setAlertData]       = useState<any[]>([])
+  const [scriplessData, setScriplessData] = useState<any[]>([])
   const [loading, setLoading]           = useState(false)
   const [error, setError]               = useState<string | null>(null)
   const [reportDate, setReportDate]     = useState('')
@@ -140,10 +141,24 @@ export default function Ksei1Page() {
     finally { setLoading(false) }
   }, [])
 
+  // ── Fetch Scripless Mutation ──────────────────────────────────────────────────
+  const fetchScripless = useCallback(async () => {
+    setLoading(true); setError(null)
+    try {
+      const { data, error: e } = await supabase.rpc('get_scripless_mutation', {
+        p_days: 30,
+      })
+      if (e) throw e
+      setScriplessData(data || [])
+    } catch (e: any) { setError(e.message) }
+    finally { setLoading(false) }
+  }, [])
+
   useEffect(() => {
     if (view === 'ownership') fetchOwnership(stockSearch)
     else if (view === 'investors') fetchTopInvestors()
-    else fetchAlert()
+    else if (view === 'alert') fetchAlert()
+    else if (view === 'scripless') fetchScripless()
   }, [view])
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -177,6 +192,7 @@ export default function Ksei1Page() {
             ['ownership', '🏛️ Per Saham'],
             ['investors', '👤 Top Investor'],
             ['alert',     '🚨 Insider Alert'],
+            ['scripless', '⚡ Scripless Scanner'],
           ] as const).map(([v, label]) => (
             <button key={v} onClick={() => setView(v)}
               className={`px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
@@ -491,6 +507,150 @@ export default function Ksei1Page() {
           )}
         </div>
       )}
+      {/* ── Scripless Scanner View ─────────────────────────────────────────────────── */}
+      {view === 'scripless' && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="bg-[#1e293b] rounded-xl p-6 border border-slate-700/50">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-purple-500/20 rounded-lg">
+                <Zap className="w-5 h-5 text-purple-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-medium text-white">Scripless Mutation Scanner</h3>
+                <p className="text-sm text-slate-400">
+                  Mendeteksi pengendali yang menukarkan saham fisik (Scrip) menjadi digital (Scripless). Sinyal kuat potensi guyuran massal ke market.
+                </p>
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="h-64 flex items-center justify-center">
+                <RefreshCw className="w-6 h-6 text-[#3b82f6] animate-spin" />
+              </div>
+            ) : scriplessData.length === 0 ? (
+              <div className="h-40 flex flex-col items-center justify-center text-slate-400 bg-slate-800/30 rounded-lg border border-slate-700/50">
+                <Shield className="w-10 h-10 mb-2 opacity-50" />
+                <p>Belum ada mutasi berbahaya terdeteksi dalam 30 hari terakhir.</p>
+                <p className="text-xs mt-1">(Data historis mungkin belum lengkap. Anda perlu upload data KSEI minimal 2 tanggal berbeda)</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-slate-700/50">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-[#0f172a] text-slate-400">
+                    <tr>
+                      <th className="px-4 py-3 font-medium border-b border-slate-700/50">Saham</th>
+                      <th className="px-4 py-3 font-medium border-b border-slate-700/50">Nama Investor</th>
+                      <th className="px-4 py-3 font-medium border-b border-slate-700/50 text-right text-red-400">Scrip Berkurang</th>
+                      <th className="px-4 py-3 font-medium border-b border-slate-700/50 text-right text-purple-400">Scripless Bertambah</th>
+                      <th className="px-4 py-3 font-medium border-b border-slate-700/50 text-right">Potensi Guyuran</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-700/50">
+                    {scriplessData.map((s, idx) => (
+                      <tr key={idx} className="bg-[#1e293b] hover:bg-slate-800 transition-colors group">
+                        <td className="px-4 py-3 font-bold text-white">
+                          <Link href={`/stock/${s.share_code}`} className="hover:text-[#3b82f6]">
+                            {s.share_code}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-slate-300">{s.investor_name}</td>
+                        <td className="px-4 py-3 text-right text-red-400 font-medium">
+                          {formatShares(Math.abs(s.scrip_diff))}
+                        </td>
+                        <td className="px-4 py-3 text-right text-purple-400 font-medium flex items-center justify-end gap-1">
+                          <TrendingUp className="w-3 h-3" />
+                          {formatShares(s.scripless_diff)}
+                        </td>
+                        <td className="px-4 py-3 text-right text-amber-400 font-bold">
+                          {formatRupiah(s.scripless_diff * 100)} {/* Asumsi harga 100, idealnya kalikan harga aktual */}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════ VIEW: SCRIPLESS SCANNER ════════════════════════════ */}
+      {view === 'scripless' && (
+        <div className="space-y-6">
+          <div className="glass rounded-2xl p-6 border border-border/30">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-3 bg-purple-500/10 rounded-xl border border-purple-500/20">
+                <Zap className="w-6 h-6 text-purple-400" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-foreground">Scripless Mutation Scanner</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Mendeteksi pengendali yang menukarkan saham fisik (Scrip) menjadi digital (Scripless). Sinyal kuat potensi guyuran saham ke market dalam waktu dekat.
+                </p>
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="h-64 flex flex-col items-center justify-center text-muted-foreground">
+                <RefreshCw className="w-8 h-8 animate-spin mb-4 text-purple-400" />
+                <p>Memindai mutasi saham warkat ke scripless...</p>
+              </div>
+            ) : scriplessData.length === 0 ? (
+              <div className="h-64 flex flex-col items-center justify-center text-center p-6 glass rounded-xl border border-dashed border-border/50">
+                <Shield className="w-12 h-12 mb-4 text-emerald-400/50" />
+                <p className="text-foreground font-medium">Market Terpantau Aman</p>
+                <p className="text-sm text-muted-foreground max-w-md mt-2">
+                  Belum ada mutasi Scrip ke Scripless yang signifikan dalam 30 hari terakhir. 
+                  (Catatan: Fitur ini membutuhkan minimal 2 tanggal data KSEI yang berbeda untuk melakukan perbandingan).
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-border/30 overflow-hidden bg-black/20">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-white/[0.02] border-b border-border/30 text-muted-foreground">
+                      <tr>
+                        <th className="px-5 py-4 font-medium">Saham</th>
+                        <th className="px-5 py-4 font-medium">Nama Investor</th>
+                        <th className="px-5 py-4 font-medium text-right text-red-400">Scrip Berkurang</th>
+                        <th className="px-5 py-4 font-medium text-right text-purple-400">Scripless Bertambah</th>
+                        <th className="px-5 py-4 font-medium text-right">Potensi Lemparan (Lot)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/20">
+                      {scriplessData.map((s, idx) => (
+                        <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
+                          <td className="px-5 py-4">
+                            <Link href={`/stock/${s.share_code}`} className="font-bold text-foreground hover:text-gold-400 transition-colors">
+                              {s.share_code}
+                            </Link>
+                          </td>
+                          <td className="px-5 py-4">
+                            <div className="font-medium text-foreground">{s.investor_name}</div>
+                            <div className="text-[11px] text-muted-foreground mt-0.5">
+                              Mutasi dari: {new Date(s.old_date).toLocaleDateString('id-ID')} ke {new Date(s.new_date).toLocaleDateString('id-ID')}
+                            </div>
+                          </td>
+                          <td className="px-5 py-4 text-right text-red-400/90 font-medium font-mono">
+                            -{formatShares(Math.abs(s.scrip_diff))}
+                          </td>
+                          <td className="px-5 py-4 text-right text-purple-400 font-bold font-mono">
+                            +{formatShares(s.scripless_diff)}
+                          </td>
+                          <td className="px-5 py-4 text-right text-amber-400 font-bold font-mono">
+                            {formatNumber(s.scripless_diff / 100)} lot
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
