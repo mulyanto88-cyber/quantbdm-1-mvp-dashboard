@@ -521,8 +521,8 @@ export default function StockDetailPage() {
       {/* TAB 1: TECHNICAL CHART */}
       {/* ============================================================ */}
       {activeTab === 'technical' && (
-        <div className="glass rounded-2xl p-4 border border-border/30">
-          <div className="absolute top-4 left-6 z-10 space-y-1.5 bg-navy-900/90 p-3 rounded-xl backdrop-blur-md border border-border/50 text-[10px]">
+        <div className="glass rounded-2xl p-4 border border-border/30 relative group">
+          <div className="absolute top-4 left-6 z-10 space-y-1.5 bg-navy-900/90 p-3 rounded-xl backdrop-blur-md border border-border/50 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none shadow-xl">
             <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> Price</div>
             <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-blue-500" /> VWMA 20</div>
             <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-emerald-500/40" /> Volume (Buy)</div>
@@ -533,7 +533,7 @@ export default function StockDetailPage() {
             <div className="flex items-center gap-2"><span className="text-red-400">🩸</span> AOV ≤0.6x</div>
             <div className="flex items-center gap-2"><span className="text-pink-400">⚠️</span> Big Player Anomaly</div>
           </div>
-          <div ref={chartContainerRef} className="w-full min-h-[550px]" />
+          <div ref={chartContainerRef} className="w-full h-[600px]" />
         </div>
       )}
 
