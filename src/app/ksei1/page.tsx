@@ -76,25 +76,33 @@ export default function Ksei1Page() {
       const rDate = data?.[0]?.report_date
       if (rDate) setReportDate(rDate)
 
-      // Fetch pie chart by INVESTOR_TYPE
+      // Fetch pie chart by INVESTOR_TYPE (Using Scripless)
       if (rDate) {
         const { data: latestData } = await supabase
           .from('ksei_data1persen_mutasi')
-          .select('investor_type, percentage')
+          .select('investor_type, holdings_scripless')
           .eq('share_code', code.toUpperCase())
           .eq('date', rDate)
         
         if (latestData) {
           const map = new Map<string, number>()
+          let totalScripless = 0;
           latestData.forEach((r: any) => {
             const t = r.investor_type || 'Unknown'
-            map.set(t, (map.get(t) || 0) + Number(r.percentage))
+            const val = Number(r.holdings_scripless) || 0
+            map.set(t, (map.get(t) || 0) + val)
+            totalScripless += val
           })
-          setPieChartData(Array.from(map.entries()).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value))
+          
+          setPieChartData(Array.from(map.entries()).map(([name, value]) => ({ 
+            name, 
+            value: totalScripless > 0 ? (value / totalScripless) * 100 : 0, // Convert to relative percentage of the pie
+            rawLot: value / 100
+          })).sort((a,b) => b.value - a.value))
         }
       }
 
-      // Fetch Time Series Chart History
+      // Fetch Time Series Chart History (Using Scripless)
       const { data: histData } = await supabase.rpc('get_stock_investor_history', {
         p_stock_code: code.toUpperCase()
       })
@@ -106,7 +114,8 @@ export default function Ksei1Page() {
             if (!datesMap.has(r.report_date)) {
                datesMap.set(r.report_date, { date: new Date(r.report_date).toLocaleDateString('id-ID', {day: '2-digit', month: 'short'}) })
             }
-            datesMap.get(r.report_date)[r.investor_name] = Number(r.percentage)
+            // Use Scripless converted to Lot
+            datesMap.get(r.report_date)[r.investor_name] = Number(r.holdings_scripless) / 100
             investorsSet.add(r.investor_name)
          })
          
@@ -340,10 +349,10 @@ export default function Ksei1Page() {
                   )}
                 </div>
 
-                {/* Pie Chart INVESTOR_TYPE */}
+                {/* Pie Chart INVESTOR_TYPE (Scripless) */}
                 <div className="glass rounded-2xl p-6 border border-border/30">
                   <h3 className="font-bold mb-4 flex items-center gap-2">
-                    <Building2 className="w-5 h-5 text-purple-400" /> Komposisi by Tipe Investor
+                    <Building2 className="w-5 h-5 text-purple-400" /> Komposisi Tipe (Scripless)
                   </h3>
                   {!mounted ? (
                     <div className="shimmer rounded-xl" style={{ height: 220 }} />
@@ -358,8 +367,10 @@ export default function Ksei1Page() {
                            return <Cell key={`cell-${i}`} fill={colors[i % colors.length]} />
                         })}
                       </Pie>
-                      <Tooltip formatter={(v: any) => [`${Number(v).toFixed(2)}%`, 'Kepemilikan']}
-                        contentStyle={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }} />
+                      <Tooltip 
+                        formatter={(v: any, name: any, props: any) => [`${formatNumber(props.payload.rawLot)} Lot (${Number(v).toFixed(2)}%)`, 'Scripless']}
+                        contentStyle={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }} 
+                      />
                       <Legend iconType="circle" iconSize={8} formatter={(v) => <span className="text-[10px]">{v}</span>} layout="vertical" verticalAlign="middle" align="right" />
                     </PieChart>
                   </ResponsiveContainer>
@@ -368,19 +379,19 @@ export default function Ksei1Page() {
                   )}
                 </div>
 
-                {/* Time Series History Line Chart */}
+                {/* Time Series History Line Chart (Scripless) */}
                 <div className="glass rounded-2xl p-6 border border-border/30 lg:col-span-2">
                   <h3 className="font-bold mb-1 flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5 text-emerald-400" /> Pergerakan Kepemilikan (Time Series)
+                    <TrendingUp className="w-5 h-5 text-emerald-400" /> Akumulasi/Distribusi (Scripless Lot)
                   </h3>
-                  <p className="text-xs text-muted-foreground mb-4">Tren perubahan porsi kepemilikan masing-masing investor (%).</p>
+                  <p className="text-xs text-muted-foreground mb-4">Tren pergerakan kepemilikan saham digital (Scripless) dalam satuan Lot. Kurva menanjak = sinyal akumulasi di market.</p>
                   
                   {!mounted ? (
                     <div className="shimmer rounded-xl" style={{ height: 350 }} />
                   ) : historyData.length > 0 ? (
                     <div className="w-full" style={{ height: 350 }}>
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={historyData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                        <LineChart data={historyData} margin={{ top: 10, right: 30, left: 10, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                           <XAxis 
                             dataKey="date" 
@@ -393,11 +404,13 @@ export default function Ksei1Page() {
                           <YAxis 
                             stroke="#64748b" 
                             fontSize={12} 
-                            tickFormatter={(val) => `${val}%`}
+                            tickFormatter={(val) => formatNumber(val)}
                             axisLine={false}
                             tickLine={false}
+                            width={80}
                           />
                           <Tooltip 
+                            formatter={(v: any) => [`${formatNumber(v)} Lot`, 'Scripless']}
                             contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.95)', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '8px' }}
                             itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
                             labelStyle={{ color: '#94a3b8', marginBottom: '8px' }}
