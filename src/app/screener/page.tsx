@@ -55,7 +55,7 @@ export default function ScreenerPage() {
   const [filterSector, setFilterSector] = useState('ALL')
   const [minScore, setMinScore] = useState(0)
   const [showFilters, setShowFilters] = useState(false)
-  const [sortBy, setSortBy]     = useState<'smart_score'|'change_percent'|'value'|'net_foreign_value'>('smart_score')
+  const [sortBy, setSortBy]     = useState<'smart_score'|'change_percent'|'value'|'net_foreign_value'|'aov_ratio_ma20'>('smart_score')
   const [sortDir, setSortDir]   = useState<'desc'|'asc'>('desc')
   const [lastDate, setLastDate] = useState('')
 
@@ -237,6 +237,9 @@ export default function ScreenerPage() {
                   <th className="p-3 text-left">Emiten</th>
                   <th className="p-3 text-right cursor-pointer hover:text-foreground" onClick={() => toggleSort('change_percent')}>Chg%{SortArrow({col:'change_percent'})}</th>
                   <th className="p-3 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('smart_score')}>Score{SortArrow({col:'smart_score'})}</th>
+                  <th className="p-3 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('aov_ratio_ma20')}>
+                    AOV Ratio{SortArrow({col:'aov_ratio_ma20'})}
+                  </th>
                   <th className="p-3 text-right hidden lg:table-cell cursor-pointer hover:text-foreground" onClick={() => toggleSort('net_foreign_value')}>Foreign{SortArrow({col:'net_foreign_value'})}</th>
                   <th className="p-3 text-center">Flags</th>
                   <th className="p-3 text-center">Signal</th>
@@ -265,6 +268,20 @@ export default function ScreenerPage() {
                             style={{width:`${r.smart_score}%`}} />
                         </div>
                       </div>
+                    </td>
+                    <td className="p-3 text-center">
+                      {(() => {
+                        const aov = r.aov_ratio_ma20
+                        const aovColor = aov >= 2 ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' :
+                                         aov >= 1.5 ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
+                                         aov <= 0.6 && aov > 0 ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
+                                         'bg-white/[0.04] text-muted-foreground border border-white/[0.06]'
+                        return (
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold font-mono ${aovColor}`}>
+                            {aov > 0 ? `${aov.toFixed(2)}x` : '—'}
+                          </span>
+                        )
+                      })()}
                     </td>
                     <td className={`p-3 text-right hidden lg:table-cell font-semibold ${r.net_foreign_value >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                       {formatRupiah(r.net_foreign_value)}
