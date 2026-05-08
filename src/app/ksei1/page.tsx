@@ -10,7 +10,7 @@ import {
 import Link from 'next/link'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell, PieChart, Pie, Legend
+  ResponsiveContainer, Cell, PieChart, Pie, Legend, LineChart, Line
 } from 'recharts'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -42,11 +42,17 @@ const CAT_COLORS: Record<string, string> = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function Ksei1Page() {
-  const [view, setView]                 = useState<'ownership' | 'investors' | 'alert' | 'scripless'>('ownership')
+  const [view, setView]                 = useState<'ownership' | 'investors' | 'alert' | 'scripless' | 'portfolio'>('ownership')
   const [stockSearch, setStockSearch]   = useState('AADI')
   const [inputCode, setInputCode]       = useState('AADI')
+  const [portfolioSearch, setPortfolioSearch] = useState('LO KHENG HONG')
+  const [portfolioInput, setPortfolioInput]   = useState('LO KHENG HONG')
+
   const [ownership, setOwnership]       = useState<Ownership[]>([])
-  const [institutional, setInstitutional] = useState<any[]>([])
+  const [pieChartData, setPieChartData] = useState<any[]>([])
+  const [historyData, setHistoryData]   = useState<any[]>([])
+  const [linesConfig, setLinesConfig]   = useState<string[]>([])
+  const [portfolioData, setPortfolioData] = useState<any[]>([])
   const [topInvestors, setTopInvestors] = useState<TopInvestor[]>([])
   const [alertData, setAlertData]       = useState<any[]>([])
   const [scriplessData, setScriplessData] = useState<any[]>([])
@@ -67,13 +73,47 @@ export default function Ksei1Page() {
       })
       if (e) throw e
       setOwnership(data || [])
-      if (data?.[0]?.report_date) setReportDate(data[0].report_date)
+      const rDate = data?.[0]?.report_date
+      if (rDate) setReportDate(rDate)
 
-      const { data: instData } = await supabase.rpc('get_institutional_change', {
-        p_stock_code: code.toUpperCase(),
-        p_months: 6,
+      // Fetch pie chart by INVESTOR_TYPE
+      if (rDate) {
+        const { data: latestData } = await supabase
+          .from('ksei_data1persen_mutasi')
+          .select('investor_type, percentage')
+          .eq('share_code', code.toUpperCase())
+          .eq('date', rDate)
+        
+        if (latestData) {
+          const map = new Map<string, number>()
+          latestData.forEach((r: any) => {
+            const t = r.investor_type || 'Unknown'
+            map.set(t, (map.get(t) || 0) + Number(r.percentage))
+          })
+          setPieChartData(Array.from(map.entries()).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value))
+        }
+      }
+
+      // Fetch Time Series Chart History
+      const { data: histData } = await supabase.rpc('get_stock_investor_history', {
+        p_stock_code: code.toUpperCase()
       })
-      setInstitutional(instData || [])
+      if (histData) {
+         const datesMap = new Map<string, any>()
+         const investorsSet = new Set<string>()
+         
+         histData.forEach((r: any) => {
+            if (!datesMap.has(r.report_date)) {
+               datesMap.set(r.report_date, { date: new Date(r.report_date).toLocaleDateString('id-ID', {day: '2-digit', month: 'short'}) })
+            }
+            datesMap.get(r.report_date)[r.investor_name] = Number(r.percentage)
+            investorsSet.add(r.investor_name)
+         })
+         
+         setHistoryData(Array.from(datesMap.values()))
+         setLinesConfig(Array.from(investorsSet))
+      }
+
     } catch (e: any) { setError(e.message) }
     finally { setLoading(false) }
   }, [])
@@ -154,11 +194,26 @@ export default function Ksei1Page() {
     finally { setLoading(false) }
   }, [])
 
+  // ── Fetch Portfolio ──────────────────────────────────────────────────────────
+  const fetchPortfolio = useCallback(async (name: string) => {
+    if (!name) return
+    setLoading(true); setError(null)
+    try {
+      const { data, error: e } = await supabase.rpc('get_investor_portfolio', {
+        p_investor_name: name.toUpperCase(),
+      })
+      if (e) throw e
+      setPortfolioData(data || [])
+    } catch (e: any) { setError(e.message) }
+    finally { setLoading(false) }
+  }, [])
+
   useEffect(() => {
     if (view === 'ownership') fetchOwnership(stockSearch)
     else if (view === 'investors') fetchTopInvestors()
     else if (view === 'alert') fetchAlert()
     else if (view === 'scripless') fetchScripless()
+    else if (view === 'portfolio') fetchPortfolio(portfolioSearch)
   }, [view])
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -168,9 +223,6 @@ export default function Ksei1Page() {
   const instLokPct = ownership.find(o => o.category === 'Institusi Lokal')?.total_percentage || 0
   const indvLokPct = ownership.find(o => o.category === 'Individu Lokal')?.total_percentage  || 0
   const instAsPct  = ownership.find(o => o.category === 'Institusi Asing')?.total_percentage || 0
-
-  const accumulating = institutional.filter(i => i.action === 'ACCUMULATING').length
-  const reducing     = institutional.filter(i => i.action === 'REDUCING').length
 
   return (
     <div className="space-y-6 animate-fade-in pb-10">
@@ -193,6 +245,7 @@ export default function Ksei1Page() {
             ['investors', '👤 Top Investor'],
             ['alert',     '🚨 Insider Alert'],
             ['scripless', '⚡ Scripless Scanner'],
+            ['portfolio', '🔎 Portfolio Investor'],
           ] as const).map(([v, label]) => (
             <button key={v} onClick={() => setView(v)}
               className={`px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
@@ -260,12 +313,12 @@ export default function Ksei1Page() {
               </div>
 
               {/* Chart + Detail */}
+              {/* Charts Row */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Donut Pie */}
+                {/* Donut Pie Category */}
                 <div className="glass rounded-2xl p-6 border border-border/30">
                   <h3 className="font-bold mb-4 flex items-center gap-2">
-                    <Target className="w-5 h-5 text-gold-400" /> Komposisi Kepemilikan
-                    <span className="ml-auto text-xs text-muted-foreground font-normal">{stockSearch}</span>
+                    <Target className="w-5 h-5 text-gold-400" /> Komposisi by Kategori
                   </h3>
                   {!mounted ? (
                     <div className="shimmer rounded-xl" style={{ height: 220 }} />
@@ -287,71 +340,95 @@ export default function Ksei1Page() {
                   )}
                 </div>
 
-                {/* Category Detail */}
+                {/* Pie Chart INVESTOR_TYPE */}
                 <div className="glass rounded-2xl p-6 border border-border/30">
                   <h3 className="font-bold mb-4 flex items-center gap-2">
-                    <Shield className="w-5 h-5 text-gold-400" /> Detail per Kategori
+                    <Building2 className="w-5 h-5 text-purple-400" /> Komposisi by Tipe Investor
                   </h3>
-                  <div className="space-y-4">
-                    {ownership.map((cat, i) => (
-                      <div key={i}>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: CAT_COLORS[cat.category] || '#64748b' }} />
-                            <span className="text-sm font-bold">{cat.category}</span>
-                            <span className="text-[10px] text-muted-foreground">({cat.investor_count} investor)</span>
-                          </div>
-                          <span className="font-black text-sm" style={{ color: CAT_COLORS[cat.category] || '#94a3b8' }}>
-                            {Number(cat.total_percentage).toFixed(2)}%
-                          </span>
-                        </div>
-                        <div className="h-2 rounded-full bg-white/[0.05] overflow-hidden mb-1">
-                          <div className="h-full rounded-full transition-all duration-700"
-                            style={{ width: `${totalPct > 0 ? (Number(cat.total_percentage) / totalPct) * 100 : 0}%`, background: CAT_COLORS[cat.category] || '#64748b', opacity: 0.8 }} />
-                        </div>
-                        <p className="text-[10px] text-gold-400 font-semibold truncate">
-                          Top: {cat.top1_investor} ({Number(cat.top1_percentage).toFixed(2)}%)
-                        </p>
-                      </div>
-                    ))}
-                  </div>
+                  {!mounted ? (
+                    <div className="shimmer rounded-xl" style={{ height: 220 }} />
+                  ) : pieChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie data={pieChartData} cx="50%" cy="50%" innerRadius={55} outerRadius={90}
+                        paddingAngle={3} dataKey="value" label={({ name, value }) => `${value?.toFixed(1)}%`}
+                        labelLine={false}>
+                        {pieChartData.map((entry, i) => {
+                           const colors = ['#e7b733', '#3b82f6', '#22c55e', '#ec4899', '#f97316', '#06b6d4', '#8b5cf6', '#64748b'];
+                           return <Cell key={`cell-${i}`} fill={colors[i % colors.length]} />
+                        })}
+                      </Pie>
+                      <Tooltip formatter={(v: any) => [`${Number(v).toFixed(2)}%`, 'Kepemilikan']}
+                        contentStyle={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }} />
+                      <Legend iconType="circle" iconSize={8} formatter={(v) => <span className="text-[10px]">{v}</span>} layout="vertical" verticalAlign="middle" align="right" />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  ) : (
+                    <div className="h-[220px] flex items-center justify-center text-muted-foreground">Tidak ada data Tipe Investor</div>
+                  )}
                 </div>
 
-                {/* Institutional Change Timeline */}
-                {institutional.length > 0 && (
-                  <div className="glass rounded-2xl p-6 border border-border/30 lg:col-span-2">
-                    <h3 className="font-bold mb-1 flex items-center gap-2">
-                      <TrendingUp className="w-5 h-5 text-purple-400" /> Institutional Change (6M)
-                    </h3>
-                    <div className="flex gap-3 mb-4 text-xs">
-                      <span className="text-emerald-400 font-bold">↑ {accumulating} accumulating</span>
-                      <span className="text-red-400 font-bold">↓ {reducing} reducing</span>
+                {/* Time Series History Line Chart */}
+                <div className="glass rounded-2xl p-6 border border-border/30 lg:col-span-2">
+                  <h3 className="font-bold mb-1 flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5 text-emerald-400" /> Pergerakan Kepemilikan (Time Series)
+                  </h3>
+                  <p className="text-xs text-muted-foreground mb-4">Tren perubahan porsi kepemilikan masing-masing investor (%).</p>
+                  
+                  {!mounted ? (
+                    <div className="shimmer rounded-xl" style={{ height: 350 }} />
+                  ) : historyData.length > 0 ? (
+                    <div className="w-full" style={{ height: 350 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={historyData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                          <XAxis 
+                            dataKey="date" 
+                            stroke="#64748b" 
+                            fontSize={12} 
+                            tickMargin={10} 
+                            axisLine={false} 
+                            tickLine={false} 
+                          />
+                          <YAxis 
+                            stroke="#64748b" 
+                            fontSize={12} 
+                            tickFormatter={(val) => `${val}%`}
+                            axisLine={false}
+                            tickLine={false}
+                          />
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.95)', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '8px' }}
+                            itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
+                            labelStyle={{ color: '#94a3b8', marginBottom: '8px' }}
+                          />
+                          <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '20px' }} />
+                          {linesConfig.map((investor, idx) => {
+                            const colors = ['#e7b733', '#3b82f6', '#22c55e', '#ec4899', '#f97316', '#06b6d4', '#8b5cf6'];
+                            return (
+                              <Line 
+                                key={investor} 
+                                type="monotone" 
+                                dataKey={investor} 
+                                stroke={colors[idx % colors.length]} 
+                                strokeWidth={2} 
+                                dot={{r: 3, strokeWidth: 2, fill: '#0f172a'}} 
+                                activeDot={{r: 6, fill: colors[idx % colors.length]}}
+                                connectNulls={true}
+                              />
+                            )
+                          })}
+                        </LineChart>
+                      </ResponsiveContainer>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {institutional
-                        .filter(i => i.action !== 'HOLDING' && i.action !== 'NEW_ENTRY')
-                        .slice(0, 12)
-                        .map((item: any, i: number) => (
-                          <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] transition-colors border border-white/[0.05]">
-                            <div className="flex-1 min-w-0 pr-2">
-                              <p className="text-xs font-bold text-foreground truncate">{item.investor_name}</p>
-                              <p className="text-[10px] text-muted-foreground">{item.investor_type} · {item.report_date}</p>
-                            </div>
-                            <div className="text-right">
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                item.action === 'ACCUMULATING' ? 'bg-emerald-500/20 text-emerald-400' :
-                                item.action === 'REDUCING'     ? 'bg-red-500/20 text-red-400' :
-                                'bg-slate-500/20 text-slate-400'
-                              }`}>{item.action}</span>
-                              <p className={`text-xs font-bold mt-1 ${Number(item.pct_point_change) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                {Number(item.pct_point_change) >= 0 ? '+' : ''}{Number(item.pct_point_change)?.toFixed(2)}%
-                              </p>
-                            </div>
-                          </div>
-                        ))}
+                  ) : (
+                    <div className="h-[350px] flex flex-col items-center justify-center text-muted-foreground bg-white/[0.01] rounded-xl">
+                      <Clock className="w-8 h-8 opacity-30 mb-2" />
+                      <p className="text-sm">Belum ada data historis yang cukup.</p>
+                      <p className="text-xs mt-1">Upload data tanggal lain untuk melihat pergerakan.</p>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </>
           )}
@@ -645,6 +722,92 @@ export default function Ksei1Page() {
                     </tbody>
                   </table>
                 </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════ VIEW: PORTFOLIO INVESTOR ════════════════════════════ */}
+      {view === 'portfolio' && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="bg-[#1e293b] rounded-xl p-6 border border-slate-700/50">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 bg-blue-500/20 rounded-lg">
+                <Search className="w-5 h-5 text-blue-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-medium text-white">Portfolio Investor (1%)</h3>
+                <p className="text-sm text-slate-400">
+                  Lihat emiten apa saja yang dipegang oleh seorang investor di KSEI.
+                </p>
+              </div>
+            </div>
+
+            {/* Portfolio Search */}
+            <div className="flex gap-3 mb-6">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Masukkan nama investor (contoh: LO KHENG HONG, BLACKROCK)..."
+                  value={portfolioInput}
+                  onChange={e => setPortfolioInput(e.target.value.toUpperCase())}
+                  onKeyDown={e => { if (e.key === 'Enter' && portfolioInput.length >= 3) { setPortfolioSearch(portfolioInput); fetchPortfolio(portfolioInput) }}}
+                  className="w-full pl-10 pr-4 py-2.5 bg-[#0f172a] border border-slate-700/50 rounded-xl text-sm focus:outline-none focus:border-[#3b82f6]/50 transition-colors"
+                />
+              </div>
+              <button
+                onClick={() => { setPortfolioSearch(portfolioInput); fetchPortfolio(portfolioInput) }}
+                disabled={loading || portfolioInput.length < 3}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#3b82f6] text-white hover:bg-blue-600 transition-colors text-sm font-medium disabled:opacity-50"
+              >
+                {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                Cari
+              </button>
+            </div>
+
+            {loading ? (
+              <div className="h-40 flex items-center justify-center">
+                <RefreshCw className="w-6 h-6 text-[#3b82f6] animate-spin" />
+              </div>
+            ) : portfolioData.length === 0 ? (
+              <div className="h-40 flex flex-col items-center justify-center text-slate-400 bg-slate-800/30 rounded-lg border border-slate-700/50">
+                <Target className="w-10 h-10 mb-2 opacity-50" />
+                <p>Tidak ada data untuk "{portfolioSearch}".</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-slate-700/50">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-[#0f172a] text-slate-400">
+                    <tr>
+                      <th className="px-4 py-3 font-medium border-b border-slate-700/50">Saham</th>
+                      <th className="px-4 py-3 font-medium border-b border-slate-700/50">Tipe Investor</th>
+                      <th className="px-4 py-3 font-medium border-b border-slate-700/50 text-right">Porsi (%)</th>
+                      <th className="px-4 py-3 font-medium border-b border-slate-700/50 text-right">Lembar Saham</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-700/50">
+                    {portfolioData.map((s, idx) => (
+                      <tr key={idx} className="bg-[#1e293b] hover:bg-slate-800 transition-colors group">
+                        <td className="px-4 py-3 font-bold text-white">
+                          <Link href={`/stock/${s.share_code}`} className="hover:text-[#3b82f6] flex items-center gap-2">
+                            {s.share_code}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-slate-300">
+                          {s.investor_type}
+                        </td>
+                        <td className="px-4 py-3 text-right text-gold-400 font-bold text-base">
+                          {formatPercent(s.percentage)}
+                        </td>
+                        <td className="px-4 py-3 text-right text-slate-300 font-mono">
+                          {formatShares(s.total_holding_shares)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
