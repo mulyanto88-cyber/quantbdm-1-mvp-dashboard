@@ -141,11 +141,11 @@ export default function StockDetailPage() {
         .from('daily_transactions')
         .select('trading_date,open_price,high,low,close,volume,net_foreign_value,vwma_20d,aov_ratio_ma20,whale_signal,big_player_anomaly')
         .eq('stock_code', code)
-        .order('trading_date', { ascending: true })
+        .order('trading_date', { ascending: false })
         .limit(periodFilter)
 
       if (!historyErr && historyRaw) {
-        setHistoryData(historyRaw.map((d: any) => ({
+        setHistoryData(historyRaw.reverse().map((d: any) => ({
           time: d.trading_date,
           open: Number(d.open_price) || Number(d.close) || 0,
           high: Number(d.high) || Number(d.close) || 0,
@@ -240,7 +240,8 @@ export default function StockDetailPage() {
 
     chartContainerRef.current.innerHTML = ''
 
-    const chart = lwc.createChart(chartContainerRef.current, {
+    try {
+      const chart = lwc.createChart(chartContainerRef.current, {
       height: 550,
       layout: {
         background: { type: 'solid', color: 'transparent' },
@@ -325,20 +326,23 @@ export default function StockDetailPage() {
       color: d.net_foreign >= 0 ? 'rgba(34,197,94,0.7)' : 'rgba(239,68,68,0.7)',
     })))
 
-    chart.timeScale().fitContent()
+      chart.timeScale().fitContent()
 
-    const handleResize = () => {
-      if (chartContainerRef.current) {
-        chart.applyOptions({ width: chartContainerRef.current.clientWidth })
+      const handleResize = () => {
+        if (chartContainerRef.current) {
+          chart.applyOptions({ width: chartContainerRef.current.clientWidth })
+        }
       }
-    }
-    window.addEventListener('resize', handleResize)
+      window.addEventListener('resize', handleResize)
 
-    return () => {
-      window.removeEventListener('resize', handleResize)
-      chart.remove()
+      return () => {
+        window.removeEventListener('resize', handleResize)
+        chart.remove()
+      }
+    } catch (e) {
+      console.error('Failed to render lightweight chart:', e)
     }
-  }, [historyData, chartReady])
+  }, [historyData, chartReady, activeTab])
 
   // ============================================================
   // DERIVED DATA
