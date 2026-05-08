@@ -13,7 +13,7 @@ interface HighConvStock {
 }
 interface WhalePos {
   share_code: string; investor_name: string; investor_type: string; local_foreign: string
-  percentage: number; shares: number; date: string
+  percentage: number; date: string
 }
 
 function convScore(r: any) {
@@ -67,7 +67,7 @@ export default function PlayersPage() {
       const date = dd?.[0]?.date; if (!date) return
       setWhaleDate(date)
       let q = supabase.from('ksei_data1persen_mutasi')
-        .select('share_code,investor_name,investor_type,local_foreign,percentage,shares,date')
+        .select('share_code,investor_name,investor_type,local_foreign,percentage,date')
         .eq('date', date).order('percentage', { ascending: false }).limit(200)
       if (filterLF !== 'ALL') q = q.eq('local_foreign', filterLF)
       const { data, error: e } = await q
@@ -213,10 +213,9 @@ export default function PlayersPage() {
                 <thead><tr className="bg-white/[0.02] border-b border-white/[0.05] text-[10px] text-muted-foreground uppercase">
                   <th className="p-3 text-left">#</th>
                   <th className="p-3 text-left">Investor</th>
-                  <th className="p-3 text-left hidden md:table-cell">Saham</th>
                   <th className="p-3 text-center hidden md:table-cell">L/F</th>
                   <th className="p-3 text-right">Kepemilikan</th>
-                  <th className="p-3 text-right hidden md:table-cell">Shares</th>
+                  <th className="p-3 text-left hidden md:table-cell">Tipe</th>
                 </tr></thead>
                 <tbody>
                   {filteredW.map((w, i) => (
@@ -235,7 +234,7 @@ export default function PlayersPage() {
                         </span>
                       </td>
                       <td className="p-3 text-right font-black text-gold-400 text-lg">{Number(w.percentage).toFixed(2)}%</td>
-                      <td className="p-3 text-right hidden md:table-cell text-muted-foreground text-xs">{formatShares(Number(w.shares))}</td>
+                      <td className="p-3 text-left hidden md:table-cell text-muted-foreground text-xs">{w.investor_type||'—'}</td>
                     </tr>
                   ))}
                 </tbody>
