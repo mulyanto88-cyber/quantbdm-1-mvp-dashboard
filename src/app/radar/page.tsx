@@ -28,7 +28,7 @@ export default function ScreenerProV2() {
   // Radar States
   const [stocks, setStocks] = useState<SmartMoneyStock[]>([])
   const [sector, setSector] = useState('All Sectors')
-  const [minScore, setMinScore] = useState(40)
+  const [minScore, setMinScore] = useState(20)
   const [searchTerm, setSearchTerm] = useState('')
   const [sortBy, setSortBy] = useState<'score' | 'change' | 'foreign' | 'stealth'>('score')
 
@@ -60,7 +60,7 @@ export default function ScreenerProV2() {
       const sectorParam = sector === 'All Sectors' ? null : sector
       const { data, error: rpcError } = await supabase.rpc('scan_smart_money_universe', {
         p_min_score: minScore,
-        p_min_flow: 100000000,
+        p_min_flow: 1_000_000,
         p_sector: sectorParam,
         p_exclude_stealth: false,
       })
@@ -92,9 +92,12 @@ export default function ScreenerProV2() {
   // ==================== BROKER: Top Movers ====================
   const fetchTopBrokers = async () => {
     try {
+      const today = new Date()
+      const endDate = today.toISOString().split('T')[0]
+      const startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1).toISOString().split('T')[0]
       const { data, error: rpcError } = await supabase.rpc('get_broker_top_mover', {
-        p_start_date: '2026-04-01',
-        p_end_date: '2026-05-06',
+        p_start_date: startDate,
+        p_end_date: endDate,
         p_limit: 30,
       })
       if (rpcError) throw rpcError
