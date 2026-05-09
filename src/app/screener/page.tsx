@@ -36,7 +36,7 @@ const PRESETS = [
   { id: 'foreign-flow', name: '🌏 Foreign Flow', icon: TrendingUp, filters: { flag: 'FOREIGN_BUY', signal: 'Akumulasi' } },
   { id: 'accumulation', name: '📈 Accumulation', icon: Star, filters: { signal: 'Akumulasi', minScore: 40 } },
   { id: 'stealth-mode', name: '🕵️ Stealth Mode', icon: Eye, filters: { flag: 'STEALTH', minScore: 35 } },
-  { id: 'big-player', name: '⚡ Big Player', icon: Lightning, filters: { flag: 'BIG_PLAYER', minScore: 45 } },
+  { id: 'big-player', name: '⚡ Big Player', icon: Zap, filters: { flag: 'BIG_PLAYER', minScore: 45 } },
 ]
 
 function computeScore(r: any): number {
