@@ -972,10 +972,10 @@ export default function StockDetailPage() {
                     {/* Metrics Grid */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
                       {[
-                        { label: 'Net Foreign 30D', value: formatRupiah(Number(d.net_foreign_30d || 0)), color: Number(d.net_foreign_30d) >= 0 ? 'text-emerald-400' : 'text-red-400', icon: Globe },
-                        { label: 'Broker Net', value: formatShares(Number(d.broker_net_change || 0)), color: Number(d.broker_net_change) >= 0 ? 'text-emerald-400' : 'text-red-400', icon: Building2 },
+                        { label: 'Net Foreign 30D', value: formatRupiah(Number(d.foreign_net_value || 0)), color: Number(d.foreign_net_value) >= 0 ? 'text-emerald-400' : 'text-red-400', icon: Globe },
+                        { label: 'Local/Broker Net', value: formatShares(Number(d.local_net_change || 0)), color: Number(d.local_net_change) >= 0 ? 'text-emerald-400' : 'text-red-400', icon: Building2 },
                         { label: 'Price Change', value: `${Number(d.price_chg_pct || 0).toFixed(2)}%`, color: Number(d.price_chg_pct) >= 0 ? 'text-emerald-400' : 'text-red-400', icon: TrendingUp },
-                        { label: 'Divergence Score', value: `${Number(d.divergence_score || 0).toFixed(0)}/100`, color: 'text-gold-400', icon: Scale },
+                        { label: 'Signal Strength', value: d.signal_strength || 'WEAK', color: 'text-gold-400', icon: Scale },
                       ].map((m, j) => {
                         const Icon = m.icon
                         return (
