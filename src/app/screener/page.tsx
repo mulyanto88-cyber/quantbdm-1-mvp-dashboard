@@ -1,4 +1,3 @@
---- src/app/screener/page.tsx (原始)
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
