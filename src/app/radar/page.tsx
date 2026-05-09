@@ -60,12 +60,22 @@ export default function ScreenerProV2() {
       const sectorParam = sector === 'All Sectors' ? null : sector
       const { data, error: rpcError } = await supabase.rpc('scan_smart_money_universe', {
         p_min_score: minScore,
-        p_min_flow: 1_000_000,
+        p_min_flow: 0,
         p_sector: sectorParam,
         p_exclude_stealth: false,
       })
       if (rpcError) throw rpcError
-      setStocks(data || [])
+      // Normalize: Supabase RPC returns numeric columns as strings
+      const normalized = (data || []).map((s: any) => ({
+        ...s,
+        current_price:     Number(s.current_price),
+        price_chg_pct:     Number(s.price_chg_pct),
+        smart_money_score: Number(s.smart_money_score),
+        conviction_score:  Number(s.conviction_score),
+        net_foreign_30d:   Number(s.net_foreign_30d),
+        broker_net_change: Number(s.broker_net_change),
+      }))
+      setStocks(normalized)
     } catch (err) {
       console.error(err)
       setError(err instanceof Error ? err.message : 'Failed to fetch')
