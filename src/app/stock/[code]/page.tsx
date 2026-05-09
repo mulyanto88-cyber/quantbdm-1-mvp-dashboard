@@ -1,467 +1,1018 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
-import Link from 'next/link'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { formatRupiah, formatNumber } from '@/lib/utils'
+import { formatRupiah, formatPercent, formatNumber, formatShares } from '@/lib/utils'
+import type { SmartMoneyStock } from '@/lib/supabase'
 import { 
-  ArrowLeft, Activity, TrendingUp, Users, PieChart, BarChart3, 
-  AlertTriangle, Eye, Zap, DollarSign, Building2, TrendingDown,
-  RefreshCw, Globe
+  Search, TrendingUp, TrendingDown, Activity, AlertTriangle, Clock, 
+  Zap, Target, DollarSign, PieChart, ArrowRightLeft, Building2, 
+  Flame, Scale, Globe, Eye, Shield, ArrowUp, ArrowDown, RefreshCw,
+  Loader2, ChevronRight, Radar
 } from 'lucide-react'
-import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, 
-  ResponsiveContainer, PieChart as RechartsPie, Pie, Cell, Legend
-} from 'recharts'
+import Link from 'next/link'
 
-// Tabs
-const TABS = [
-  { id: 'overview', label: 'Overview', icon: Activity },
-  { id: 'chart', label: 'Accumulation Chart', icon: TrendingUp },
-  { id: 'whale-flow', label: '5% Whale Flow', icon: Eye },
-  { id: 'broker', label: 'Whale Broker', icon: Users },
-  { id: 'ownership', label: '1% Ownership', icon: PieChart }
-]
+// ============================================================
+// TYPES
+// ============================================================
+interface StockData {
+  stock_code: string
+  close: number
+  change_percent: number
+  high: number
+  low: number
+  open_price: number
+  volume: number
+  value: number
+  frequency: number
+  net_foreign_value: number
+  foreign_buy_value: number
+  foreign_sell_value: number
+  vwma_20d: number
+  ma20_volume: number
+  aov_ratio_ma20: number
+  avg_order_volume: number
+  whale_signal: boolean
+  big_player_anomaly: boolean
+  signal: string
+  sector: string
+  free_float: number
+  tradeable_shares: number
+  trading_date: string
+}
 
-const COLORS = ['#e7b733', '#3b82f6', '#22c55e', '#ec4899', '#f97316', '#06b6d4', '#8b5cf6', '#64748b'];
+interface HistoryPoint {
+  time: string
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+  net_foreign: number
+  aov_ratio: number
+  vwma: number
+  whale_signal: boolean
+  big_player_anomaly: boolean
+}
 
+type DetailTab = 'technical' | 'smart-money' | 'whale' | 'volume' | 'broker' | 'ownership' | 'foreign-flow'
+
+declare global {
+  interface Window {
+    LightweightCharts: any
+  }
+}
+
+// ============================================================
+// COMPONENT
+// ============================================================
 export default function StockDetailPage() {
   const params = useParams()
-  const router = useRouter()
-  const code = (params.code as string).toUpperCase()
-  
-  const [activeTab, setActiveTab] = useState('overview')
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const stockCode = (params?.code as string)?.toUpperCase() || ''
 
+  // States
+  const [searchQuery, setSearchQuery] = useState(stockCode)
+  const [activeTab, setActiveTab] = useState<DetailTab>('technical')
+  const [periodFilter, setPeriodFilter] = useState(120)
+  
   // Data States
-  const [basicInfo, setBasicInfo] = useState<any>(null)
-  const [historyData, setHistoryData] = useState<any[]>([])
-  const [linesConfig, setLinesConfig] = useState<string[]>([])
-  const [flowData, setFlowData] = useState<any[]>([])
+  const [stockData, setStockData] = useState<StockData | null>(null)
+  const [historyData, setHistoryData] = useState<HistoryPoint[]>([])
+  const [smartMoneyIndex, setSmartMoneyIndex] = useState<any>(null)
+  const [whaleData, setWhaleData] = useState<any[]>([])
+  const [leadIndicator, setLeadIndicator] = useState<any[]>([])
+  const [volumeSpikes, setVolumeSpikes] = useState<any[]>([])
+  const [aovProfile, setAovProfile] = useState<any[]>([])
   const [brokerData, setBrokerData] = useState<any[]>([])
   const [ownershipData, setOwnershipData] = useState<any[]>([])
-  const [pieData, setPieData] = useState<any[]>([])
+  const [foreignFlowData, setForeignFlowData] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [tabLoading, setTabLoading] = useState(false)
+  const [errorMsg, setErrorMsg] = useState('')
+  
+  const chartContainerRef = useRef<HTMLDivElement>(null)
+  const [chartReady, setChartReady] = useState(false)
+  const loadedTabs = useRef<Set<string>>(new Set())
 
-  const loadData = useCallback(async () => {
+  // ============================================================
+  // LOAD LIGHTWEIGHT CHARTS
+  // ============================================================
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (window.LightweightCharts) {
+      setChartReady(true)
+      return
+    }
+    const script = document.createElement('script')
+    script.src = 'https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js'
+    script.async = true
+    script.onload = () => setChartReady(true)
+    document.body.appendChild(script)
+    return () => { script.remove() }
+  }, [])
+
+  // ============================================================
+  // FETCH ALL DATA
+  // ============================================================
+  // ============================================================
+  // FETCH: CRITICAL DATA (parallel, runs immediately)
+  // ============================================================
+  const fetchCriticalData = useCallback(async (code: string) => {
+    if (!code || code.length < 4) return
+    setIsLoading(true)
+    setErrorMsg('')
+    loadedTabs.current = new Set(['technical'])
+
     try {
-      setLoading(true)
-      setError(null)
-
-      // Fetch all required data in parallel (Super Fast)
-      const [
-        { data: priceRes },
-        { data: histRes },
-        { data: flowRes },
-        { data: brokerRes },
-        { data: ownResLatestDate }
-      ] = await Promise.all([
-        // 1. Get Latest Price & Basic Info from KSEI 5%
-        supabase.from('ksei_data5_mutasi').select('typical_price, tanggal_data').eq('kode_efek', code).order('tanggal_data', { ascending: false }).limit(1),
-        // 2. Get 1% History for Chart
-        supabase.rpc('get_stock_investor_history', { p_stock_code: code }),
-        // 3. Get 5% Flow
-        supabase.rpc('get_stock_5persen_flow', { p_code: code, p_limit: 50 }),
-        // 4. Get 5% Broker Aggregation (30 Days)
-        supabase.rpc('get_stock_5persen_brokers', { p_code: code, p_days: 30 }),
-        // 5. Get Latest Date from 1% Data to fetch ownership
-        supabase.from('ksei_data1persen_mutasi').select('date').eq('share_code', code).order('date', { ascending: false }).limit(1)
+      const [latestResult, historyResult] = await Promise.all([
+        supabase
+          .from('daily_transactions')
+          .select('*')
+          .eq('stock_code', code)
+          .order('trading_date', { ascending: false })
+          .limit(1)
+          .single(),
+        supabase
+          .from('daily_transactions')
+          .select('trading_date,open_price,high,low,close,volume,net_foreign_value,vwma_20d,aov_ratio_ma20,whale_signal,big_player_anomaly')
+          .eq('stock_code', code)
+          .order('trading_date', { ascending: false })
+          .limit(periodFilter),
       ])
 
-      // Process Basic Info
-      const currentPrice = priceRes?.[0]?.typical_price || 0;
-      const lastUpdate = priceRes?.[0]?.tanggal_data || '-';
-
-      // Process Chart Data
-      const datesMap = new Map<string, any>()
-      const investorsSet = new Set<string>()
-      if (histRes) {
-        histRes.forEach((r: any) => {
-          const dateStr = new Date(r.report_date).toLocaleDateString('id-ID', {day: '2-digit', month: 'short'})
-          if (!datesMap.has(r.report_date)) datesMap.set(r.report_date, { date: dateStr })
-          // Convert scripless to lot
-          datesMap.get(r.report_date)[r.investor_name] = Number(r.holdings_scripless) / 100
-          investorsSet.add(r.investor_name)
-        })
+      if (latestResult.error || !latestResult.data) {
+        setErrorMsg(`Stock ${code} not found`)
+        return
       }
-      setHistoryData(Array.from(datesMap.values()))
-      setLinesConfig(Array.from(investorsSet))
-      setFlowData(flowRes || [])
-      setBrokerData(brokerRes || [])
+      setStockData(latestResult.data)
 
-      // Process Ownership
-      if (ownResLatestDate && ownResLatestDate.length > 0) {
-        const latestDate = ownResLatestDate[0].date
-        const { data: ownRes } = await supabase
-          .from('ksei_data1persen_mutasi')
-          .select('*')
-          .eq('share_code', code)
-          .eq('date', latestDate)
-          .order('percentage', { ascending: false })
-        
-        setOwnershipData(ownRes || [])
-
-        // Process Pie Chart for ownership (by local/foreign & type)
-        const typeMap = new Map<string, number>()
-        let totalPct = 0;
-        (ownRes || []).forEach((r: any) => {
-          const key = r.investor_type || 'Unknown'
-          typeMap.set(key, (typeMap.get(key) || 0) + Number(r.percentage))
-          totalPct += Number(r.percentage)
-        })
-        setPieData(Array.from(typeMap.entries()).map(([name, value]) => ({ name, value })))
-        
-        setBasicInfo({
-          price: currentPrice,
-          last_update: lastUpdate,
-          total_1pct_holders: ownRes?.length || 0,
-          total_pct_controlled: totalPct,
-          net_5pct_flow: (brokerRes || []).reduce((acc: number, curr: any) => acc + Number(curr.net_value), 0)
-        })
-      } else {
-        setBasicInfo({ price: currentPrice, last_update: lastUpdate, total_1pct_holders: 0, total_pct_controlled: 0, net_5pct_flow: 0 })
+      if (!historyResult.error && historyResult.data) {
+        setHistoryData(historyResult.data.reverse().map((d: any) => ({
+          time: d.trading_date,
+          open: Number(d.open_price) || Number(d.close) || 0,
+          high: Number(d.high) || Number(d.close) || 0,
+          low: Number(d.low) || Number(d.close) || 0,
+          close: Number(d.close) || 0,
+          volume: Number(d.volume) || 0,
+          net_foreign: Number(d.net_foreign_value) || 0,
+          aov_ratio: Number(d.aov_ratio_ma20) || 1,
+          vwma: Number(d.vwma_20d) || 0,
+          whale_signal: d.whale_signal || false,
+          big_player_anomaly: d.big_player_anomaly || false,
+        })))
       }
-
     } catch (err: any) {
-      setError(err.message || 'Gagal memuat data saham')
+      console.error(err)
+      setErrorMsg(err.message || 'Failed to fetch data')
     } finally {
-      setLoading(false)
+      setIsLoading(false)
     }
-  }, [code])
+  }, [periodFilter])
 
-  useEffect(() => { loadData() }, [loadData])
+  // ============================================================
+  // FETCH: TAB DATA (lazy, runs when tab first opened)
+  // ============================================================
+  const fetchTabData = useCallback(async (tab: DetailTab, code: string) => {
+    if (!code || loadedTabs.current.has(tab)) return
+    loadedTabs.current.add(tab)
+    setTabLoading(true)
 
-  if (loading) {
+    try {
+      if (tab === 'smart-money') {
+        const [smiRes, leadRes] = await Promise.all([
+          supabase.rpc('get_smart_money_index', { p_stock_code: code, p_window: 30 }),
+          supabase.rpc('get_smart_money_lead_indicator', { p_stock_code: code, p_months: 6 }),
+        ])
+        if (smiRes.data?.length) setSmartMoneyIndex(smiRes.data[0])
+        if (leadRes.data) setLeadIndicator(leadRes.data)
+      }
+
+      if (tab === 'whale') {
+        const { data } = await supabase.rpc('get_whale_timing_analysis', { p_stock_code: code })
+        if (data) setWhaleData(data)
+      }
+
+      if (tab === 'volume') {
+        const [spikeRes, aovRes] = await Promise.all([
+          supabase.rpc('get_volume_spike', { p_stock_code: code, p_window: 30, p_threshold: null }),
+          supabase.rpc('get_aov_profile', { p_stock_code: code, p_window: 60 }),
+        ])
+        if (spikeRes.data) setVolumeSpikes(spikeRes.data.filter((d: any) => d.spike_type !== 'NORMAL'))
+        if (aovRes.data) setAovProfile(aovRes.data)
+      }
+
+      if (tab === 'broker') {
+        const { data } = await supabase.rpc('get_broker_divergence', { p_stock_code: code, p_start_date: '2026-01-01' })
+        if (data) setBrokerData(data.slice(0, 10))
+      }
+
+      if (tab === 'ownership') {
+        const { data } = await supabase.rpc('get_ownership_structure', { p_stock_code: code, p_date: null })
+        if (data) setOwnershipData(data)
+      }
+
+      if (tab === 'foreign-flow') {
+        const { data } = await supabase.rpc('get_stealth_vs_foreign_divergence', { p_stock_code: code, p_window: 30 })
+        if (data?.length) setForeignFlowData(data)
+      }
+    } catch (err) {
+      console.error(`Failed to fetch tab ${tab}:`, err)
+      loadedTabs.current.delete(tab)
+    } finally {
+      setTabLoading(false)
+    }
+  }, [])
+
+  // Initial fetch (critical only)
+  useEffect(() => {
+    if (stockCode) {
+      loadedTabs.current = new Set()
+      fetchCriticalData(stockCode)
+    }
+  }, [stockCode, fetchCriticalData])
+
+  // Lazy fetch on tab switch
+  useEffect(() => {
+    if (stockCode && activeTab !== 'technical') {
+      fetchTabData(activeTab, stockCode)
+    }
+  }, [activeTab, stockCode, fetchTabData])
+
+  // ============================================================
+  // RENDER CHART
+  // ============================================================
+  useEffect(() => {
+    if (!chartReady || !chartContainerRef.current || historyData.length === 0) return
+
+    const lwc = window.LightweightCharts
+    if (!lwc) return
+
+    chartContainerRef.current.innerHTML = ''
+
+    try {
+      const chart = lwc.createChart(chartContainerRef.current, {
+        height: 600,
+        autoSize: true,
+        layout: {
+          background: { type: 'solid', color: 'transparent' },
+          textColor: '#94a3b8',
+        },
+        grid: {
+          vertLines: { color: 'rgba(51,65,85,0.15)' },
+          horzLines: { color: 'rgba(51,65,85,0.15)' },
+        },
+        crosshair: { mode: 1 },
+        rightPriceScale: { borderColor: 'rgba(51,65,85,0.5)' },
+        timeScale: { 
+          borderColor: 'rgba(51,65,85,0.5)',
+          timeVisible: true,
+          secondsVisible: false,
+        },
+      })
+
+      // === CANDLE SERIES ===
+      chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.05, bottom: 0.60 } })
+      const candleSeries = chart.addCandlestickSeries({
+        upColor: '#22c55e',
+        downColor: '#ef4444',
+        borderVisible: false,
+        wickUpColor: '#22c55e',
+        wickDownColor: '#ef4444',
+      })
+      candleSeries.setData(historyData.filter(d => d.time && d.close).map(d => ({
+        time: d.time,
+        open: d.open,
+        high: d.high,
+        low: d.low,
+        close: d.close,
+      })))
+
+      // === MARKERS ===
+      const markers: any[] = []
+      historyData.forEach(d => {
+        if (d.whale_signal || d.aov_ratio >= 1.5) {
+          markers.push({ time: d.time, position: 'aboveBar', color: '#10b981', shape: 'arrowDown' })
+        }
+        if (d.aov_ratio <= 0.6 && d.aov_ratio > 0) {
+          markers.push({ time: d.time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp' })
+        }
+        if (d.big_player_anomaly) {
+          markers.push({ time: d.time, position: 'belowBar', color: '#ec4899', shape: 'arrowUp' })
+        }
+      })
+      candleSeries.setMarkers(markers)
+
+      // === VWMA LINE ===
+      const vwmaSeries = chart.addLineSeries({
+        color: '#3b82f6',
+        lineWidth: 2,
+        lineStyle: 2,
+        crosshairMarkerVisible: false,
+        lastValueVisible: true,
+        priceLineVisible: false,
+      })
+      vwmaSeries.setData(historyData.filter(d => d.time && d.vwma > 0).map(d => ({ time: d.time, value: d.vwma })))
+
+      // === AOV RATIO LINE ===
+      const aovSeries = chart.addLineSeries({ color: '#8b5cf6', lineWidth: 2, priceScaleId: 'aov' })
+      chart.priceScale('aov').applyOptions({ scaleMargins: { top: 0.45, bottom: 0.40 } })
+      aovSeries.setData(historyData.filter(d => d.time).map(d => ({ time: d.time, value: d.aov_ratio })))
+      aovSeries.createPriceLine({ price: 1.5, color: '#22c55e', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '🐋 1.5x' })
+      aovSeries.createPriceLine({ price: 0.6, color: '#ef4444', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '🩸 0.6x' })
+
+      // === VOLUME ===
+      const volSeries = chart.addHistogramSeries({
+        priceScaleId: 'vol',
+        priceFormat: { type: 'volume' },
+      })
+      chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.65, bottom: 0.20 } })
+      volSeries.setData(historyData.filter(d => d.time && d.volume).map(d => ({
+        time: d.time,
+        value: d.volume,
+        color: d.close >= d.open ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)',
+      })))
+
+      // === NET FOREIGN ===
+      const foreignSeries = chart.addHistogramSeries({
+        priceScaleId: 'foreign',
+      })
+      chart.priceScale('foreign').applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } })
+      foreignSeries.setData(historyData.filter(d => d.time && d.net_foreign !== undefined).map(d => ({
+        time: d.time,
+        value: d.net_foreign,
+        color: d.net_foreign >= 0 ? 'rgba(34,197,94,0.8)' : 'rgba(239,68,68,0.8)',
+      })))
+
+      chart.timeScale().fitContent()
+
+      return () => {
+        chart.remove()
+      }
+    } catch (e) {
+      console.error('Failed to render lightweight chart:', e)
+    }
+  }, [historyData, chartReady, activeTab])
+
+  // ============================================================
+  // DERIVED DATA
+  // ============================================================
+  const publicShares = (stockData?.tradeable_shares || 0) * ((stockData?.free_float || 0) / 100)
+  const floatCap = publicShares * (stockData?.close || 0)
+  const dailyTurnover = publicShares > 0 ? ((stockData?.volume || 0) / publicShares) * 100 : 0
+  const isPositive = (stockData?.change_percent || 0) > 0
+  const isNegative = (stockData?.change_percent || 0) < 0
+  const smiScore = smartMoneyIndex?.smart_money_score || 0
+  const signalBubbles = volumeSpikes.filter((s: any) => s.spike_type.includes('BULLISH')).length
+  const signalDistributions = volumeSpikes.filter((s: any) => s.spike_type.includes('BEARISH') || s.spike_type.includes('DOWN')).length
+
+  // ============================================================
+  // RENDER
+  // ============================================================
+  if (!stockCode) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#0f172a] via-[#1e293b] to-[#0f172a] flex items-center justify-center">
-        <RefreshCw className="w-12 h-12 text-gold-400 animate-spin" />
-      </div>
-    )
-  }
-
-  if (error || !basicInfo) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-[#0f172a] via-[#1e293b] to-[#0f172a] flex items-center justify-center">
-        <div className="text-center bg-[#1e293b] p-8 rounded-2xl border border-red-500/30">
-          <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-white mb-2">Error Loading Data</h2>
-          <p className="text-slate-400 mb-6">{error}</p>
-          <button onClick={() => router.back()} className="px-6 py-2 bg-slate-800 text-white rounded-xl hover:bg-slate-700">Kembali</button>
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center">
+          <Search className="w-16 h-16 mx-auto mb-4 opacity-20" />
+          <p className="text-lg font-medium text-muted-foreground">Search for a stock to analyze</p>
+          <div className="mt-4 relative max-w-xs mx-auto">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Enter stock code..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value.toUpperCase())}
+              onKeyDown={(e) => { if (e.key === 'Enter' && searchQuery.length >= 4) window.location.href = `/stock/${searchQuery}` }}
+              className="w-full pl-10 pr-4 py-3 bg-white/[0.03] border border-white/[0.08] rounded-xl text-sm uppercase focus:outline-none focus:border-gold-400/30"
+              maxLength={4}
+            />
+          </div>
         </div>
       </div>
     )
   }
 
-  const isNetFlowPos = basicInfo.net_5pct_flow >= 0;
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-12 h-12 text-gold-400 animate-spin" />
+          <p className="text-gold-400 font-medium animate-pulse">Loading {stockCode}...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (errorMsg) {
+    return (
+      <div className="glass rounded-xl p-12 text-center">
+        <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+        <p className="text-red-400 font-medium">{errorMsg}</p>
+        <Link href="/radar" className="inline-block mt-4 text-gold-400 hover:underline">← Back to Radar</Link>
+      </div>
+    )
+  }
+
+  if (!stockData) return null
+
+  const tabs = [
+    { id: 'technical' as DetailTab, label: 'Chart', icon: Activity, count: 0 },
+    { id: 'smart-money' as DetailTab, label: 'Smart Money', icon: Radar, count: 0 },
+    { id: 'ownership' as DetailTab, label: 'Ownership', icon: PieChart, count: 0 },
+    { id: 'foreign-flow' as DetailTab, label: 'Foreign Flow', icon: Globe, count: 0 },
+    { id: 'whale' as DetailTab, label: 'Whale', icon: Eye, count: 0 },
+    { id: 'volume' as DetailTab, label: 'Volume Spike', icon: Zap, count: 0 },
+    { id: 'broker' as DetailTab, label: 'Broker Intel', icon: Building2, count: 0 },
+  ]
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0f172a] via-[#1e293b] to-[#0f172a] pb-12">
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-40 backdrop-blur-xl bg-[#0f172a]/80 border-b border-white/[0.05]">
-        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-20">
-            <div className="flex items-center space-x-4">
-              <button onClick={() => router.back()} className="p-2 rounded-lg hover:bg-white/[0.05] transition-colors">
-                <ArrowLeft className="w-6 h-6 text-slate-400" />
-              </button>
-              <div>
-                <h1 className="text-3xl font-black text-white">{code}</h1>
-                <p className="text-xs text-gold-400">KSEI Deep Analytics</p>
-              </div>
-            </div>
-            <div className="text-right">
-              <p className="text-xs text-slate-400 mb-1">Typical Price (Ref 5%)</p>
-              <p className="text-2xl font-bold text-white">Rp {formatNumber(basicInfo.price)}</p>
-            </div>
+    <div className="space-y-6 animate-fade-in pb-10">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <Link href="/radar" className="text-xs text-gold-400 hover:underline mb-2 inline-block">← Back to Radar</Link>
+          <h1 className="text-3xl font-black text-foreground">{stockData.stock_code}</h1>
+          <p className="text-sm text-muted-foreground">{stockData.sector || 'Unknown Sector'}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <select value={periodFilter} onChange={(e) => setPeriodFilter(Number(e.target.value))}
+            className="bg-white/[0.03] border border-white/[0.08] rounded-xl px-3 py-2 text-sm">
+            <option value={60}>3 Months</option>
+            <option value={120}>6 Months</option>
+            <option value={240}>1 Year</option>
+          </select>
+          <div className="relative w-48">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input type="text" placeholder="Search..." value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value.toUpperCase())}
+              onKeyDown={(e) => { if (e.key === 'Enter' && searchQuery.length >= 4) window.location.href = `/stock/${searchQuery}` }}
+              className="w-full pl-10 pr-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-xl text-sm uppercase focus:outline-none focus:border-gold-400/30"
+              maxLength={4} />
           </div>
         </div>
       </div>
 
-      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        
-        {/* ── Tabs Navigation ─────────────────────────────────────────────────── */}
-        <div className="flex space-x-2 mb-8 overflow-x-auto pb-2 scrollbar-hide">
-          {TABS.map(tab => {
-            const Icon = tab.icon
-            return (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center space-x-2 px-5 py-3 rounded-xl font-medium transition-all whitespace-nowrap ${
-                  activeTab === tab.id
-                    ? 'bg-gradient-to-r from-gold-400 to-yellow-500 text-navy-900 shadow-lg'
-                    : 'glass text-slate-400 hover:text-white border border-white/[0.05]'
-                }`}>
-                <Icon className="w-4 h-4" />
-                <span>{tab.label}</span>
-              </button>
-            )
-          })}
+      {/* Stock Header Card */}
+      <div className="glass rounded-2xl p-6 border-t-4 border-t-gold-500">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-4xl font-black">{formatNumber(stockData.close)}</span>
+              <span className={`flex items-center text-lg font-bold ${isPositive ? 'text-emerald-400' : isNegative ? 'text-red-400' : 'text-muted-foreground'}`}>
+                {isPositive ? <TrendingUp className="w-5 h-5" /> : isNegative ? <TrendingDown className="w-5 h-5" /> : null}
+                {formatPercent(stockData.change_percent)}
+              </span>
+            </div>
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <span>H: {formatNumber(stockData.high)}</span>
+              <span>L: {formatNumber(stockData.low)}</span>
+              <span>O: {formatNumber(stockData.open_price)}</span>
+              <Clock className="w-3 h-3" />
+              <span>{stockData.trading_date}</span>
+            </div>
+          </div>
+          {smartMoneyIndex && (
+            <div className="flex items-center gap-3">
+              <div className="text-center px-4 py-2 rounded-xl bg-white/[0.03] border border-white/[0.08]">
+                <p className="text-[10px] text-muted-foreground uppercase">Smart Money Score</p>
+                <p className={`text-2xl font-black ${
+                  smartMoneyIndex?.signal === 'STRONG_BUY' ? 'text-emerald-400' : smartMoneyIndex?.signal === 'WATCH' ? 'text-amber-400' : 'text-slate-400'
+                }`}>{Math.round(smiScore)}</p>
+              </div>
+              <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${
+                smartMoneyIndex?.signal === 'STRONG_BUY' ? 'signal-strong-buy' : smartMoneyIndex?.signal === 'WATCH' ? 'signal-watch' : 'signal-neutral'
+              }`}>{smartMoneyIndex?.signal || 'NEUTRAL'}</span>
+            </div>
+          )}
         </div>
+      </div>
 
-        {/* ── TAB: OVERVIEW ───────────────────────────────────────────────────── */}
-        {activeTab === 'overview' && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="glass rounded-2xl p-6 border border-white/[0.05]">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="p-2 bg-blue-500/20 rounded-lg"><Users className="w-5 h-5 text-blue-400" /></div>
-                  <span className="text-sm font-medium text-slate-400">Total Paus (≥ 1%)</span>
-                </div>
-                <p className="text-3xl font-black text-white">{basicInfo.total_1pct_holders}</p>
-                <p className="text-xs text-slate-500 mt-2">Institusi/Individu Pengendali</p>
-              </div>
-
-              <div className="glass rounded-2xl p-6 border border-white/[0.05]">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="p-2 bg-purple-500/20 rounded-lg"><PieChart className="w-5 h-5 text-purple-400" /></div>
-                  <span className="text-sm font-medium text-slate-400">Penguasaan (≥ 1%)</span>
-                </div>
-                <p className="text-3xl font-black text-white">{basicInfo.total_pct_controlled.toFixed(2)}%</p>
-                <p className="text-xs text-slate-500 mt-2">Beredar di tangan Paus</p>
-              </div>
-
-              <div className="glass rounded-2xl p-6 border border-white/[0.05]">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="p-2 bg-emerald-500/20 rounded-lg"><Activity className="w-5 h-5 text-emerald-400" /></div>
-                  <span className="text-sm font-medium text-slate-400">Net Flow 5% (30D)</span>
-                </div>
-                <p className={`text-2xl font-black ${isNetFlowPos ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {isNetFlowPos ? '+' : ''}{formatRupiah(basicInfo.net_5pct_flow)}
-                </p>
-                <p className="text-xs text-slate-500 mt-2">Akumulasi bersih 30 hari</p>
-              </div>
-
-              <div className="glass rounded-2xl p-6 border border-white/[0.05] flex flex-col justify-center items-center text-center">
-                {basicInfo.net_5pct_flow > 10000000000 ? (
-                  <>
-                    <Zap className="w-10 h-10 text-gold-400 mb-2 animate-pulse" />
-                    <p className="font-bold text-gold-400">STRONG ACCUMULATION</p>
-                  </>
-                ) : basicInfo.net_5pct_flow < -10000000000 ? (
-                  <>
-                    <TrendingDown className="w-10 h-10 text-red-500 mb-2" />
-                    <p className="font-bold text-red-500">HEAVY DISTRIBUTION</p>
-                  </>
-                ) : (
-                  <>
-                    <Globe className="w-10 h-10 text-slate-500 mb-2" />
-                    <p className="font-bold text-slate-400">NEUTRAL / HOLD</p>
-                  </>
-                )}
-              </div>
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 stagger">
+        {[
+          { label: 'Public Shares', value: formatShares(publicShares), sub: `${(stockData?.free_float || 0).toFixed(1)}% Float`, icon: <PieChart className="w-4 h-4 text-cyan-400" /> },
+          { label: 'Float Cap', value: formatRupiah(floatCap), icon: <DollarSign className="w-4 h-4 text-gold-400" /> },
+          { label: 'Turnover', value: `${dailyTurnover.toFixed(2)}%`, icon: <ArrowRightLeft className="w-4 h-4 text-purple-400" />, color: dailyTurnover > 5 ? 'text-emerald-400' : dailyTurnover < 1 ? 'text-red-400' : 'text-amber-400' },
+          { label: 'AOV Ratio', value: `${(stockData.aov_ratio_ma20 || 1).toFixed(2)}x`, icon: <Scale className="w-4 h-4 text-pink-400" /> },
+          { label: 'Foreign Flow', value: formatRupiah(stockData.net_foreign_value), icon: <Globe className="w-4 h-4 text-blue-400" />, color: stockData.net_foreign_value >= 0 ? 'text-emerald-400' : 'text-red-400' },
+          { label: 'Volume', value: formatShares(stockData.volume), icon: <Flame className="w-4 h-4 text-orange-400" /> },
+        ].map((m, i) => (
+          <div key={i} className="glass rounded-xl p-4 border border-border/30 card-hover">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] text-muted-foreground uppercase font-bold">{m.label}</p>
+              {m.icon}
             </div>
+            <p className={`text-lg font-black ${m.color || 'text-foreground'}`}>{m.value}</p>
+            {m.sub && <p className="text-[10px] text-muted-foreground mt-0.5">{m.sub}</p>}
+          </div>
+        ))}
+      </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-               {/* Mini Chart Preview */}
-               <div className="glass rounded-2xl p-6 border border-white/[0.05]">
-                  <h3 className="text-lg font-bold text-white mb-4">Composition by Type (1%)</h3>
-                  <div className="h-[250px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <RechartsPie>
-                        <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                          {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                        </Pie>
-                        <RechartsTooltip formatter={(v: number) => [`${v.toFixed(2)}%`, 'Porsi']} contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8 }} />
-                        <Legend layout="vertical" verticalAlign="middle" align="right" wrapperStyle={{ fontSize: '12px' }} />
-                      </RechartsPie>
-                    </ResponsiveContainer>
+      {/* Tab Navigation */}
+      <div className="glass rounded-xl p-1.5 flex gap-1 overflow-x-auto border border-border/30">
+        {tabs.map(tab => {
+          const Icon = tab.icon
+          const isActive = activeTab === tab.id
+          return (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+                isActive ? 'bg-gradient-to-r from-gold-400 to-yellow-500 text-navy-900 shadow-lg' : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+              }`}>
+              <Icon className="w-3.5 h-3.5" /> {tab.label}
+              {tab.count > 0 && <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isActive ? 'bg-navy-900/20' : 'bg-gold-400/20 text-gold-400'}`}>{tab.count}</span>}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* ============================================================ */}
+      {/* TAB 1: TECHNICAL CHART */}
+      {/* ============================================================ */}
+      {activeTab === 'technical' && (
+        <div className="glass rounded-2xl p-4 border border-border/30 relative group">
+          <div className="absolute top-4 left-6 z-10 space-y-1.5 bg-navy-900/90 p-3 rounded-xl backdrop-blur-md border border-border/50 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none shadow-xl">
+            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> Price</div>
+            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-blue-500" /> VWMA 20</div>
+            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-emerald-500/40" /> Volume (Buy)</div>
+            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-red-500/40" /> Volume (Sell)</div>
+            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-emerald-500/70" /> Net Foreign +</div>
+            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-red-500/70" /> Net Foreign -</div>
+            <div className="flex items-center gap-2 mt-1"><span className="text-emerald-400">🐋</span> Whale / AOV ≥1.5x</div>
+            <div className="flex items-center gap-2"><span className="text-red-400">🩸</span> AOV ≤0.6x</div>
+            <div className="flex items-center gap-2"><span className="text-pink-400">⚠️</span> Big Player Anomaly</div>
+          </div>
+          <div ref={chartContainerRef} className="w-full h-[600px]" />
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* TAB 2: SMART MONEY */}
+      {/* ============================================================ */}
+      {activeTab === 'smart-money' && (
+        tabLoading ? (
+          <div className="space-y-4 animate-pulse">
+            <div className="glass rounded-2xl h-48 bg-accent/30" />
+            <div className="glass rounded-2xl h-64 bg-accent/30" />
+          </div>
+        ) : (
+        <div className="space-y-6">
+          {smartMoneyIndex ? (
+            <>
+              {/* Score Breakdown */}
+              <div className="glass rounded-2xl p-6 border border-border/30">
+                <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                  <Radar className="w-5 h-5 text-gold-400" /> Smart Money Index
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                  {[
+                    { label: 'Score', value: Math.round(smiScore), color: 'text-emerald-400' },
+                    { label: 'Conviction', value: smartMoneyIndex.conviction_score?.toFixed(0), color: 'text-blue-400' },
+                    { label: 'Stealth', value: smartMoneyIndex.is_stealth ? '🕵️ YES' : 'NO', color: smartMoneyIndex.is_stealth ? 'text-purple-400' : 'text-muted-foreground' },
+                    { label: 'Foreign 30D', value: formatRupiah(smartMoneyIndex.net_foreign_30d), color: smartMoneyIndex.net_foreign_30d >= 0 ? 'text-emerald-400' : 'text-red-400' },
+                    { label: 'Broker Net', value: formatShares(smartMoneyIndex.broker_net_change), color: smartMoneyIndex.broker_net_change > 0 ? 'text-emerald-400' : 'text-red-400' },
+                  ].map((m, i) => (
+                    <div key={i} className="text-center p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+                      <p className="text-[10px] text-muted-foreground uppercase mb-1">{m.label}</p>
+                      <p className={`text-xl font-black ${m.color}`}>{m.value}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+                  <p className="text-xs text-muted-foreground font-mono">{smartMoneyIndex.score_breakdown}</p>
+                </div>
+              </div>
+
+              {/* Lead Indicator */}
+              {leadIndicator.length > 0 && (
+                <div className="glass rounded-2xl p-6 border border-border/30">
+                  <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                    <Target className="w-5 h-5 text-cyan-400" /> KSEI Lead Indicator
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-[10px] text-muted-foreground uppercase border-b border-white/[0.05]">
+                          <th className="p-3 text-left">KSEI Date</th>
+                          <th className="p-3 text-left">Action</th>
+                          <th className="p-3 text-right">Price @KSEI</th>
+                          <th className="p-3 text-right">1M Later</th>
+                          <th className="p-3 text-right">Return 1M</th>
+                          <th className="p-3 text-center">Signal</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {leadIndicator.map((d: any, i: number) => (
+                          <tr key={i} className="border-b border-white/[0.02]">
+                            <td className="p-3 text-xs">{d.ksei_date}</td>
+                            <td className="p-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                d.inst_action === 'ACCUMULATING' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-500/20 text-slate-400'
+                              }`}>{d.inst_action}</span>
+                            </td>
+                            <td className="p-3 text-right">{formatNumber(d.price_at_ksei)}</td>
+                            <td className="p-3 text-right">{d.price_1m_after ? formatNumber(d.price_1m_after) : '-'}</td>
+                            <td className={`p-3 text-right font-bold ${d.return_1m_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {d.return_1m_pct ? formatPercent(d.return_1m_pct) : '-'}
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                d.lead_signal === 'LEAD_CONFIRMED' ? 'signal-strong-buy' :
+                                d.lead_signal === 'LEAD_FAILED' ? 'signal-avoid' : 'bg-slate-500/20 text-slate-400'
+                              }`}>{d.lead_signal}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-               </div>
-               
-               {/* Mini Whale Alert Preview */}
-               <div className="glass rounded-2xl p-6 border border-white/[0.05]">
-                  <h3 className="text-lg font-bold text-white mb-4">Latest Whale Activities</h3>
-                  <div className="space-y-3">
-                    {flowData.slice(0, 4).map((d, i) => (
-                      <div key={i} className="flex justify-between items-center p-3 bg-white/[0.02] rounded-lg border border-white/[0.05]">
-                        <div>
-                          <p className="font-bold text-sm text-white">{d.nama_pemegang_saham}</p>
-                          <p className="text-[10px] text-slate-500">{new Date(d.tanggal_data).toLocaleDateString()} • {d.aksi}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className={`font-mono font-bold text-sm ${d.transaction_value > 0 && d.aksi !== 'Reduction' ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {formatRupiah(d.transaction_value)}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                    {flowData.length === 0 && <p className="text-sm text-slate-500 py-4 text-center">Belum ada transaksi masif 5%.</p>}
-                  </div>
-               </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="glass rounded-xl p-12 text-center text-muted-foreground">
+              <Radar className="w-12 h-12 mx-auto mb-4 opacity-30" />
+              No Smart Money data available
             </div>
-          </div>
-        )}
+          )}
+        </div>
+        )
+      )}
 
-        {/* ── TAB: CHART (TIME SERIES) ────────────────────────────────────────── */}
-        {activeTab === 'chart' && (
-          <div className="glass rounded-2xl p-6 border border-white/[0.05] animate-in fade-in">
-            <div className="mb-6">
-              <h3 className="text-xl font-bold text-white flex items-center gap-2"><TrendingUp className="text-emerald-400" /> Scripless Accumulation Chart</h3>
-              <p className="text-sm text-slate-400 mt-1">Melacak pergerakan porsi saham digital (Scripless) masing-masing Paus 1% dari hari ke hari (Satuan: Lot).</p>
-            </div>
-            
-            {historyData.length < 2 ? (
-              <div className="h-[400px] flex flex-col items-center justify-center text-slate-500 border border-dashed border-white/[0.1] rounded-xl bg-black/20">
-                <BarChart3 className="w-12 h-12 mb-2 opacity-20" />
-                <p>Butuh minimal 2 tanggal data KSEI untuk menggambar grafik pergerakan.</p>
-              </div>
-            ) : (
-              <div className="h-[500px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={historyData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                    <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
-                    <YAxis stroke="#94a3b8" fontSize={12} tickFormatter={formatNumber} tickLine={false} axisLine={false} width={80} />
-                    <RechartsTooltip 
-                      formatter={(val: any) => [`${formatNumber(val)} Lot`, 'Scripless']}
-                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: 8 }}
-                      labelStyle={{ color: '#94a3b8', marginBottom: 8 }}
-                    />
-                    <Legend wrapperStyle={{ paddingTop: 20 }} />
-                    {linesConfig.map((inv, idx) => (
-                      <Line key={inv} type="monotone" dataKey={inv} stroke={COLORS[idx % COLORS.length]} strokeWidth={2} dot={{ r: 3, strokeWidth: 2 }} activeDot={{ r: 6 }} />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
+      {/* ============================================================ */}
+      {/* TAB 3: WHALE TRACKER */}
+      {/* ============================================================ */}
+      {activeTab === 'whale' && (
+        tabLoading ? (
+          <div className="space-y-4 animate-pulse">
+            <div className="glass rounded-2xl h-64 bg-accent/30" />
           </div>
-        )}
-
-        {/* ── TAB: 5% WHALE FLOW ──────────────────────────────────────────────── */}
-        {activeTab === 'whale-flow' && (
-          <div className="glass rounded-2xl border border-white/[0.05] overflow-hidden animate-in fade-in">
-            <div className="p-6 border-b border-white/[0.05]">
-              <h3 className="text-xl font-bold text-white flex items-center gap-2"><Eye className="text-blue-400" /> Log Transaksi Pemegang 5%</h3>
-              <p className="text-sm text-slate-400 mt-1">Setiap mutasi saham raksasa (Beli/Jual) direkam dan dikonversi ke Rupiah.</p>
-            </div>
-            <div className="overflow-x-auto bg-black/20">
-              <table className="w-full text-sm text-left">
-                <thead className="bg-white/[0.02] border-b border-white/[0.05] text-slate-400">
-                  <tr>
-                    <th className="px-6 py-4 font-medium">Tanggal</th>
-                    <th className="px-6 py-4 font-medium">Nama Investor</th>
-                    <th className="px-6 py-4 font-medium">Broker</th>
-                    <th className="px-6 py-4 font-medium text-center">Aksi</th>
-                    <th className="px-6 py-4 font-medium text-right">Vol (Lembar)</th>
-                    <th className="px-6 py-4 font-medium text-right text-gold-400">Nilai (Rp)</th>
+        ) : (
+        <div className="glass rounded-2xl overflow-hidden border border-border/30">
+          {whaleData.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-white/[0.02] border-b border-white/[0.05] text-[10px] text-muted-foreground uppercase">
+                    <th className="p-4 text-left">Investor</th>
+                    <th className="p-4 text-center">Type</th>
+                    <th className="p-4 text-right">Entry Price</th>
+                    <th className="p-4 text-right">Current</th>
+                    <th className="p-4 text-right">Return</th>
+                    <th className="p-4 text-right">Holding %</th>
+                    <th className="p-4 text-center">Trend</th>
+                    <th className="p-4 text-center">Verdict</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/[0.05]">
-                  {flowData.map((d, i) => {
-                    const isAcc = d.aksi === 'Buying' || d.aksi === 'Accumulation';
-                    return (
-                      <tr key={i} className="hover:bg-white/[0.02] transition-colors">
-                        <td className="px-6 py-4 text-slate-400">{new Date(d.tanggal_data).toLocaleDateString('id-ID')}</td>
-                        <td className="px-6 py-4 font-bold text-white">
-                          {d.nama_pemegang_saham}
-                          {d.konglomerasi !== '-' && <span className="block text-[10px] text-blue-400 mt-0.5">{d.konglomerasi}</span>}
-                        </td>
-                        <td className="px-6 py-4 text-slate-400">{d.kode_broker}</td>
-                        <td className="px-6 py-4 text-center">
-                          <span className={`px-2 py-1 rounded text-[10px] font-bold ${isAcc ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
-                            {d.aksi}
-                          </span>
-                        </td>
-                        <td className={`px-6 py-4 text-right font-mono ${isAcc ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {isAcc ? '+' : '-'}{formatNumber(d.perubahan_saham)}
-                        </td>
-                        <td className="px-6 py-4 text-right font-mono font-bold text-gold-400">
-                          {formatRupiah(d.transaction_value)}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                  {flowData.length === 0 && <tr><td colSpan={6} className="text-center py-8 text-slate-500">Tidak ada data flow 5%.</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* ── TAB: WHALE BROKER ───────────────────────────────────────────────── */}
-        {activeTab === 'broker' && (
-          <div className="glass rounded-2xl border border-white/[0.05] overflow-hidden animate-in fade-in">
-            <div className="p-6 border-b border-white/[0.05]">
-              <h3 className="text-xl font-bold text-white flex items-center gap-2"><Building2 className="text-amber-400" /> Aggregasi Broker (Paus 5%)</h3>
-              <p className="text-sm text-slate-400 mt-1">Total akumulasi dan distribusi per broker selama 30 Hari Terakhir.</p>
-            </div>
-            <div className="overflow-x-auto bg-black/20">
-              <table className="w-full text-sm text-left">
-                <thead className="bg-white/[0.02] border-b border-white/[0.05] text-slate-400">
-                  <tr>
-                    <th className="px-6 py-4 font-medium">Broker</th>
-                    <th className="px-6 py-4 font-medium text-right text-emerald-400">Total Beli (Rp)</th>
-                    <th className="px-6 py-4 font-medium text-right text-red-400">Total Jual (Rp)</th>
-                    <th className="px-6 py-4 font-medium text-right text-gold-400">Net Value (Rp)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/[0.05]">
-                  {brokerData.map((d, i) => {
-                    const isNetPos = Number(d.net_value) >= 0;
-                    return (
-                      <tr key={i} className="hover:bg-white/[0.02] transition-colors">
-                        <td className="px-6 py-4 font-bold text-white text-lg">{d.kode_broker}</td>
-                        <td className="px-6 py-4 text-right font-mono text-emerald-400">{formatRupiah(d.buy_value)}</td>
-                        <td className="px-6 py-4 text-right font-mono text-red-400">{formatRupiah(d.sell_value)}</td>
-                        <td className={`px-6 py-4 text-right font-mono font-black ${isNetPos ? 'text-gold-400' : 'text-red-500'}`}>
-                          {isNetPos ? '+' : ''}{formatRupiah(d.net_value)}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                  {brokerData.length === 0 && <tr><td colSpan={4} className="text-center py-8 text-slate-500">Tidak ada data broker 5%.</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* ── TAB: 1% OWNERSHIP ───────────────────────────────────────────────── */}
-        {activeTab === 'ownership' && (
-          <div className="glass rounded-2xl border border-white/[0.05] overflow-hidden animate-in fade-in">
-             <div className="p-6 border-b border-white/[0.05] flex justify-between items-center">
-              <div>
-                <h3 className="text-xl font-bold text-white flex items-center gap-2"><PieChart className="text-purple-400" /> Komposisi Kepemilikan 1%</h3>
-                <p className="text-sm text-slate-400 mt-1">Daftar lengkap entitas yang memegang saham ≥ 1%.</p>
-              </div>
-              <span className="px-3 py-1 bg-white/[0.05] rounded-lg text-xs font-mono text-slate-400">As of {basicInfo.last_update}</span>
-            </div>
-            <div className="overflow-x-auto bg-black/20">
-              <table className="w-full text-sm text-left">
-                <thead className="bg-white/[0.02] border-b border-white/[0.05] text-slate-400">
-                  <tr>
-                    <th className="px-6 py-4 font-medium">Nama Investor</th>
-                    <th className="px-6 py-4 font-medium">Tipe</th>
-                    <th className="px-6 py-4 font-medium text-center">Domisili</th>
-                    <th className="px-6 py-4 font-medium text-right">Scrip (Warkat)</th>
-                    <th className="px-6 py-4 font-medium text-right text-emerald-400">Scripless (Digital)</th>
-                    <th className="px-6 py-4 font-medium text-right text-gold-400">Total %</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/[0.05]">
-                  {ownershipData.map((d, i) => (
-                    <tr key={i} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="px-6 py-4 font-bold text-white max-w-[250px] truncate" title={d.investor_name}>{d.investor_name}</td>
-                      <td className="px-6 py-4 text-slate-400 text-xs">{d.investor_type}</td>
-                      <td className="px-6 py-4 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${d.local_foreign==='F' ? 'bg-blue-500/20 text-blue-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
-                          {d.local_foreign==='F' ? '🌏 Asing' : '🇮🇩 Lokal'}
-                        </span>
+                <tbody>
+                  {whaleData.map((w: any, i: number) => (
+                    <tr key={i} className="tr-hover border-b border-white/[0.02]">
+                      <td className="p-4">
+                       <p className="font-bold text-foreground">{w.investor_name}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {w.local_foreign === 'F' ? '🌏 Foreign' : '🇮🇩 Local'} • {w.investor_type}
+                        </p>
                       </td>
-                      <td className="px-6 py-4 text-right font-mono text-slate-500">{formatNumber(d.holdings_scrip)}</td>
-                      <td className="px-6 py-4 text-right font-mono font-bold text-emerald-400">{formatNumber(d.holdings_scripless)}</td>
-                      <td className="px-6 py-4 text-right font-mono font-black text-gold-400">{Number(d.percentage).toFixed(2)}%</td>
+                      <td className="p-4 text-center">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          w.investor_type === 'Individual' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'
+                        }`}>{w.investor_type}</span>
+                      </td>
+                      <td className="p-4 text-right font-semibold">{formatNumber(w.est_entry_price)}</td>
+                      <td className="p-4 text-right font-semibold">{formatNumber(w.current_price)}</td>
+                      <td className={`p-4 text-right font-bold ${w.return_since_entry >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {w.return_since_entry ? formatPercent(w.return_since_entry) : '-'}
+                      </td>
+                      <td className="p-4 text-right">
+                        <span className="font-bold">{w.latest_percentage}%</span>
+                        <p className="text-[10px] text-muted-foreground">{formatShares(w.latest_shares)} shares</p>
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          w.position_trend === 'INCREASING' ? 'bg-emerald-500/20 text-emerald-400' :
+                          w.position_trend === 'DECREASING' ? 'bg-red-500/20 text-red-400' : 'bg-slate-500/20 text-slate-400'
+                        }`}>{w.position_trend}</span>
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          w.whale_verdict === 'ADDING_POSITION' || w.whale_verdict === 'AVERAGING_DOWN' ? 'bg-emerald-500/20 text-emerald-400' :
+                          w.whale_verdict === 'TRIMMING' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'
+                        }`}>{w.whale_verdict}</span>
+                      </td>
                     </tr>
                   ))}
-                  {ownershipData.length === 0 && <tr><td colSpan={6} className="text-center py-8 text-slate-500">Tidak ada pemegang saham 1%.</td></tr>}
                 </tbody>
               </table>
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="p-12 text-center text-muted-foreground">
+              <Eye className="w-12 h-12 mx-auto mb-4 opacity-30" />
+              No whale data available (KSEI 1% required)
+            </div>
+          )}
+        </div>
+        )
+      )}
 
-      </div>
+      {/* ============================================================ */}
+      {/* TAB 4: VOLUME SPIKES */}
+      {/* ============================================================ */}
+      {activeTab === 'volume' && (
+        tabLoading ? (
+          <div className="space-y-4 animate-pulse">
+            <div className="glass rounded-2xl h-48 bg-accent/30" />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="glass rounded-xl h-32 bg-accent/30" />
+              <div className="glass rounded-xl h-32 bg-accent/30" />
+            </div>
+          </div>
+        ) : (
+        <div className="space-y-4">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-bold">
+              <ArrowUp className="w-3 h-3" /> {signalBubbles} Breakouts
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 text-red-400 text-xs font-bold">
+              <ArrowDown className="w-3 h-3" /> {signalDistributions} Distributions
+            </div>
+          </div>
+          {volumeSpikes.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 stagger">
+              {volumeSpikes.map((s: any, i: number) => (
+                <div key={i} className={`glass rounded-xl p-5 border ${
+                  s.spike_type.includes('BULLISH') || s.spike_type.includes('UP') ? 'border-emerald-500/30' :
+                  s.spike_type.includes('BEARISH') || s.spike_type.includes('DOWN') ? 'border-red-500/30' : 'border-border/30'
+                } card-hover`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs text-muted-foreground">{s.trading_date}</span>
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                      s.spike_type.includes('BULLISH') ? 'signal-strong-buy' :
+                      s.spike_type.includes('BEARISH') || s.spike_type.includes('DOWN') ? 'signal-avoid' :
+                      'bg-purple-500/20 text-purple-400'
+                    }`}>{s.spike_type}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <p className="text-[10px] text-muted-foreground uppercase">Close</p>
+                      <p className="text-lg font-black">{formatNumber(s.close)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-muted-foreground uppercase">Ratio</p>
+                      <p className="text-lg font-black text-purple-400">{s.volume_ratio}x</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-muted-foreground uppercase">Change</p>
+                      <p className={`text-lg font-black ${s.change_percent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {formatPercent(s.change_percent)}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-3 italic border-t border-white/[0.05] pt-3">
+                    💡 {s.interpretation}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="glass rounded-xl p-12 text-center text-muted-foreground">
+              <Zap className="w-12 h-12 mx-auto mb-4 opacity-30" />
+              No volume spikes detected (auto-threshold active)
+            </div>
+          )}
+        </div>
+        )
+      )}
+
+      {/* ============================================================ */}
+      {/* TAB 5: BROKER INTEL */}
+      {/* ============================================================ */}
+      {activeTab === 'broker' && (
+        tabLoading ? (
+          <div className="space-y-4 animate-pulse">
+            <div className="glass rounded-2xl h-64 bg-accent/30" />
+          </div>
+        ) : (
+        <div className="glass rounded-2xl overflow-hidden border border-border/30">
+          {brokerData.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-white/[0.02] border-b border-white/[0.05] text-[10px] text-muted-foreground uppercase">
+                    <th className="p-4 text-left">Broker</th>
+                    <th className="p-4 text-right">Total Buy</th>
+                    <th className="p-4 text-right">Total Sell</th>
+                    <th className="p-4 text-right">Net Change</th>
+                    <th className="p-4 text-right">Net Value</th>
+                    <th className="p-4 text-center">Buy Ratio</th>
+                    <th className="p-4 text-center">Strength</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {brokerData.map((b: any, i: number) => (
+                    <tr key={i} className="tr-hover border-b border-white/[0.02]">
+                      <td className="p-4">
+                        <p className="font-bold text-foreground text-xs">{b.kode_broker}</p>
+                        <p className="text-[10px] text-muted-foreground truncate max-w-[180px]">{b.nama_broker}</p>
+                      </td>
+                      <td className="p-4 text-right text-emerald-400">{formatShares(b.total_buy)}</td>
+                      <td className="p-4 text-right text-red-400">{formatShares(b.total_sell)}</td>
+                      <td className={`p-4 text-right font-bold ${b.net_change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {b.net_change >= 0 ? '+' : ''}{formatShares(b.net_change)}
+                      </td>
+                      <td className={`p-4 text-right font-bold ${b.net_value >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {formatRupiah(b.net_value)}
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          b.buy_ratio >= 80 ? 'signal-strong-buy' : b.buy_ratio >= 60 ? 'signal-watch' : 'signal-neutral'
+                        }`}>{b.buy_ratio}%</span>
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          b.strength === 'STRONG_BUY' ? 'signal-strong-buy' :
+                          b.strength === 'STRONG_SELL' ? 'signal-avoid' : 'bg-slate-500/20 text-slate-400'
+                        }`}>{b.strength}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="p-12 text-center text-muted-foreground">
+              <Building2 className="w-12 h-12 mx-auto mb-4 opacity-30" />
+              No broker data available (KSEI 5% required)
+            </div>
+          )}
+        </div>
+        )
+      )}
+      {/* ============================================================ */}
+      {/* TAB 6: OWNERSHIP STRUCTURE */}
+      {/* ============================================================ */}
+      {activeTab === 'ownership' && (
+        tabLoading ? (
+          <div className="space-y-4 animate-pulse">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[...Array(4)].map((_, i) => <div key={i} className="glass rounded-2xl h-36 bg-accent/30" />)}
+            </div>
+            <div className="glass rounded-2xl h-48 bg-accent/30" />
+          </div>
+        ) : (
+        <div className="space-y-6">
+          {ownershipData.length > 0 ? (
+            <>
+              {/* Category Breakdown Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {ownershipData.map((cat: any, i: number) => {
+                  const totalPct = ownershipData.reduce((s: number, c: any) => s + Number(c.total_percentage || 0), 0)
+                  const barWidth = totalPct > 0 ? (Number(cat.total_percentage) / totalPct) * 100 : 0
+                  const catColor = 
+                    cat.category === 'Institusi Lokal' ? 'from-amber-500 to-yellow-500' :
+                    cat.category === 'Individu Lokal'  ? 'from-emerald-500 to-green-500' :
+                    cat.category === 'Institusi Asing' ? 'from-blue-500 to-cyan-500' :
+                    'from-purple-500 to-violet-500'
+                  const borderColor =
+                    cat.category === 'Institusi Lokal' ? 'border-amber-500/30' :
+                    cat.category === 'Individu Lokal'  ? 'border-emerald-500/30' :
+                    cat.category === 'Institusi Asing' ? 'border-blue-500/30' : 'border-purple-500/30'
+                  return (
+                    <div key={i} className={`glass rounded-2xl p-5 border ${borderColor} card-hover`}>
+                      <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${catColor} flex items-center justify-center mb-3 shadow-lg`}>
+                        <PieChart className="w-5 h-5 text-white" />
+                      </div>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{cat.category}</p>
+                      <p className="text-3xl font-black text-foreground mt-1">{Number(cat.total_percentage).toFixed(1)}%</p>
+                      <div className="mt-3 h-1.5 rounded-full bg-white/[0.05] overflow-hidden">
+                        <div className={`h-full rounded-full bg-gradient-to-r ${catColor} transition-all duration-700`} style={{ width: `${barWidth}%` }} />
+                      </div>
+                      <div className="flex items-center justify-between mt-3">
+                        <span className="text-[10px] text-muted-foreground">{cat.investor_count} investor</span>
+                        <span className="text-[10px] text-gold-400 font-semibold truncate max-w-[120px] text-right">{cat.top1_investor}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Donut chart — visual via CSS */}
+              <div className="glass rounded-2xl p-6 border border-border/30">
+                <h3 className="font-bold text-foreground mb-4 flex items-center gap-2">
+                  <Target className="w-5 h-5 text-gold-400" /> Top Pemegang Saham ≥1%
+                  <span className="ml-auto text-xs text-muted-foreground font-normal">As of {ownershipData[0]?.report_date}</span>
+                </h3>
+                <div className="space-y-2">
+                  {ownershipData.map((cat: any, i: number) => {
+                    const bgColor =
+                      cat.category === 'Institusi Lokal' ? 'bg-amber-500' :
+                      cat.category === 'Individu Lokal'  ? 'bg-emerald-500' :
+                      cat.category === 'Institusi Asing' ? 'bg-blue-500' : 'bg-purple-500'
+                    return (
+                      <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] transition-colors">
+                        <span className={`w-2.5 h-2.5 rounded-full ${bgColor} flex-shrink-0`} />
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-sm font-bold text-foreground">{cat.top1_investor}</span>
+                            <span className="text-sm font-bold text-gold-400">{Number(cat.top1_percentage).toFixed(2)}%</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-muted-foreground">{cat.category}</span>
+                            <span className="text-[10px] text-muted-foreground">{formatShares(Number(cat.total_shares))} shares</span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="glass rounded-xl p-16 text-center text-muted-foreground">
+              <PieChart className="w-16 h-16 mx-auto mb-4 opacity-20" />
+              <p className="font-bold">No KSEI ownership data for {stockCode}</p>
+              <p className="text-xs mt-1">Data requires ≥1% holding threshold (KSEI C01)</p>
+            </div>
+          )}
+        </div>
+        )
+      )}
+
+      {/* ============================================================ */}
+      {/* TAB 7: FOREIGN FLOW DIVERGENCE */}
+      {/* ============================================================ */}
+      {activeTab === 'foreign-flow' && (
+        tabLoading ? (
+          <div className="space-y-4 animate-pulse">
+            <div className="glass rounded-2xl h-64 bg-accent/30" />
+          </div>
+        ) : (
+        <div className="space-y-6">
+          {foreignFlowData.length > 0 ? (
+            <>
+              {foreignFlowData.map((d: any, i: number) => {
+                const divergenceType = d.divergence_type || 'NEUTRAL'
+                const isBullish = divergenceType.includes('BULLISH') || divergenceType.includes('STEALTH')
+                const isBearish = divergenceType.includes('BEARISH') || divergenceType.includes('DISTRIBUTION')
+                return (
+                  <div key={i} className={`glass rounded-2xl p-6 border ${
+                    isBullish ? 'border-emerald-500/30' : isBearish ? 'border-red-500/30' : 'border-border/30'
+                  }`}>
+                    {/* Divergence Header */}
+                    <div className="flex items-center justify-between mb-5">
+                      <div>
+                        <h3 className="text-xl font-black text-foreground">
+                          {isBullish ? '🕵️ Stealth Accumulation' : isBearish ? '⚠️ Smart Distribution' : '📊 Normal Flow'}
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">30-hari terakhir · Window analisis</p>
+                      </div>
+                      <span className={`px-4 py-2 rounded-xl text-sm font-bold ${
+                        isBullish ? 'signal-strong-buy' : isBearish ? 'signal-avoid' : 'signal-neutral'
+                      }`}>{divergenceType}</span>
+                    </div>
+
+                    {/* Metrics Grid */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+                      {[
+                        { label: 'Net Foreign 30D', value: formatRupiah(Number(d.net_foreign_30d || 0)), color: Number(d.net_foreign_30d) >= 0 ? 'text-emerald-400' : 'text-red-400', icon: Globe },
+                        { label: 'Broker Net', value: formatShares(Number(d.broker_net_change || 0)), color: Number(d.broker_net_change) >= 0 ? 'text-emerald-400' : 'text-red-400', icon: Building2 },
+                        { label: 'Price Change', value: `${Number(d.price_chg_pct || 0).toFixed(2)}%`, color: Number(d.price_chg_pct) >= 0 ? 'text-emerald-400' : 'text-red-400', icon: TrendingUp },
+                        { label: 'Divergence Score', value: `${Number(d.divergence_score || 0).toFixed(0)}/100`, color: 'text-gold-400', icon: Scale },
+                      ].map((m, j) => {
+                        const Icon = m.icon
+                        return (
+                          <div key={j} className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Icon className="w-3.5 h-3.5 text-muted-foreground" />
+                              <p className="text-[10px] text-muted-foreground uppercase">{m.label}</p>
+                            </div>
+                            <p className={`text-xl font-black ${m.color}`}>{m.value}</p>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {/* Interpretation */}
+                    {d.interpretation && (
+                      <div className={`p-4 rounded-xl ${
+                        isBullish ? 'bg-emerald-500/10 border border-emerald-500/20' :
+                        isBearish ? 'bg-red-500/10 border border-red-500/20' : 'bg-white/[0.02] border border-white/[0.04]'
+                      }`}>
+                        <p className="text-sm font-medium">💡 {d.interpretation}</p>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </>
+          ) : (
+            <div className="glass rounded-xl p-16 text-center text-muted-foreground">
+              <Globe className="w-16 h-16 mx-auto mb-4 opacity-20" />
+              <p className="font-bold">Tidak ada data Foreign Flow untuk {stockCode}</p>
+              <p className="text-xs mt-1">Minimal 30 hari data transaksi diperlukan</p>
+            </div>
+          )}
+        </div>
+        )
+      )}
     </div>
   )
 }
