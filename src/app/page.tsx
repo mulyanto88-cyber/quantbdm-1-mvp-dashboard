@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react'
 import {
   Activity, TrendingUp, TrendingDown, DollarSign, BarChart3,
   ShieldCheck, Zap, Building2, Globe, Target, Clock, ArrowRightLeft,
-  AlertTriangle, CheckCircle2, MinusCircle, XCircle,
+  Flame, AlertTriangle, CheckCircle2, MinusCircle, XCircle,
   BarChart2, Layers, Bell, ChevronUp, ChevronDown
 } from 'lucide-react'
 import Link from 'next/link'
@@ -13,8 +13,6 @@ import {
   ResponsiveContainer, Cell, PieChart, Pie, Legend
 } from 'recharts'
 import { supabase } from '@/lib/supabase'
-
-// ─── HELPER FUNCTIONS & CONFIGS ──────────────────────────────────────────────
 
 const COLORS = ['#22c55e', '#8b5cf6', '#ef4444', '#e7b733', '#64748b', '#06b6d4', '#ec4899']
 
@@ -60,27 +58,6 @@ const ALERT_CFG: Record<string, { cls: string; dot: string }> = {
 }
 function getAlertCfg(a: string) { return ALERT_CFG[a] ?? ALERT_CFG.LOW }
 
-// ─── RECHARTS CUSTOM TOOLTIP ───────────────────────────────────────────────
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-navy-900/90 border border-border/50 backdrop-blur-md p-3 rounded-xl shadow-xl">
-        <p className="text-foreground font-bold mb-1">{label}</p>
-        {payload.map((entry: any, index: number) => (
-          <p key={index} className="text-sm font-medium" style={{ color: entry.color }}>
-            {entry.name}: {entry.name.toLowerCase().includes('ownership') || entry.name.toLowerCase().includes('pct') 
-              ? `${entry.value.toFixed(2)}%` 
-              : fmtRp(entry.value)}
-          </p>
-        ))}
-      </div>
-    );
-  }
-  return null;
-};
-
-// ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
-
 type TabType = 'market' | 'ksei5' | 'ksei1'
 
 export default function MarketOverview() {
@@ -112,15 +89,18 @@ export default function MarketOverview() {
     setLoading(false)
   }
 
-  // Fetch Functions (Kept exactly as original for logic, optimized assignments)
+  // ── MARKET PULSE ──────────────────────────────────────────────────────────
   async function fetchMarketPulse() {
     try {
-      const { data: dateData } = await supabase.from('daily_transactions').select('trading_date').order('trading_date', { ascending: false }).limit(1)
+      const { data: dateData } = await supabase
+        .from('daily_transactions').select('trading_date')
+        .order('trading_date', { ascending: false }).limit(1)
       const date = dateData?.[0]?.trading_date
       if (!date) return
       setLatestTxDate(date)
 
-      const { data } = await supabase.from('daily_transactions')
+      const { data } = await supabase
+        .from('daily_transactions')
         .select('stock_code,close,change_percent,volume,value,net_foreign_value,aov_ratio_ma20,whale_signal,signal')
         .eq('trading_date', date).gt('volume', 0).limit(2000)
       if (!data) return
@@ -160,36 +140,50 @@ export default function MarketOverview() {
     } catch (e) { console.error('fetchMarketPulse', e) }
   }
 
+  // ── SECTOR ROTATION ───────────────────────────────────────────────────────
   async function fetchSectorRotation() {
     try {
-      const { data } = await supabase.rpc('get_sector_rotation')
+      const { data, error } = await supabase.rpc('get_sector_rotation')
+      if (error) { console.error('get_sector_rotation', error); return }
       setSectorData(data ?? [])
     } catch (e) { console.error('fetchSectorRotation', e) }
   }
 
+  // ── HIGH CONVICTION ───────────────────────────────────────────────────────
   async function fetchHighConviction() {
     try {
-      const { data } = await supabase.rpc('scan_high_conviction')
-      const sorted = (data ?? []).sort((a: any, b: any) => (Number(b.conviction_score) || 0) - (Number(a.conviction_score) || 0)).slice(0, 10)
+      const { data, error } = await supabase.rpc('scan_high_conviction')
+      if (error) { console.error('scan_high_conviction', error); return }
+      const sorted = (data ?? [])
+        .sort((a: any, b: any) => (Number(b.conviction_score) || 0) - (Number(a.conviction_score) || 0))
+        .slice(0, 10)
       setConvictionData(sorted)
     } catch (e) { console.error('fetchHighConviction', e) }
   }
 
+  // ── KSEI MOVEMENT ALERT ───────────────────────────────────────────────────
   async function fetchKseiMovementAlert() {
     try {
-      const { data } = await supabase.rpc('get_ksei_movement_alert')
+      const { data, error } = await supabase.rpc('get_ksei_movement_alert')
+      if (error) { console.error('get_ksei_movement_alert', error); return }
       setKseiAlerts(data ?? [])
     } catch (e) { console.error('fetchKseiMovementAlert', e) }
   }
 
+  // ── KSEI 5% ───────────────────────────────────────────────────────────────
   async function fetchKsei5() {
     try {
-      const { data: dateData } = await supabase.from('ksei_data5_mutasi').select('tanggal_data').order('tanggal_data', { ascending: false }).limit(1)
+      const { data: dateData } = await supabase
+        .from('ksei_data5_mutasi').select('tanggal_data')
+        .order('tanggal_data', { ascending: false }).limit(1)
       const date = dateData?.[0]?.tanggal_data
       if (!date) return
       setLatestKsei5Date(date)
 
-      const { data } = await supabase.from('ksei_data5_mutasi').select('kode_efek,aksi,transaction_value,konglomerasi').eq('tanggal_data', date).limit(3000)
+      const { data } = await supabase
+        .from('ksei_data5_mutasi')
+        .select('kode_efek,aksi,transaction_value,konglomerasi')
+        .eq('tanggal_data', date).limit(3000)
       if (!data) return
 
       let totalBuy = 0, totalSell = 0
@@ -204,8 +198,10 @@ export default function MarketOverview() {
         } else if (r.aksi === 'Reduction') {
           totalSell += tv; stockMap.set(r.kode_efek, (stockMap.get(r.kode_efek) || 0) - tv)
         }
-        if (r.aksi !== 'Holding' && r.aksi !== 'Skip') actionCount[r.aksi] = (actionCount[r.aksi] || 0) + 1
-        if (r.konglomerasi && r.konglomerasi !== '-' && tv > 0) kongloMap.set(r.konglomerasi, (kongloMap.get(r.konglomerasi) || 0) + tv)
+        if (r.aksi !== 'Holding' && r.aksi !== 'Skip')
+          actionCount[r.aksi] = (actionCount[r.aksi] || 0) + 1
+        if (r.konglomerasi && r.konglomerasi !== '-' && tv > 0)
+          kongloMap.set(r.konglomerasi, (kongloMap.get(r.konglomerasi) || 0) + tv)
       })
 
       setKsei5Data({
@@ -219,14 +215,20 @@ export default function MarketOverview() {
     } catch (e) { console.error('fetchKsei5', e) }
   }
 
+  // ── KSEI 1% ───────────────────────────────────────────────────────────────
   async function fetchKsei1() {
     try {
-      const { data: dateData } = await supabase.from('ksei_data1persen_mutasi').select('date').order('date', { ascending: false }).limit(1)
+      const { data: dateData } = await supabase
+        .from('ksei_data1persen_mutasi').select('date')
+        .order('date', { ascending: false }).limit(1)
       const date = dateData?.[0]?.date
       if (!date) return
       setLatestKsei1Date(date)
 
-      const { data } = await supabase.from('ksei_data1persen_mutasi').select('share_code,investor_name,investor_type,local_foreign,total_holding_shares,percentage').eq('date', date).limit(5000)
+      const { data } = await supabase
+        .from('ksei_data1persen_mutasi')
+        .select('share_code,investor_name,investor_type,local_foreign,total_holding_shares,percentage')
+        .eq('date', date).limit(5000)
       if (!data) return
 
       let foreignPct = 0, localPct = 0, totalShares = 0
@@ -279,10 +281,10 @@ export default function MarketOverview() {
   return (
     <div className="space-y-8 pb-10 animate-fade-in">
 
-      {/* HEADER SECTION */}
+      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative">
-        <div className="absolute -top-20 -left-20 w-64 h-64 bg-gold-500/10 rounded-full blur-[100px] pointer-events-none" />
-        <div className="absolute -top-20 right-20 w-64 h-64 bg-blue-500/10 rounded-full blur-[100px] pointer-events-none" />
+        <div className="absolute -top-20 -left-20 w-64 h-64 bg-gold-500/20 rounded-full blur-[100px] pointer-events-none" />
+        <div className="absolute -top-20 right-20 w-64 h-64 bg-blue-500/20 rounded-full blur-[100px] pointer-events-none" />
         <div className="relative z-10">
           <h1 className="text-4xl md:text-5xl font-black text-white tracking-tight">
             Market <span className="text-transparent bg-clip-text bg-gradient-to-r from-gold-300 via-yellow-500 to-gold-400 drop-shadow-[0_0_15px_rgba(231,183,51,0.3)]">Intelligence</span>
@@ -295,424 +297,499 @@ export default function MarketOverview() {
         </div>
       </div>
 
-      {/* TABS NAVIGATION */}
-      <div className="glass rounded-2xl p-1.5 flex gap-1 overflow-x-auto border border-border/40 shadow-lg scrollbar-hide">
+      {/* Tab Nav */}
+      <div className="glass rounded-2xl p-1.5 flex gap-1 overflow-x-auto border border-border/50 shadow-lg shadow-black/10">
         {tabs.map(tab => {
           const Icon = tab.icon
           const isActive = activeTab === tab.id
           return (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2.5 px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-300 whitespace-nowrap relative flex-1 justify-center md:flex-none ${
+              className={`flex items-center gap-2.5 px-5 py-3 rounded-xl text-sm font-semibold transition-all duration-300 whitespace-nowrap relative ${
                 isActive ? 'bg-gradient-to-r from-gold-400 to-yellow-500 text-navy-900 shadow-lg shadow-gold-400/20'
                          : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
               }`}>
               <Icon className={`w-4 h-4 ${isActive ? 'text-navy-900' : ''}`} />
               {tab.label}
-              {isActive && <span className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-10 h-1 bg-gold-400 rounded-full hidden md:block" />}
+              {isActive && <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-8 h-1 bg-gold-400 rounded-full hidden md:block" />}
             </button>
           )
         })}
       </div>
 
-      {/* DATE INDICATOR */}
-      <div className="flex items-center gap-2 text-xs text-muted-foreground bg-accent/20 w-fit px-3 py-1.5 rounded-lg border border-border/30">
-        <Clock className="w-3.5 h-3.5" />
-        <span className="font-medium">
+      {/* Date */}
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Clock className="w-3 h-3" />
+        <span>
           {activeTab === 'market' && `Latest Trading: ${latestTxDate}`}
           {activeTab === 'ksei5'  && `Latest KSEI 5%: ${latestKsei5Date}`}
           {activeTab === 'ksei1'  && `Latest KSEI 1%: ${latestKsei1Date}`}
         </span>
       </div>
 
-      {/* ── RENDERING SUB-VIEWS ── */}
+
+      {/* ═══════════════  TAB 1 · MARKET PULSE  ═══════════════ */}
       {activeTab === 'market' && marketData && (
-        <MarketPulseView 
-          marketData={marketData} 
-          sectorData={sectorData} 
-          convictionData={convictionData} 
-          kseiAlerts={kseiAlerts} 
-        />
-      )}
+        <div className="space-y-6 animate-fade-in">
 
-      {activeTab === 'ksei5' && ksei5Data && (
-        <Ksei5View ksei5Data={ksei5Data} />
-      )}
-
-      {activeTab === 'ksei1' && ksei1Data && (
-        <Ksei1View ksei1Data={ksei1Data} />
-      )}
-
-    </div>
-  )
-}
-
-// ─── SUB-COMPONENTS (Tujuannya agar file lebih rapi dan modular) ─────────────
-
-function MarketPulseView({ marketData, sectorData, convictionData, kseiAlerts }: any) {
-  return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Row 1: Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { title: 'Market Breadth', value: `${marketData.up}↑  ${marketData.down}↓`, icon: BarChart3,    color: 'text-blue-400',   sub: 'Advancers vs Decliners' },
-          { title: 'Total Turnover', value: fmtRp(marketData.totalValue),              icon: DollarSign,  color: 'text-gold-400',   sub: 'Daily value traded' },
-          { title: 'Net Foreign',    value: fmtRp(marketData.totalForeign),            icon: Globe,       color: marketData.totalForeign >= 0 ? 'text-green-400' : 'text-red-400', sub: marketData.totalForeign >= 0 ? 'Inflow' : 'Outflow' },
-          { title: 'AOV Spikes',     value: marketData.spikes.length,                  icon: Zap,         color: 'text-purple-400', sub: 'Whale signals today' },
-        ].map((m, i) => {
-          const Icon = m.icon
-          return (
-            <div key={i} className="glass rounded-2xl p-5 border border-border/40 hover:border-gold-400/30 transition-all duration-300 relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                 <Icon className="w-16 h-16" />
-              </div>
-              <div className="flex items-center justify-between mb-3 relative z-10">
-                <div className={`p-2 rounded-lg bg-accent/30 ${m.color}`}><Icon className="w-4 h-4" /></div>
-                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">{m.sub}</span>
-              </div>
-              <p className="text-xs text-muted-foreground uppercase tracking-wider relative z-10">{m.title}</p>
-              <p className={`text-2xl font-black mt-1 relative z-10 ${m.color}`}>{m.value}</p>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Row 2: Top Volume & Top Value */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {[
-          { title: '📊 Top Volume', icon: BarChart2, iconColor: 'text-cyan-400', border: 'border-cyan-500/20', bg: 'bg-cyan-500/5', data: marketData.topVolume, valKey: 'volume', valFmt: (v: number) => fmtNum(v), valColor: 'text-cyan-400', barColor: 'bg-cyan-400', label: 'lot' },
-          { title: '💰 Top Value',  icon: DollarSign,iconColor: 'text-gold-400', border: 'border-gold-500/20', bg: 'bg-gold-500/5', data: marketData.topValue,  valKey: 'value',  valFmt: (v: number) => fmtRp(v),   valColor: 'text-gold-400', barColor: 'bg-gold-400', label: '' },
-        ].map((sec, si) => {
-          const Icon = sec.icon
-          const maxVal = sec.data[0]?.[sec.valKey] || 1
-          return (
-            <div key={si} className={`glass rounded-2xl overflow-hidden border ${sec.border} hover:border-gold-400/30 transition-all duration-300`}>
-              <div className={`${sec.bg} px-5 py-3.5 border-b ${sec.border} flex items-center gap-2`}>
-                <Icon className={`w-4 h-4 ${sec.iconColor}`} />
-                <h3 className={`font-bold text-sm ${sec.iconColor}`}>{sec.title}</h3>
-              </div>
-              <div className="divide-y divide-border/20">
-                {sec.data.map((s: any, i: number) => (
-                  <Link key={i} href={`/stock/${s.code}`} className="flex items-center gap-4 px-5 py-3.5 hover:bg-accent/20 transition-colors group">
-                    <span className="text-xs text-muted-foreground w-4 font-mono text-center">{i + 1}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex justify-between items-center mb-1.5">
-                        <span className="font-mono font-black text-sm text-foreground group-hover:text-gold-400 transition-colors">{s.code}</span>
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full bg-accent/40 ${s.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                          {s.change > 0 ? '+' : ''}{s.change?.toFixed(2)}%
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1 h-1.5 bg-accent/50 rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full ${sec.barColor} transition-all duration-500`} style={{ width: `${(s[sec.valKey] / maxVal) * 100}%` }} />
-                        </div>
-                        <span className={`text-xs font-bold ${sec.valColor} whitespace-nowrap min-w-[70px] text-right`}>
-                          {sec.valFmt(s[sec.valKey])} <span className="text-[10px] text-muted-foreground">{sec.label}</span>
-                        </span>
-                      </div>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Row 3: Sector Rotation */}
-      {sectorData.length > 0 && (
-        <div className="glass rounded-2xl overflow-hidden border border-purple-500/20 hover:border-gold-400/30 transition-all duration-300">
-          <div className="bg-purple-500/5 px-5 py-4 border-b border-purple-500/20 flex items-center gap-2">
-            <Layers className="w-4 h-4 text-purple-400" />
-            <h3 className="font-bold text-sm text-purple-400">🌀 Sector Rotation</h3>
-            <span className="ml-auto text-[10px] text-muted-foreground uppercase font-bold tracking-widest hidden sm:inline-block">Color-coded by momentum</span>
-          </div>
-          <div className="p-5">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-              {sectorData.map((sec: any, i: number) => {
-                const momentum = sec.momentum ?? sec.label ?? sec.trend ?? 'NEUTRAL'
-                const cfg = getMomentumCfg(momentum)
-                const chg = Number(sec.avg_change_pct ?? sec.avg_return ?? sec.avg_change ?? sec.return_pct ?? 0)
-                const sectorName = sec.sector ?? sec.sector_name ?? sec.name ?? '—'
-                return (
-                  <div key={i} className={`${cfg.bg} border ${cfg.border} rounded-xl p-3.5 flex flex-col gap-2 hover:scale-[1.02] transition-all duration-200 cursor-default shadow-sm`}>
-                    <div className="flex items-start justify-between gap-1 mb-1">
-                      <p className="text-xs font-bold text-foreground leading-tight line-clamp-2" title={sectorName}>{sectorName}</p>
-                      <span className={`flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${cfg.badge}`}>
-                        {cfg.icon}{momentum.replace('_', ' ')}
-                      </span>
-                    </div>
-                    <div className="flex items-end justify-between mt-auto">
-                      <div>
-                        <p className={`text-lg font-black leading-none ${chg >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                          {chg >= 0 ? '+' : ''}{chg.toFixed(2)}%
-                        </p>
-                      </div>
-                      {sec.total_value && (
-                        <p className="text-[10px] text-muted-foreground text-right">{fmtRp(Number(sec.total_value))}</p>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Row 4: Gainers / Losers */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {[
-          { title: '🔥 Top 10 Gainers', data: marketData.gainers, color: 'text-green-400', bg: 'bg-green-500/5', border: 'border-green-500/20' },
-          { title: '❄️ Top 10 Losers',  data: marketData.losers,  color: 'text-red-400',   bg: 'bg-red-500/5',   border: 'border-red-500/20' },
-        ].map((sec, si) => (
-          <div key={si} className={`glass rounded-2xl overflow-hidden border ${sec.border} hover:border-gold-400/30 transition-all duration-300`}>
-            <div className={`${sec.bg} px-5 py-3 border-b ${sec.border}`}>
-              <h3 className={`font-bold text-sm ${sec.color}`}>{sec.title}</h3>
-            </div>
-            <div className="divide-y divide-border/20">
-              {sec.data.map((s: any, i: number) => (
-                <Link key={i} href={`/stock/${s.code}`} className="flex items-center justify-between p-4 hover:bg-accent/20 transition-colors group">
-                  <div>
-                    <span className="font-mono font-black text-foreground group-hover:text-gold-400 transition-colors">{s.code}</span>
-                    <span className="text-xs text-muted-foreground ml-3 bg-accent/30 px-2 py-0.5 rounded">Rp {s.close?.toLocaleString('id-ID')}</span>
-                  </div>
-                  <span className={`font-bold ${sec.color}`}>{s.change > 0 ? '+' : ''}{s.change?.toFixed(2)}%</span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Row 5: High Conviction Table */}
-      {convictionData.length > 0 && (
-        <div className="glass rounded-2xl overflow-hidden border border-amber-500/20 hover:border-gold-400/30 transition-all duration-300">
-          <div className="bg-amber-500/5 px-5 py-4 border-b border-amber-500/20 flex items-center gap-2">
-            <Target className="w-4 h-4 text-amber-400" />
-            <h3 className="font-bold text-sm text-amber-400">🎯 High Conviction Picks</h3>
-          </div>
-          <div className="overflow-x-auto scrollbar-hide">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-border/20 bg-accent/10">
-                  {['Stock', 'Sector', 'Price', 'Chg%', 'Conviction', 'Smart$', 'Signal', 'Flags'].map(h => (
-                    <th key={h} className="px-5 py-3 text-[10px] font-bold text-muted-foreground uppercase tracking-wider whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/10">
-                {convictionData.map((s: any, i: number) => {
-                  const sig   = getSignalCfg(s.signal)
-                  const score = Number(s.conviction_score) || 0
-                  return (
-                    <tr key={i} className="hover:bg-accent/20 transition-colors group">
-                      <td className="px-5 py-4">
-                        <Link href={`/stock/${s.stock_code}`} className="font-mono font-black text-foreground group-hover:text-gold-400 transition-colors">
-                          {s.stock_code}
-                        </Link>
-                      </td>
-                      <td className="px-5 py-4 text-xs text-muted-foreground max-w-[130px] truncate" title={s.sector}>{s.sector ?? '—'}</td>
-                      <td className="px-5 py-4 text-sm font-semibold text-foreground whitespace-nowrap">
-                        Rp {Number(s.current_price)?.toLocaleString('id-ID')}
-                      </td>
-                      <td className={`px-5 py-4 text-sm font-bold whitespace-nowrap ${Number(s.price_chg_pct) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {Number(s.price_chg_pct) > 0 ? '+' : ''}{Number(s.price_chg_pct)?.toFixed(2)}%
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 h-1.5 bg-accent rounded-full overflow-hidden">
-                            <div className="h-full bg-gradient-to-r from-amber-400 to-orange-500 rounded-full" style={{ width: `${Math.min(score * 10, 100)}%` }} />
-                          </div>
-                          <span className="text-xs font-black text-amber-400">{score.toFixed(1)}</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="text-xs font-bold text-purple-400 bg-purple-500/10 px-2 py-1 rounded-md">{Number(s.smart_money_score)?.toFixed(1)}</span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap ${sig.cls}`}>
-                          {sig.icon}{s.signal}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex gap-1.5 flex-wrap">
-                          {s.whale_signal     && <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-bold border border-purple-500/30">🐋</span>}
-                          {s.is_stealth       && <span className="text-[10px] px-2 py-0.5 rounded bg-slate-500/20 text-slate-300 font-bold border border-slate-500/30">STEALTH</span>}
-                          {s.big_player_anomaly&& <span className="text-[10px] px-2 py-0.5 rounded bg-orange-500/20 text-orange-300 font-bold border border-orange-500/30">BIG</span>}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function Ksei5View({ ksei5Data }: any) {
-  return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { title: 'Total Buy',     value: fmtRp(ksei5Data.totalBuy),   icon: TrendingUp,    color: 'text-green-400' },
-          { title: 'Total Sell',    value: fmtRp(ksei5Data.totalSell),  icon: TrendingDown,  color: 'text-red-400' },
-          { title: 'Net Flow',      value: fmtRp(ksei5Data.netFlow),    icon: ArrowRightLeft,color: ksei5Data.netFlow >= 0 ? 'text-green-400' : 'text-red-400' },
-          { title: 'Active Stocks', value: ksei5Data.activeStocks,      icon: Target,        color: 'text-blue-400' },
-        ].map((m, i) => { 
-          const Icon = m.icon; 
-          return (
-          <div key={i} className="glass rounded-2xl p-5 border border-border/40 hover:border-gold-400/30 transition-all duration-300 relative overflow-hidden group">
-            <div className={`p-2 rounded-lg bg-accent/30 w-fit mb-4 ${m.color}`}><Icon className="w-5 h-5" /></div>
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">{m.title}</p>
-            <p className={`text-2xl font-black mt-1 ${m.color}`}>{m.value}</p>
-          </div>
-        )})}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="glass rounded-2xl p-6 border border-border/40 hover:border-gold-400/30 transition-all duration-300">
-          <h3 className="font-bold text-foreground mb-6 flex items-center gap-2">
-            <PieChart className="w-4 h-4 text-blue-400" /> Action Breakdown
-          </h3>
-          <ResponsiveContainer width="100%" height={280}>
-            <PieChart>
-              <Pie data={ksei5Data.actionBreakdown} cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={4} dataKey="value" stroke="none">
-                {ksei5Data.actionBreakdown.map((_: any, idx: number) => <Cell key={idx} fill={COLORS[idx % COLORS.length]} opacity={0.8} />)}
-              </Pie>
-              <Tooltip content={<CustomTooltip />} />
-              <Legend verticalAlign="bottom" height={36} iconType="circle" />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="glass rounded-2xl p-6 border border-border/40 hover:border-gold-400/30 transition-all duration-300">
-          <h3 className="font-bold text-foreground mb-6 flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-purple-400" /> Top Konglomerasi
-          </h3>
-          <div className="space-y-4">
-            {ksei5Data.topKonglo.map((item: any, i: number) => {
-              const maxVal = ksei5Data.topKonglo[0]?.value || 1
+          {/* Row 1 · Summary cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { title: 'Market Breadth', value: `${marketData.up}↑  ${marketData.down}↓`, icon: BarChart3,   color: 'text-blue-400',   sub: 'Advancers vs Decliners' },
+              { title: 'Total Turnover', value: fmtRp(marketData.totalValue),              icon: DollarSign,  color: 'text-gold-400',   sub: 'Daily value traded' },
+              { title: 'Net Foreign',    value: fmtRp(marketData.totalForeign),            icon: Globe,       color: marketData.totalForeign >= 0 ? 'text-green-400' : 'text-red-400', sub: marketData.totalForeign >= 0 ? 'Inflow' : 'Outflow' },
+              { title: 'AOV Spikes',     value: marketData.spikes.length,                  icon: Zap,         color: 'text-purple-400', sub: 'Whale signals today' },
+            ].map((m, i) => {
+              const Icon = m.icon
               return (
-                <div key={i} className="group">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-semibold text-foreground truncate group-hover:text-gold-400 transition-colors flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground font-mono bg-accent/40 px-1.5 py-0.5 rounded">#{i + 1}</span> {item.name}
-                    </span>
-                    <span className="text-sm font-bold text-gold-400">{fmtRp(item.value)}</span>
+                <div key={i} className="glass rounded-2xl p-5 card-hover border border-border/30 hover:border-gold-400/30 transition-all duration-300">
+                  <div className="flex items-center justify-between mb-3">
+                    <Icon className={`w-5 h-5 ${m.color}`} />
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold">{m.sub}</span>
                   </div>
-                  <div className="w-full h-1.5 bg-accent/50 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full transition-all duration-500"
-                      style={{ width: `${(item.value / maxVal) * 100}%` }} />
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">{m.title}</p>
+                  <p className={`text-2xl font-black mt-1 ${m.color}`}>{m.value}</p>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Row 2 · ★ Top Volume + Top Value */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {[
+              { title: '📊 Top Volume', icon: BarChart2, iconColor: 'text-cyan-400',  border: 'border-cyan-500/20',  bg: 'bg-cyan-500/5',  data: marketData.topVolume, valKey: 'volume', valFmt: (v: number) => fmtNum(v),  valColor: 'text-cyan-400',  barColor: 'bg-cyan-400',  label: 'lot' },
+              { title: '💰 Top Value',  icon: DollarSign,iconColor: 'text-gold-400',  border: 'border-gold-500/20',  bg: 'bg-gold-500/5',  data: marketData.topValue,  valKey: 'value',  valFmt: (v: number) => fmtRp(v),   valColor: 'text-gold-400',  barColor: 'bg-gold-400',  label: '' },
+            ].map((sec, si) => {
+              const Icon = sec.icon
+              const maxVal = sec.data[0]?.[sec.valKey] || 1
+              return (
+                <div key={si} className={`glass rounded-2xl overflow-hidden border ${sec.border} hover:border-gold-400/30 transition-all duration-300`}>
+                  <div className={`${sec.bg} px-5 py-3 border-b ${sec.border} flex items-center gap-2`}>
+                    <Icon className={`w-4 h-4 ${sec.iconColor}`} />
+                    <h3 className={`font-bold text-sm ${sec.iconColor}`}>{sec.title}</h3>
+                  </div>
+                  <div className="divide-y divide-border/20">
+                    {sec.data.map((s: any, i: number) => (
+                      <Link key={i} href={`/stock/${s.code}`} className="flex items-center gap-3 px-4 py-3 hover:bg-accent/20 transition-colors group">
+                        <span className="text-xs text-muted-foreground w-4 font-mono">{i + 1}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="font-mono font-black text-sm text-foreground group-hover:text-gold-400 transition-colors">{s.code}</span>
+                            <span className={`text-xs font-bold ${s.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {s.change > 0 ? '+' : ''}{s.change?.toFixed(2)}%
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 h-1 bg-accent/50 rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full ${sec.barColor} transition-all duration-500`}
+                                style={{ width: `${(s[sec.valKey] / maxVal) * 100}%` }} />
+                            </div>
+                            <span className={`text-xs font-bold ${sec.valColor} whitespace-nowrap`}>
+                              {sec.valFmt(s[sec.valKey])} {sec.label}
+                            </span>
+                          </div>
+                        </div>
+                      </Link>
+                    ))}
                   </div>
                 </div>
               )
             })}
           </div>
-        </div>
-      </div>
-      
-      {/* Accumulation & Distribution Tables */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {[
-          { title: '🔥 Top Accumulation', data: ksei5Data.topAcc,  color: 'text-green-400', barColor: 'bg-green-400', border: 'border-green-500/20', bg: 'bg-green-500/5' },
-          { title: '❄️ Top Distribution', data: ksei5Data.topDist, color: 'text-red-400',   barColor: 'bg-red-400',   border: 'border-red-500/20',   bg: 'bg-red-500/5' },
-        ].map((sec, si) => (
-          <div key={si} className={`glass rounded-2xl overflow-hidden border ${sec.border} hover:border-gold-400/30 transition-all duration-300`}>
-             <div className={`${sec.bg} px-5 py-4 border-b ${sec.border}`}>
-              <h3 className={`font-bold text-sm ${sec.color}`}>{sec.title}</h3>
-            </div>
-            <div className="divide-y divide-border/20">
-              {sec.data.map((item: any, i: number) => {
-                const maxVal = sec.data[0]?.value || 1
-                return (
-                  <Link key={i} href={`/stocks?q=${item.stock}`} className="flex justify-between items-center px-5 py-3.5 hover:bg-accent/20 transition-colors group">
-                    <span className="font-mono font-black text-foreground group-hover:text-gold-400">{item.stock}</span>
-                    <div className="flex items-center gap-4">
-                      <div className="w-24 h-1.5 bg-accent/50 rounded-full overflow-hidden hidden sm:block">
-                        <div className={`h-full rounded-full ${sec.barColor}`} style={{ width: `${(item.value / maxVal) * 100}%` }} />
+
+          {/* Row 3 · ★ Sector Rotation */}
+          {sectorData.length > 0 && (
+            <div className="glass rounded-2xl overflow-hidden border border-purple-500/20 hover:border-gold-400/30 transition-all duration-300">
+              <div className="bg-purple-500/5 px-5 py-3 border-b border-purple-500/20 flex items-center gap-2">
+                <Layers className="w-4 h-4 text-purple-400" />
+                <h3 className="font-bold text-sm text-purple-400">🌀 Sector Rotation</h3>
+                <span className="ml-auto text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Color-coded by momentum</span>
+              </div>
+              <div className="p-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                  {sectorData.map((sec: any, i: number) => {
+                    const momentum = sec.momentum ?? sec.label ?? sec.trend ?? 'NEUTRAL'
+                    const cfg = getMomentumCfg(momentum)
+                    const chg = Number(sec.avg_change_pct ?? sec.avg_return ?? sec.avg_change ?? sec.return_pct ?? 0)
+                    const sectorName = sec.sector ?? sec.sector_name ?? sec.name ?? '—'
+                    const stockCount = sec.stock_count ?? sec.total_stocks ?? null
+                    return (
+                      <div key={i} className={`${cfg.bg} border ${cfg.border} rounded-xl p-3 flex flex-col gap-2 hover:scale-[1.02] transition-all duration-200 cursor-default`}>
+                        <div className="flex items-start justify-between gap-1">
+                          <p className="text-xs font-bold text-foreground leading-tight line-clamp-2">{sectorName}</p>
+                          <span className={`flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${cfg.badge}`}>
+                            {cfg.icon}{momentum.replace('_', '\u00A0')}
+                          </span>
+                        </div>
+                        <div className="flex items-end justify-between">
+                          <div>
+                            <p className={`text-lg font-black leading-none ${chg >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {chg >= 0 ? '+' : ''}{chg.toFixed(2)}%
+                            </p>
+                            {stockCount && <p className="text-[10px] text-muted-foreground mt-0.5">{stockCount} stocks</p>}
+                          </div>
+                          {sec.total_value && (
+                            <p className="text-[10px] text-muted-foreground text-right">{fmtRp(Number(sec.total_value))}</p>
+                          )}
+                        </div>
                       </div>
-                      <span className={`text-sm font-bold min-w-[80px] text-right ${sec.color}`}>{fmtRp(item.value)}</span>
-                    </div>
-                  </Link>
-                )
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function Ksei1View({ ksei1Data }: any) {
-  return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { title: 'Total Emiten',      value: ksei1Data.totalEmiten,                 icon: Building2,   color: 'text-blue-400' },
-          { title: 'Foreign Ownership', value: `${ksei1Data.foreignPct.toFixed(1)}%`, icon: Globe,       color: 'text-cyan-400' },
-          { title: 'Local Ownership',   value: `${ksei1Data.localPct.toFixed(1)}%`,   icon: ShieldCheck, color: 'text-gold-400' },
-          { title: 'Total Shares',      value: fmtNum(ksei1Data.totalShares),         icon: BarChart3,   color: 'text-purple-400' },
-        ].map((m, i) => { 
-          const Icon = m.icon; 
-          return (
-          <div key={i} className="glass rounded-2xl p-5 border border-border/40 hover:border-gold-400/30 transition-all duration-300 relative group overflow-hidden">
-            <div className={`p-2 rounded-lg bg-accent/30 w-fit mb-4 ${m.color}`}><Icon className="w-5 h-5" /></div>
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">{m.title}</p>
-            <p className={`text-2xl font-black mt-1 ${m.color}`}>{m.value}</p>
-          </div>
-        )})}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {[
-          { title: 'Top 10 Foreign Ownership (%)', data: ksei1Data.topForeign,       key: 'foreign', color: '#06b6d4', icon: <Globe className="w-4 h-4 text-cyan-400"/> },
-          { title: 'Top 10 Concentration (%)',     data: ksei1Data.topConcentration, key: 'total',   color: '#ef4444', icon: <Target className="w-4 h-4 text-red-400"/> },
-        ].map((chart, ci) => (
-          <div key={ci} className="glass rounded-2xl p-6 border border-border/40 hover:border-gold-400/30 transition-all duration-300">
-            <h3 className="font-bold text-foreground mb-6 flex items-center gap-2">
-              {chart.icon} {chart.title}
-            </h3>
-            <div className="h-[320px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chart.data} layout="vertical" margin={{ left: -20, right: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal vertical={false} stroke="#334155" opacity={0.4} />
-                  <XAxis type="number" hide />
-                  <YAxis dataKey="code" type="category" tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 'bold' }} width={80} axisLine={false} tickLine={false} />
-                  <Tooltip cursor={{ fill: '#334155', opacity: 0.2 }} content={<CustomTooltip />} />
-                  <Bar dataKey={chart.key} fill={chart.color} radius={[0, 4, 4, 0]} barSize={20}>
-                    {chart.data.map((entry:any, index:number) => (
-                       <Cell key={`cell-${index}`} fill={chart.color} opacity={0.8 + (index * 0.02)} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="glass rounded-2xl p-6 border border-border/40 hover:border-gold-400/30 transition-all duration-300">
-        <h3 className="font-bold text-foreground mb-6 flex items-center gap-2">
-          <Target className="w-5 h-5 text-gold-400" /> Top Institutional Investors
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-          {ksei1Data.topInvestors.slice(0, 5).map((inv: any, i: number) => (
-            <div key={i} className="p-5 rounded-xl bg-accent/20 border border-border/40 hover:border-gold-400/40 hover:bg-accent/30 transition-all group">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gold-400 to-yellow-600 text-navy-900 flex items-center justify-center font-black text-sm mb-4 shadow-lg shadow-gold-500/20">#{i + 1}</div>
-              <p className="text-sm font-bold text-foreground truncate group-hover:text-gold-400 transition-colors" title={inv.name}>{inv.name}</p>
-              <p className="text-[10px] text-muted-foreground mt-1 tracking-wider uppercase">{inv.type}</p>
-              <div className="mt-4 pt-4 border-t border-border/30">
-                <p className="text-2xl font-black text-gold-400 leading-none">{inv.emiten} <span className="text-xs font-medium text-muted-foreground">emitens</span></p>
+                    )
+                  })}
+                </div>
               </div>
             </div>
-          ))}
+          )}
+
+          {/* Row 4 · Gainers / Losers */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {[
+              { title: '🔥 Top 10 Gainers', data: marketData.gainers, color: 'text-green-400', bg: 'bg-green-500/5', border: 'border-green-500/20' },
+              { title: '❄️ Top 10 Losers',  data: marketData.losers,  color: 'text-red-400',   bg: 'bg-red-500/5',   border: 'border-red-500/20' },
+            ].map((sec, si) => (
+              <div key={si} className={`glass rounded-2xl overflow-hidden border ${sec.border} hover:border-gold-400/30 transition-all duration-300`}>
+                <div className={`${sec.bg} px-5 py-3 border-b ${sec.border}`}>
+                  <h3 className={`font-bold text-sm ${sec.color}`}>{sec.title}</h3>
+                </div>
+                <div className="divide-y divide-border/20">
+                  {sec.data.map((s: any, i: number) => (
+                    <Link key={i} href={`/stock/${s.code}`} className="flex items-center justify-between p-4 hover:bg-accent/20 transition-colors group">
+                      <div>
+                        <span className="font-mono font-black text-foreground group-hover:text-gold-400 transition-colors">{s.code}</span>
+                        <span className="text-xs text-muted-foreground ml-2">Rp {s.close?.toLocaleString('id-ID')}</span>
+                      </div>
+                      <span className={`font-bold ${sec.color}`}>{s.change > 0 ? '+' : ''}{s.change?.toFixed(2)}%</span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Row 5 · Net Foreign + AOV Spikes */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 glass rounded-2xl p-6 border border-border/30 hover:border-gold-400/30 transition-all duration-300">
+              <h3 className="font-bold text-foreground mb-4 flex items-center gap-2">
+                <Globe className="w-5 h-5 text-blue-400" /> Net Foreign Flow
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[
+                  { title: 'Top Buy',  data: marketData.foreignBuy,  color: 'text-green-400' },
+                  { title: 'Top Sell', data: marketData.foreignSell, color: 'text-red-400' },
+                ].map((sec, i) => (
+                  <div key={i}>
+                    <p className={`text-xs font-bold ${sec.color} mb-2 uppercase`}>{sec.title}</p>
+                    <div className="space-y-2">
+                      {sec.data.slice(0, 8).map((s: any, j: number) => (
+                        <Link key={j} href={`/stock/${s.code}`} className="flex justify-between text-sm hover:bg-accent/20 p-2 rounded-lg transition-colors group">
+                          <span className="font-mono font-bold text-foreground group-hover:text-gold-400">{s.code}</span>
+                          <span className={sec.color}>{fmtRp(Math.abs(s.netForeign))}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="glass rounded-2xl p-6 border border-border/30 hover:border-gold-400/30 transition-all duration-300">
+              <h3 className="font-bold text-foreground mb-4 flex items-center gap-2">
+                <Zap className="w-5 h-5 text-gold-400" /> Top AOV Spikes
+              </h3>
+              <div className="space-y-3">
+                {marketData.spikes.map((s: any, i: number) => (
+                  <Link key={i} href={`/stock/${s.code}`} className="flex justify-between items-center p-3 rounded-xl bg-accent/20 hover:bg-accent/40 transition-all group">
+                    <div>
+                      <span className="font-mono font-bold text-foreground group-hover:text-gold-400">{s.code}</span>
+                      <span className="text-[10px] text-muted-foreground ml-2">Rp {s.close?.toLocaleString('id-ID')}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded ${s.aov >= 2 ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                        {s.aov.toFixed(1)}x
+                      </span>
+                      <p className={`text-xs mt-1 ${s.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {s.change > 0 ? '+' : ''}{s.change.toFixed(1)}%
+                      </p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+              <Link href="/radar" className="block w-full mt-4 py-2.5 text-center text-xs font-bold text-gold-400 hover:text-foreground bg-gold-500/10 hover:bg-gold-500/20 rounded-xl border border-gold-500/30 transition-all">
+                Full Screener →
+              </Link>
+            </div>
+          </div>
+
+          {/* Row 6 · ★ High Conviction Picks */}
+          {convictionData.length > 0 && (
+            <div className="glass rounded-2xl overflow-hidden border border-amber-500/20 hover:border-gold-400/30 transition-all duration-300">
+              <div className="bg-amber-500/5 px-5 py-3 border-b border-amber-500/20 flex items-center gap-2">
+                <Target className="w-4 h-4 text-amber-400" />
+                <h3 className="font-bold text-sm text-amber-400">🎯 High Conviction Picks</h3>
+                <span className="ml-auto text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Sorted by conviction score</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-border/20">
+                      {['Stock', 'Sector', 'Price', 'Chg%', 'Conviction', 'Smart$', 'Signal', 'Flags'].map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-muted-foreground uppercase tracking-wider whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/10">
+                    {convictionData.map((s: any, i: number) => {
+                      const sig   = getSignalCfg(s.signal)
+                      const score = Number(s.conviction_score) || 0
+                      return (
+                        <tr key={i} className="hover:bg-accent/10 transition-colors group">
+                          <td className="px-4 py-3">
+                            <Link href={`/stock/${s.stock_code}`} className="font-mono font-black text-foreground group-hover:text-gold-400 transition-colors">
+                              {s.stock_code}
+                            </Link>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-muted-foreground max-w-[110px] truncate">{s.sector ?? '—'}</td>
+                          <td className="px-4 py-3 text-sm font-semibold text-foreground whitespace-nowrap">
+                            Rp {Number(s.current_price)?.toLocaleString('id-ID')}
+                          </td>
+                          <td className={`px-4 py-3 text-sm font-bold whitespace-nowrap ${Number(s.price_chg_pct) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {Number(s.price_chg_pct) > 0 ? '+' : ''}{Number(s.price_chg_pct)?.toFixed(2)}%
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <div className="w-16 h-1.5 bg-accent rounded-full overflow-hidden">
+                                <div className="h-full bg-gradient-to-r from-amber-400 to-orange-500 rounded-full"
+                                  style={{ width: `${Math.min(score * 10, 100)}%` }} />
+                              </div>
+                              <span className="text-xs font-black text-amber-400">{score.toFixed(1)}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-xs font-bold text-purple-400">{Number(s.smart_money_score)?.toFixed(1)}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full ${sig.cls}`}>
+                              {sig.icon}{s.signal}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-1 flex-wrap">
+                              {s.whale_signal      && <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 font-bold">🐋</span>}
+                              {s.is_stealth        && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-500/20 text-slate-300 font-bold">STEALTH</span>}
+                              {s.big_player_anomaly&& <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-300 font-bold">BIG</span>}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Row 7 · ★ KSEI Movement Alert */}
+          {kseiAlerts.length > 0 && (
+            <div className="glass rounded-2xl overflow-hidden border border-rose-500/20 hover:border-gold-400/30 transition-all duration-300">
+              <div className="bg-rose-500/5 px-5 py-3 border-b border-rose-500/20 flex items-center gap-2">
+                <Bell className="w-4 h-4 text-rose-400" />
+                <h3 className="font-bold text-sm text-rose-400">🚨 KSEI Movement Alert</h3>
+                <span className="ml-auto text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Scripless ownership changes</span>
+              </div>
+              <div className="divide-y divide-border/10">
+                {kseiAlerts.slice(0, 12).map((a: any, i: number) => {
+                  const alertCfg = getAlertCfg(a.alert_level)
+                  const isB = a.action === 'BUYING'
+                  const isS = a.action === 'SELLING'
+                  return (
+                    <div key={i} className="flex flex-wrap items-center gap-3 px-5 py-3.5 hover:bg-accent/10 transition-colors">
+                      <span className={`inline-flex items-center gap-1.5 text-[10px] font-black px-2 py-1 rounded-full ${alertCfg.cls}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${alertCfg.dot}`} />
+                        {a.alert_level}
+                      </span>
+                      <Link href={`/stock/${a.share_code}`} className="font-mono font-black text-sm text-foreground hover:text-gold-400 transition-colors min-w-[60px]">
+                        {a.share_code}
+                      </Link>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded ${isB ? 'bg-green-500/20 text-green-300' : isS ? 'bg-red-500/20 text-red-300' : 'bg-slate-500/20 text-slate-300'}`}>
+                        {isB ? '▲' : isS ? '▼' : '—'} {a.action}
+                      </span>
+                      <span className="text-sm text-foreground font-medium flex-1 min-w-0 truncate">{a.investor_name}</span>
+                      <div className="flex items-center gap-2 ml-auto">
+                        {a.prev_percentage != null && a.curr_percentage != null && (
+                          <span className="text-xs text-muted-foreground">
+                            {Number(a.prev_percentage).toFixed(2)}% → <span className="text-foreground font-bold">{Number(a.curr_percentage).toFixed(2)}%</span>
+                          </span>
+                        )}
+                        {a.pct_point_change != null && (
+                          <span className={`text-xs font-black ${Number(a.pct_point_change) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            ({Number(a.pct_point_change) > 0 ? '+' : ''}{Number(a.pct_point_change).toFixed(2)}pp)
+                          </span>
+                        )}
+                        <span className="text-[10px] text-muted-foreground">{a.nationality ?? a.investor_type ?? ''}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              {kseiAlerts.length > 12 && (
+                <div className="px-5 py-3 border-t border-border/20 text-center">
+                  <Link href="/insider" className="text-xs font-bold text-gold-400 hover:text-foreground transition-colors">
+                    +{kseiAlerts.length - 12} more alerts → View Full Insider Feed
+                  </Link>
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
-      </div>
+      )}
+
+
+      {/* ═══════════════  TAB 2 · KSEI 5% FLOW  ═══════════════ */}
+      {activeTab === 'ksei5' && ksei5Data && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { title: 'Total Buy',     value: fmtRp(ksei5Data.totalBuy),   icon: TrendingUp,    color: 'text-green-400' },
+              { title: 'Total Sell',    value: fmtRp(ksei5Data.totalSell),  icon: TrendingDown,  color: 'text-red-400' },
+              { title: 'Net Flow',      value: fmtRp(ksei5Data.netFlow),    icon: ArrowRightLeft,color: ksei5Data.netFlow >= 0 ? 'text-green-400' : 'text-red-400' },
+              { title: 'Active Stocks', value: ksei5Data.activeStocks,      icon: Target,        color: 'text-blue-400' },
+            ].map((m, i) => { const Icon = m.icon; return (
+              <div key={i} className="glass rounded-2xl p-5 card-hover border border-border/30 hover:border-gold-400/30 transition-all duration-300">
+                <Icon className={`w-5 h-5 ${m.color} mb-3`} />
+                <p className="text-xs text-muted-foreground uppercase">{m.title}</p>
+                <p className={`text-2xl font-black mt-1 ${m.color}`}>{m.value}</p>
+              </div>
+            )})}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="glass rounded-2xl p-6 border border-border/30 hover:border-gold-400/30 transition-all duration-300">
+              <h3 className="font-bold text-foreground mb-4">Action Breakdown</h3>
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie data={ksei5Data.actionBreakdown} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={3} dataKey="value">
+                    {ksei5Data.actionBreakdown.map((_: any, idx: number) => <Cell key={idx} fill={COLORS[idx % COLORS.length]} opacity={0.9} />)}
+                  </Pie>
+                  <Tooltip /><Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="glass rounded-2xl p-6 border border-border/30 hover:border-gold-400/30 transition-all duration-300">
+              <h3 className="font-bold text-foreground mb-4">Top Konglomerasi</h3>
+              <div className="space-y-3">
+                {ksei5Data.topKonglo.map((item: any, i: number) => {
+                  const maxVal = ksei5Data.topKonglo[0]?.value || 1
+                  return (
+                    <div key={i} className="group">
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-sm font-medium text-foreground truncate group-hover:text-gold-400 transition-colors">#{i + 1} {item.name}</span>
+                        <span className="text-sm font-bold text-gold-400">{fmtRp(item.value)}</span>
+                      </div>
+                      <div className="w-full h-2 bg-accent rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-purple-400 to-purple-600 rounded-full transition-all duration-500"
+                          style={{ width: `${(item.value / maxVal) * 100}%` }} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {[
+              { title: '🔥 Top Accumulation', data: ksei5Data.topAcc,  color: 'text-green-400', barColor: 'bg-green-400' },
+              { title: '❄️ Top Distribution', data: ksei5Data.topDist, color: 'text-red-400',   barColor: 'bg-red-400' },
+            ].map((sec, si) => (
+              <div key={si} className="glass rounded-2xl p-6 border border-border/30 hover:border-gold-400/30 transition-all duration-300">
+                <h3 className={`font-bold ${sec.color} mb-4`}>{sec.title}</h3>
+                <div className="space-y-2.5">
+                  {sec.data.map((item: any, i: number) => {
+                    const maxVal = sec.data[0]?.value || 1
+                    return (
+                      <Link key={i} href={`/stocks?q=${item.stock}`} className="flex justify-between items-center p-2.5 rounded-lg hover:bg-accent/20 transition-colors group">
+                        <span className="font-mono font-bold text-foreground group-hover:text-gold-400">{item.stock}</span>
+                        <div className="flex items-center gap-3">
+                          <div className="w-20 h-1.5 bg-accent rounded-full overflow-hidden hidden md:block">
+                            <div className={`h-full rounded-full ${sec.barColor}`} style={{ width: `${(item.value / maxVal) * 100}%` }} />
+                          </div>
+                          <span className={`text-sm font-bold ${sec.color}`}>{fmtRp(item.value)}</span>
+                        </div>
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <Link href="/radar?tab=ksei5" className="block w-full py-3 text-center text-sm font-bold text-gold-400 hover:text-foreground bg-gold-500/5 hover:bg-gold-500/10 rounded-xl border border-gold-500/20 transition-all">
+            View Full KSEI 5% Analysis →
+          </Link>
+        </div>
+      )}
+
+
+      {/* ═══════════════  TAB 3 · KSEI 1% OWNERSHIP  ═══════════════ */}
+      {activeTab === 'ksei1' && ksei1Data && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { title: 'Total Emiten',      value: ksei1Data.totalEmiten,                 icon: Building2,   color: 'text-blue-400' },
+              { title: 'Foreign Ownership', value: `${ksei1Data.foreignPct.toFixed(1)}%`, icon: Globe,       color: 'text-cyan-400' },
+              { title: 'Local Ownership',   value: `${ksei1Data.localPct.toFixed(1)}%`,   icon: ShieldCheck, color: 'text-gold-400' },
+              { title: 'Total Shares',      value: fmtNum(ksei1Data.totalShares),          icon: BarChart3,   color: 'text-purple-400' },
+            ].map((m, i) => { const Icon = m.icon; return (
+              <div key={i} className="glass rounded-2xl p-5 card-hover border border-border/30 hover:border-gold-400/30 transition-all duration-300">
+                <Icon className={`w-5 h-5 ${m.color} mb-2`} />
+                <p className="text-xs text-muted-foreground uppercase">{m.title}</p>
+                <p className={`text-2xl font-black mt-1 ${m.color}`}>{m.value}</p>
+              </div>
+            )})}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {[
+              { title: 'Top 10 Foreign Ownership', data: ksei1Data.topForeign,       key: 'foreign', color: '#06b6d4' },
+              { title: 'Top 10 Concentration',     data: ksei1Data.topConcentration, key: 'total',   color: '#ef4444' },
+            ].map((chart, ci) => (
+              <div key={ci} className="glass rounded-2xl p-6 border border-border/30 hover:border-gold-400/30 transition-all duration-300">
+                <h3 className="font-bold text-foreground mb-4">{chart.title}</h3>
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chart.data} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" horizontal vertical={false} opacity={0.1} />
+                      <XAxis type="number" hide />
+                      <YAxis dataKey="code" type="category" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 'bold' }} width={55} />
+                      <Tooltip />
+                      <Bar dataKey={chart.key} fill={chart.color} radius={[0, 4, 4, 0]} barSize={18} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="glass rounded-2xl p-6 border border-border/30 hover:border-gold-400/30 transition-all duration-300">
+            <h3 className="font-bold text-foreground mb-4">🏆 Top Institutional Investors</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              {ksei1Data.topInvestors.slice(0, 5).map((inv: any, i: number) => (
+                <div key={i} className="p-4 rounded-xl bg-accent/20 border border-border/30 hover:border-gold-400/30 transition-all">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gold-400 to-yellow-600 text-navy-900 flex items-center justify-center font-black text-sm mb-3">#{i + 1}</div>
+                  <p className="text-sm font-bold text-foreground truncate">{inv.name}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">{inv.type}</p>
+                  <p className="text-lg font-black text-gold-400 mt-2">{inv.emiten} <span className="text-xs text-muted-foreground">emitens</span></p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <Link href="/ownership" className="block w-full py-3 text-center text-sm font-bold text-gold-400 hover:text-foreground bg-gold-500/5 hover:bg-gold-500/10 rounded-xl border border-gold-500/20 transition-all">
+            View Full 1% Ownership Analysis →
+          </Link>
+        </div>
+      )}
+
     </div>
   )
 }
