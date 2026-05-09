@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { Inter, Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
-import Sidebar from '../../components/Sidebar'
+import Sidebar from '../../components/sidebar'
 import TickerTape from '../../components/ticker-tape'
 import GlobalSearch from '../../components/global-search'
 
