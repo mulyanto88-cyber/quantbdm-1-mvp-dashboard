@@ -62,7 +62,12 @@
 }
 
 body {
-  @apply bg-background text-foreground antialiased;
+  @apply bg-[#060a16] text-slate-200 antialiased;
+  background-image: 
+    radial-gradient(circle at 15% 50%, rgba(231, 183, 51, 0.05), transparent 25%),
+    radial-gradient(circle at 85% 30%, rgba(34, 197, 94, 0.05), transparent 25%),
+    radial-gradient(circle at 50% 80%, rgba(59, 130, 246, 0.05), transparent 25%);
+  background-attachment: fixed;
   font-feature-settings: 'rlig' 1, 'calt' 1, 'ss01' 1;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -74,22 +79,19 @@ body {
 
 /* Glass Card */
 .glass {
-  background: hsl(var(--card));
-  border: 1px solid hsl(var(--border));
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.dark .glass {
-  background: linear-gradient(135deg, rgba(15, 26, 54, 0.8), rgba(15, 26, 54, 0.5));
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
 .glass:hover {
-  box-shadow: var(--shadow-md);
-  border-color: hsla(43, 74%, 49%, 0.15);
+  background: rgba(15, 23, 42, 0.8);
+  border-color: rgba(231, 183, 51, 0.2);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(231, 183, 51, 0.1);
 }
 
 /* Card Hover — Premium Lift */

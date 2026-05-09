@@ -36,11 +36,11 @@ export default function RootLayout({
         {/* ── Sidebar ── */}
         <Sidebar />
 
-        {/* ── Main area: offset by sidebar (56px collapsed) ── */}
-        <div className="md:pl-[56px] flex flex-col min-h-screen transition-all duration-200">
+        {/* ── Main area: offset by sidebar (68px collapsed) ── */}
+        <div className="md:pl-[68px] flex flex-col min-h-screen transition-all duration-300">
 
           {/* ── Top Bar ── */}
-          <header className="sticky top-0 z-30 h-14 glass border-b border-white/[0.04] flex items-center px-4 gap-4">
+          <header className="sticky top-0 z-30 h-16 bg-[#0f172a]/80 backdrop-blur-xl border-b border-white/[0.05] flex items-center px-6 gap-4 shadow-sm">
 
             {/* Logo / Brand — visible on mobile (sidebar hidden) */}
             <div className="flex items-center gap-2.5 md:hidden">
