@@ -17,7 +17,6 @@ const navItems = [
   { href: '/stocks', label: 'Stock Deep Dive', icon: Activity },
   { href: '/flow', label: '5% Flow Matrix', icon: BarChart3 },
   { href: '/screener', label: 'Whale Screener', icon: Eye },
-  { href: '/konlo', label: 'Konglomerasi', icon: Target },
   { href: '/players', label: 'Entity Tracker', icon: Users },
   { href: '/backtest', label: 'Backtest Engine', icon: Zap, badge: 'NEW' },
   { href: '/pricing', label: 'Pricing & Pro', icon: Shield },
