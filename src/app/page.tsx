@@ -220,16 +220,18 @@ export default function MarketOverview() {
   return (
     <div className="space-y-8 pb-10 animate-fade-in">
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-3xl md:text-4xl font-black text-foreground tracking-tight">
-            Market <span className="text-transparent bg-clip-text bg-gradient-to-r from-gold-400 to-yellow-200">Overview</span>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative">
+        <div className="absolute -top-20 -left-20 w-64 h-64 bg-gold-500/20 rounded-full blur-[100px] pointer-events-none" />
+        <div className="absolute -top-20 right-20 w-64 h-64 bg-blue-500/20 rounded-full blur-[100px] pointer-events-none" />
+        <div className="relative z-10">
+          <h1 className="text-4xl md:text-5xl font-black text-white tracking-tight">
+            Market <span className="text-transparent bg-clip-text bg-gradient-to-r from-gold-300 via-yellow-500 to-gold-400 drop-shadow-[0_0_15px_rgba(231,183,51,0.3)]">Intelligence</span>
           </h1>
-          <p className="text-muted-foreground mt-1 text-sm md:text-base">Multi-source market intelligence hub</p>
+          <p className="text-slate-400 mt-2 text-sm md:text-base font-medium tracking-wide">Institutional grade flow analysis & KSEI tracker</p>
         </div>
-        <div className="flex items-center gap-3 px-4 py-2 glass rounded-full border border-green-500/30">
-          <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse shadow-lg shadow-green-400/50" />
-          <span className="text-xs font-bold text-green-400 uppercase tracking-wider">Live Market</span>
+        <div className="flex items-center gap-3 px-5 py-2.5 bg-green-500/10 rounded-full border border-green-500/20 backdrop-blur-md relative z-10">
+          <div className="w-2.5 h-2.5 rounded-full bg-green-400 animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.8)]" />
+          <span className="text-xs font-black text-green-400 uppercase tracking-widest">Live Connect</span>
         </div>
       </div>
 
