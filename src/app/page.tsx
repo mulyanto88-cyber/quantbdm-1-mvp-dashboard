@@ -99,9 +99,9 @@ export default function MarketOverview() {
         if ((Number(r.aov_ratio_ma20) || 0) >= 1.5) spikes.push({ code: r.stock_code, close: Number(r.close), aov: Number(r.aov_ratio_ma20), change: pct })
         topVol.push({ code: r.stock_code, close: Number(r.close), volume: vol, change: pct })
         topVal.push({ code: r.stock_code, close: Number(r.close), value: val, change: pct })
-        allStocks.push({ code: r.stock_code, close: Number(r.close), change: pct, value: val, volume: vol, netForeign: netF, sector: sec })
         // Sector aggregation
         const sec = r.sector || 'Other'
+        allStocks.push({ code: r.stock_code, close: Number(r.close), change: pct, value: val, volume: vol, netForeign: netF, sector: sec })
         if (!sectorMap[sec]) sectorMap[sec] = { sector: sec, count: 0, up: 0, down: 0, totalValue: 0, netForeign: 0, changeSum: 0 }
         sectorMap[sec].count++
         if (pct > 0) sectorMap[sec].up++
