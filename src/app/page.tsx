@@ -37,7 +37,6 @@ export default function MarketOverview() {
   const [marketData, setMarketData] = useState<any>(null)
   const [ksei5Data, setKsei5Data] = useState<any>(null)
   const [ksei1Data, setKsei1Data] = useState<any>(null)
-  const [sectorData, setSectorData] = useState<any[]>([])
   const [kseiAlerts, setKseiAlerts] = useState<any[]>([])
   const [highConviction, setHighConviction] = useState<any[]>([])
 
@@ -49,7 +48,6 @@ export default function MarketOverview() {
       fetchMarketPulse(),
       fetchKsei5(),
       fetchKsei1(),
-      fetchSectorRotation(),
       fetchKseiAlerts(),
       fetchHighConviction(),
     ])
@@ -72,7 +70,7 @@ export default function MarketOverview() {
       // Get all transactions for that date
       const { data } = await supabase
         .from('daily_transactions')
-        .select('stock_code,close,change_percent,value,volume,net_foreign_value,aov_ratio_ma20,whale_signal,signal')
+        .select('stock_code,close,change_percent,value,volume,net_foreign_value,aov_ratio_ma20,whale_signal,signal,sector')
         .eq('trading_date', date)
         .gt('volume', 0)
         .limit(2000)
@@ -83,20 +81,36 @@ export default function MarketOverview() {
       const gainers: any[] = [], losers: any[] = [], foreignBuy: any[] = [], foreignSell: any[] = [], spikes: any[] = [], topVol: any[] = [], topVal: any[] = []
       let up = 0, down = 0
 
+      const sectorMap: Record<string, any> = {}
       data.forEach((r: any) => {
         const netF = Number(r.net_foreign_value) || 0
+        const val  = Number(r.value) || 0
+        const pct  = Number(r.change_percent) || 0
+        const vol  = Number(r.volume) || 0
         totalForeign += netF
-        totalValue += Number(r.value) || 0
-        const pct = Number(r.change_percent) || 0
+        totalValue += val
         if (pct > 0) up++; else if (pct < 0) down++
-        if (pct > 0) gainers.push({ code: r.stock_code, close: Number(r.close), change: pct, value: Number(r.value) })
-        if (pct < 0) losers.push({ code: r.stock_code, close: Number(r.close), change: pct, value: Number(r.value) })
+        if (pct > 0) gainers.push({ code: r.stock_code, close: Number(r.close), change: pct, value: val })
+        if (pct < 0) losers.push({ code: r.stock_code, close: Number(r.close), change: pct, value: val })
         if (netF > 0) foreignBuy.push({ code: r.stock_code, close: Number(r.close), netForeign: netF })
         if (netF < 0) foreignSell.push({ code: r.stock_code, close: Number(r.close), netForeign: Math.abs(netF) })
         if ((Number(r.aov_ratio_ma20) || 0) >= 1.5) spikes.push({ code: r.stock_code, close: Number(r.close), aov: Number(r.aov_ratio_ma20), change: pct })
-        topVol.push({ code: r.stock_code, close: Number(r.close), volume: Number(r.volume), change: pct })
-        topVal.push({ code: r.stock_code, close: Number(r.close), value: Number(r.value), change: pct })
+        topVol.push({ code: r.stock_code, close: Number(r.close), volume: vol, change: pct })
+        topVal.push({ code: r.stock_code, close: Number(r.close), value: val, change: pct })
+        // Sector aggregation
+        const sec = r.sector || 'Other'
+        if (!sectorMap[sec]) sectorMap[sec] = { sector: sec, count: 0, up: 0, down: 0, totalValue: 0, netForeign: 0, changeSum: 0 }
+        sectorMap[sec].count++
+        if (pct > 0) sectorMap[sec].up++
+        if (pct < 0) sectorMap[sec].down++
+        sectorMap[sec].totalValue += val
+        sectorMap[sec].netForeign += netF
+        sectorMap[sec].changeSum  += pct
       })
+      const sectorHeatmap = Object.values(sectorMap)
+        .map((s: any) => ({ ...s, avgChange: s.count > 0 ? s.changeSum / s.count : 0 }))
+        .sort((a: any, b: any) => b.totalValue - a.totalValue)
+        .slice(0, 12)
 
       setMarketData({
         totalForeign, totalValue, up, down,
@@ -106,7 +120,8 @@ export default function MarketOverview() {
         losers: losers.sort((a, b) => a.change - b.change).slice(0, 10),
         foreignBuy: foreignBuy.sort((a, b) => b.netForeign - a.netForeign).slice(0, 10),
         foreignSell: foreignSell.sort((a, b) => b.netForeign - a.netForeign).slice(0, 10),
-        spikes: spikes.sort((a, b) => b.aov - a.aov).slice(0, 7)
+        spikes: spikes.sort((a, b) => b.aov - a.aov).slice(0, 7),
+        sectorHeatmap,
       })
     } catch (e) { console.error(e) }
   }
@@ -211,22 +226,6 @@ export default function MarketOverview() {
     } catch (e) { console.error(e) }
   }
 
-  // ==================== SECTOR ROTATION ====================
-  async function fetchSectorRotation() {
-    try {
-      const { data } = await supabase.rpc('get_sector_rotation')
-      if (data) setSectorData(data.map((s: any) => ({
-        ...s,
-        avg_change_pct:   Number(s.avg_change_pct),
-        total_net_foreign: Number(s.total_net_foreign),
-        total_value:      Number(s.total_value),
-        flow_delta_pct:   Number(s.flow_delta_pct),
-        whale_count:      Number(s.whale_count),
-        anomaly_count:    Number(s.anomaly_count),
-      })))
-    } catch (e) { console.error(e) }
-  }
-
   // ==================== KSEI MOVEMENT ALERT ====================
   async function fetchKseiAlerts() {
     try {
@@ -327,168 +326,195 @@ export default function MarketOverview() {
 
       {/* ==================== TAB 1: MARKET PULSE ==================== */}
       {activeTab === 'market' && marketData && (
-        <div className="space-y-6 animate-fade-in">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="space-y-4 animate-fade-in">
+
+          {/* ── Row 1: Metric Cards ── */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
               { title: 'Market Breadth', value: `${marketData.up}↑ ${marketData.down}↓`, icon: BarChart3, color: 'text-blue-400', sub: 'Advancers vs Decliners' },
-              { title: 'Total Turnover', value: fmtRp(marketData.totalValue), icon: DollarSign, color: 'text-gold-400', sub: 'Daily value traded' },
-              { title: 'Net Foreign', value: fmtRp(marketData.totalForeign), icon: Globe, color: marketData.totalForeign >= 0 ? 'text-green-400' : 'text-red-400', sub: marketData.totalForeign >= 0 ? 'Inflow' : 'Outflow' },
-              { title: 'AOV Spikes', value: marketData.spikes.length, icon: Zap, color: 'text-purple-400', sub: 'Whale signals today' },
+              { title: 'Total Turnover',  value: fmtRp(marketData.totalValue),   icon: DollarSign, color: 'text-gold-400',  sub: 'Daily value traded' },
+              { title: 'Net Foreign',     value: fmtRp(marketData.totalForeign), icon: Globe,      color: marketData.totalForeign >= 0 ? 'text-emerald-400' : 'text-red-400', sub: marketData.totalForeign >= 0 ? '▲ Inflow' : '▼ Outflow' },
+              { title: 'AOV Spikes',      value: marketData.spikes.length,       icon: Zap,        color: 'text-purple-400', sub: 'Whale signals today' },
             ].map((m, i) => {
               const Icon = m.icon
               return (
-                <div key={i} className="glass rounded-2xl p-5 card-hover border border-border/30 hover:border-gold-400/30 transition-all duration-300">
-                  <div className="flex items-center justify-between mb-3">
-                    <Icon className={`w-5 h-5 ${m.color}`} />
-                    <span className="text-[10px] text-muted-foreground uppercase font-bold">{m.sub}</span>
+                <div key={i} className="glass rounded-xl p-4 border border-border/30 hover:border-gold-400/30 transition-all duration-300">
+                  <div className="flex items-center justify-between mb-2">
+                    <Icon className={`w-4 h-4 ${m.color}`} />
+                    <span className="text-[9px] text-muted-foreground uppercase font-bold tracking-wide">{m.sub}</span>
                   </div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider">{m.title}</p>
-                  <p className={`text-2xl font-black mt-1 ${m.color}`}>{m.value}</p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{m.title}</p>
+                  <p className={`text-xl font-black mt-0.5 ${m.color}`}>{m.value}</p>
                 </div>
               )
             })}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {[
-              { title: '🔥 Top 10 Gainers', data: marketData.gainers, color: 'text-green-400', bg: 'bg-green-500/5', border: 'border-green-500/20' },
-              { title: '❄️ Top 10 Losers', data: marketData.losers, color: 'text-red-400', bg: 'bg-red-500/5', border: 'border-red-500/20' },
-            ].map((sec, si) => (
-              <div key={si} className={`glass rounded-2xl overflow-hidden border ${sec.border} hover:border-gold-400/30 transition-all duration-300`}>
-                <div className={`${sec.bg} px-5 py-3 border-b ${sec.border}`}>
-                  <h3 className={`font-bold text-sm ${sec.color}`}>{sec.title}</h3>
-                </div>
-                <div className="divide-y divide-border/20">
-                  {sec.data.map((s: any, i: number) => (
-                    <Link key={i} href={`/stock/${s.code}`} className="flex items-center justify-between p-4 hover:bg-accent/20 transition-colors group">
-                      <div>
-                        <span className="font-mono font-black text-foreground group-hover:text-gold-400 transition-colors">{s.code}</span>
-                        <span className="text-xs text-muted-foreground ml-2">Rp {s.close?.toLocaleString('id-ID')}</span>
+          {/* ── Row 2: Gainers | Losers | Net Foreign — 3 kolom sejajar ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            {/* Gainers */}
+            <div className="glass rounded-xl overflow-hidden border border-green-500/20 hover:border-green-400/40 transition-all">
+              <div className="px-4 py-2.5 bg-green-500/5 border-b border-green-500/15 flex items-center justify-between">
+                <h3 className="font-bold text-xs text-green-400">🔥 Top 10 Gainers</h3>
+                <span className="text-[9px] text-muted-foreground">{marketData.gainers.length} stocks</span>
+              </div>
+              <div className="divide-y divide-border/10">
+                {marketData.gainers.map((s: any, i: number) => (
+                  <Link key={i} href={`/stock/${s.code}`} className="flex items-center justify-between px-4 py-2 hover:bg-green-500/5 transition-colors group">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[9px] text-muted-foreground w-4 shrink-0">{i+1}</span>
+                      <div className="min-w-0">
+                        <span className="font-mono font-black text-sm text-foreground group-hover:text-green-400 transition-colors">{s.code}</span>
+                        <span className="text-[9px] text-muted-foreground ml-1.5 hidden sm:inline">{fmtRp(s.close)}</span>
                       </div>
-                      <span className={`font-bold ${sec.color}`}>{s.change > 0 ? '+' : ''}{s.change?.toFixed(2)}%</span>
+                    </div>
+                    <span className="font-bold text-xs text-green-400 shrink-0 ml-2">+{s.change?.toFixed(2)}%</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+
+            {/* Losers */}
+            <div className="glass rounded-xl overflow-hidden border border-red-500/20 hover:border-red-400/40 transition-all">
+              <div className="px-4 py-2.5 bg-red-500/5 border-b border-red-500/15 flex items-center justify-between">
+                <h3 className="font-bold text-xs text-red-400">❄️ Top 10 Losers</h3>
+                <span className="text-[9px] text-muted-foreground">{marketData.losers.length} stocks</span>
+              </div>
+              <div className="divide-y divide-border/10">
+                {marketData.losers.map((s: any, i: number) => (
+                  <Link key={i} href={`/stock/${s.code}`} className="flex items-center justify-between px-4 py-2 hover:bg-red-500/5 transition-colors group">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[9px] text-muted-foreground w-4 shrink-0">{i+1}</span>
+                      <div className="min-w-0">
+                        <span className="font-mono font-black text-sm text-foreground group-hover:text-red-400 transition-colors">{s.code}</span>
+                        <span className="text-[9px] text-muted-foreground ml-1.5 hidden sm:inline">{fmtRp(s.close)}</span>
+                      </div>
+                    </div>
+                    <span className="font-bold text-xs text-red-400 shrink-0 ml-2">{s.change?.toFixed(2)}%</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+
+            {/* Net Foreign Flow */}
+            <div className="glass rounded-xl overflow-hidden border border-blue-500/20 hover:border-blue-400/40 transition-all">
+              <div className="px-4 py-2.5 bg-blue-500/5 border-b border-blue-500/15 flex items-center gap-2">
+                <Globe className="w-3 h-3 text-blue-400" />
+                <h3 className="font-bold text-xs text-blue-400">Net Foreign Flow</h3>
+              </div>
+              <div className="p-2">
+                <p className="text-[9px] font-black text-emerald-400 uppercase tracking-wider px-2 py-1">▲ Top Buy</p>
+                {marketData.foreignBuy.slice(0, 5).map((s: any, i: number) => (
+                  <Link key={i} href={`/stock/${s.code}`} className="flex items-center justify-between px-2 py-1.5 hover:bg-emerald-500/5 rounded-lg transition-colors group">
+                    <span className="font-mono font-black text-sm text-foreground group-hover:text-emerald-400">{s.code}</span>
+                    <span className="text-xs font-bold text-emerald-400">{fmtRp(s.netForeign)}</span>
+                  </Link>
+                ))}
+                <div className="border-t border-border/20 mt-1 pt-1">
+                  <p className="text-[9px] font-black text-red-400 uppercase tracking-wider px-2 py-1">▼ Top Sell</p>
+                  {marketData.foreignSell.slice(0, 5).map((s: any, i: number) => (
+                    <Link key={i} href={`/stock/${s.code}`} className="flex items-center justify-between px-2 py-1.5 hover:bg-red-500/5 rounded-lg transition-colors group">
+                      <span className="font-mono font-black text-sm text-foreground group-hover:text-red-400">{s.code}</span>
+                      <span className="text-xs font-bold text-red-400">-{fmtRp(s.netForeign)}</span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Row 3: Top Volume | Top Value | AOV Spikes — 3 kolom sejajar ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            {[
+              { title: '📊 Top Volume', data: marketData.topVolume, valKey: 'volume', color: 'text-blue-400', border: 'border-blue-500/20', hover: 'hover:border-blue-400/40', fmt: (v: number) => fmtNum(v) },
+              { title: '💰 Top Value',  data: marketData.topValue,  valKey: 'value',  color: 'text-gold-400', border: 'border-yellow-500/20', hover: 'hover:border-yellow-400/40', fmt: (v: number) => fmtRp(v) },
+            ].map((sec, si) => (
+              <div key={si} className={`glass rounded-xl overflow-hidden border ${sec.border} ${sec.hover} transition-all`}>
+                <div className="px-4 py-2.5 border-b border-border/15 bg-white/[0.01]">
+                  <h3 className={`font-bold text-xs ${sec.color}`}>{sec.title}</h3>
+                </div>
+                <div className="divide-y divide-border/10">
+                  {sec.data?.map((s: any, i: number) => (
+                    <Link key={i} href={`/stock/${s.code}`} className="flex items-center justify-between px-4 py-2 hover:bg-accent/10 transition-colors group">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] text-muted-foreground w-4">{i+1}</span>
+                        <div>
+                          <span className={`font-mono font-black text-sm text-foreground group-hover:${sec.color} transition-colors`}>{s.code}</span>
+                          <span className="text-[9px] text-muted-foreground ml-1.5">{fmtRp(s.close)}</span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className={`font-bold text-xs ${sec.color}`}>{sec.fmt(s[sec.valKey])}</p>
+                        <p className={`text-[9px] ${s.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>{s.change > 0 ? '+' : ''}{s.change?.toFixed(1)}%</p>
+                      </div>
                     </Link>
                   ))}
                 </div>
               </div>
             ))}
-          </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 glass rounded-2xl p-6 border border-border/30 hover:border-gold-400/30 transition-all duration-300">
-              <h3 className="font-bold text-foreground mb-4 flex items-center gap-2">
-                <Globe className="w-5 h-5 text-blue-400" /> Net Foreign Flow
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[
-                  { title: 'Top Buy', data: marketData.foreignBuy, color: 'text-green-400' },
-                  { title: 'Top Sell', data: marketData.foreignSell, color: 'text-red-400' },
-                ].map((sec, i) => (
-                  <div key={i}>
-                    <p className={`text-xs font-bold ${sec.color} mb-2 uppercase`}>{sec.title}</p>
-                    <div className="space-y-2">
-                      {sec.data.slice(0, 8).map((s: any, j: number) => (
-                        <Link key={j} href={`/stock/${s.code}`} className="flex justify-between text-sm hover:bg-accent/20 p-2 rounded-lg transition-colors group">
-                          <span className="font-mono font-bold text-foreground group-hover:text-gold-400">{s.code}</span>
-                          <span className={sec.color}>{fmtRp(Math.abs(s.netForeign))}</span>
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+            {/* AOV Spikes */}
+            <div className="glass rounded-xl overflow-hidden border border-purple-500/20 hover:border-purple-400/40 transition-all">
+              <div className="px-4 py-2.5 border-b border-border/15 bg-white/[0.01] flex items-center justify-between">
+                <h3 className="font-bold text-xs text-purple-400 flex items-center gap-1.5"><Zap className="w-3 h-3" /> AOV Spikes</h3>
+                <Link href="/radar" className="text-[9px] text-gold-400 hover:underline">Radar →</Link>
               </div>
-            </div>
-
-            <div className="glass rounded-2xl p-6 border border-border/30 hover:border-gold-400/30 transition-all duration-300">
-              <h3 className="font-bold text-foreground mb-4 flex items-center gap-2">
-                <Zap className="w-5 h-5 text-gold-400" /> Top AOV Spikes
-              </h3>
-              <div className="space-y-3">
-                {marketData.spikes.map((s: any, i: number) => (
-                  <Link key={i} href={`/stock/${s.code}`} className="flex justify-between items-center p-3 rounded-xl bg-accent/20 hover:bg-accent/40 transition-all group">
+              <div className="divide-y divide-border/10">
+                {marketData.spikes.slice(0, 10).map((s: any, i: number) => (
+                  <Link key={i} href={`/stock/${s.code}`} className="flex items-center justify-between px-4 py-2 hover:bg-purple-500/5 transition-colors group">
                     <div>
-                      <span className="font-mono font-bold text-foreground group-hover:text-gold-400">{s.code}</span>
-                      <span className="text-[10px] text-muted-foreground ml-2">Rp {s.close?.toLocaleString('id-ID')}</span>
+                      <span className="font-mono font-black text-sm text-foreground group-hover:text-purple-400 transition-colors">{s.code}</span>
+                      <span className="text-[9px] text-muted-foreground ml-1.5">{fmtRp(s.close)}</span>
                     </div>
                     <div className="text-right">
-                      <span className={`text-xs font-bold px-2 py-0.5 rounded ${s.aov >= 2 ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>{s.aov.toFixed(1)}x</span>
-                      <p className={`text-xs mt-1 ${s.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>{s.change > 0 ? '+' : ''}{s.change.toFixed(1)}%</p>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${s.aov >= 2 ? 'bg-purple-500/20 text-purple-300' : 'bg-blue-500/15 text-blue-400'}`}>{s.aov.toFixed(1)}x</span>
+                      <p className={`text-[9px] mt-0.5 ${s.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>{s.change > 0 ? '+' : ''}{s.change.toFixed(1)}%</p>
                     </div>
                   </Link>
                 ))}
               </div>
-              <Link href="/radar" className="block w-full mt-4 py-2.5 text-center text-xs font-bold text-gold-400 hover:text-foreground bg-gold-500/10 hover:bg-gold-500/20 rounded-xl border border-gold-500/30 transition-all">
-                Full Screener →
-              </Link>
             </div>
           </div>
 
-          {/* ── Top Volume & Top Value ── */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {[
-              { title: '📊 Top 10 Volume', data: marketData.topVolume, valKey: 'volume', label: 'Vol', color: 'text-blue-400', fmt: (v: number) => fmtNum(v) },
-              { title: '💰 Top 10 Value', data: marketData.topValue, valKey: 'value', label: 'Val', color: 'text-gold-400', fmt: (v: number) => fmtRp(v) },
-            ].map((sec, si) => (
-              <div key={si} className="glass rounded-2xl overflow-hidden border border-border/30 hover:border-gold-400/30 transition-all duration-300">
-                <div className="px-5 py-3 border-b border-border/20 bg-white/[0.01]">
-                  <h3 className={`font-bold text-sm ${sec.color}`}>{sec.title}</h3>
-                </div>
-                <div className="divide-y divide-border/20">
-                  {sec.data?.map((s: any, i: number) => (
-                    <Link key={i} href={`/stock/${s.code}`} className="flex items-center justify-between p-3.5 hover:bg-accent/20 transition-colors group">
-                      <div className="flex items-center gap-3">
-                        <span className="w-5 text-[10px] text-muted-foreground font-bold text-right">{i+1}</span>
-                        <div>
-                          <span className="font-mono font-black text-foreground group-hover:text-gold-400 transition-colors">{s.code}</span>
-                          <span className="text-xs text-muted-foreground ml-2">Rp {s.close?.toLocaleString('id-ID')}</span>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className={`font-bold text-sm ${sec.color}`}>{sec.fmt(s[sec.valKey])}</p>
-                        <p className={`text-[10px] ${s.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>{s.change > 0 ? '+' : ''}{s.change?.toFixed(2)}%</p>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
+          {/* ── Row 4: Sector Heatmap (from daily_transactions) ── */}
+          {marketData.sectorHeatmap?.length > 0 && (
+            <div className="glass rounded-xl p-4 border border-border/30 hover:border-gold-400/30 transition-all">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-purple-400" /> Sector Heatmap
+                </h3>
+                <span className="text-[9px] text-muted-foreground">by daily_transactions · top 12 by value</span>
               </div>
-            ))}
-          </div>
-
-          {/* ── Sector Rotation ── */}
-          {sectorData.length > 0 && (
-            <div className="glass rounded-2xl p-6 border border-border/30 hover:border-gold-400/30 transition-all duration-300">
-              <h3 className="font-bold text-foreground mb-4 flex items-center gap-2">
-                <Activity className="w-5 h-5 text-purple-400" /> Sector Rotation
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {sectorData.map((sec: any, i: number) => {
-                  const momentum = sec.momentum as string
-                  const isInflow = momentum.includes('INFLOW')
-                  const isStrong = momentum.includes('STRONG')
-                  const color = isInflow ? (isStrong ? 'text-emerald-400' : 'text-green-300') : (isStrong ? 'text-red-400' : 'text-orange-300')
-                  const bg    = isInflow ? (isStrong ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-green-500/5 border-green-500/10') : (isStrong ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/5 border-orange-500/10')
-                  const pct = sec.flow_delta_pct
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
+                {marketData.sectorHeatmap.map((sec: any, i: number) => {
+                  const netF = sec.netForeign
+                  const avg  = sec.avgChange
+                  const upRatio = sec.count > 0 ? sec.up / sec.count : 0
+                  const isPos = avg >= 0
+                  const intensity = Math.min(Math.abs(avg) / 3, 1)
+                  const bg = isPos
+                    ? `rgba(34,197,94,${0.05 + intensity * 0.18})`
+                    : `rgba(239,68,68,${0.05 + intensity * 0.18})`
+                  const borderColor = isPos ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'
+                  const textColor = isPos ? '#4ade80' : '#f87171'
                   return (
-                    <div key={i} className={`rounded-xl p-4 border ${bg} transition-all hover:scale-[1.01]`}>
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <p className="text-xs font-bold text-foreground leading-tight">{sec.sector}</p>
-                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full whitespace-nowrap ${color} ${bg}`}>
-                          {isInflow ? '▲' : '▼'} {momentum.replace('_', ' ')}
+                    <div
+                      key={i}
+                      style={{ background: bg, borderColor }}
+                      className="rounded-xl p-3 border cursor-default hover:scale-[1.02] transition-transform"
+                    >
+                      <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-wide truncate mb-1">{sec.sector}</p>
+                      <p style={{ color: textColor }} className="text-base font-black leading-none">
+                        {avg > 0 ? '+' : ''}{avg.toFixed(2)}%
+                      </p>
+                      <div className="mt-2 h-1 rounded-full bg-white/5 overflow-hidden">
+                        <div className="h-full rounded-full bg-current" style={{ width: `${upRatio * 100}%`, color: textColor, background: textColor, opacity: 0.6 }} />
+                      </div>
+                      <div className="flex items-center justify-between mt-1.5">
+                        <span className="text-[8px] text-muted-foreground">{sec.count} stk</span>
+                        <span style={{ color: netF >= 0 ? '#34d399' : '#f87171' }} className="text-[8px] font-bold">
+                          {netF >= 0 ? '▲' : '▼'} {fmtRp(Math.abs(netF))}
                         </span>
-                      </div>
-                      <div className="flex items-end justify-between">
-                        <div>
-                          <p className="text-[10px] text-muted-foreground">Net Foreign</p>
-                          <p className={`text-sm font-bold ${color}`}>{fmtRp(sec.total_net_foreign)}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[10px] text-muted-foreground">Flow Δ</p>
-                          <p className={`text-sm font-bold ${color}`}>{pct > 0 ? '+' : ''}{Number(pct).toFixed(1)}%</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground">
-                        <span>🐋 {sec.whale_count} whale</span>
-                        <span>⚡ {sec.anomaly_count} anomaly</span>
-                        <span>{sec.stock_count} stocks</span>
                       </div>
                     </div>
                   )
