@@ -67,20 +67,46 @@ const icons = {
       <path d="M5.5 1.5H10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
     </svg>
   ),
+  radar: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.4"/>
+      <circle cx="8" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.4"/>
+      <circle cx="8" cy="8" r="1" fill="currentColor"/>
+      <path d="M8 8L12.5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+      <path d="M8 1.5V3M8 13V14.5M1.5 8H3M13 8H14.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+    </svg>
+  ),
+  eye: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M1.5 8C1.5 8 4 3 8 3C12 3 14.5 8 14.5 8C14.5 8 12 13 8 13C4 13 1.5 8 1.5 8Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+      <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.4"/>
+    </svg>
+  ),
+  sector: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="1" y="1" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.4"/>
+      <rect x="9" y="1" width="6" height="4" rx="1" stroke="currentColor" strokeWidth="1.4"/>
+      <rect x="1" y="9" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.4"/>
+      <rect x="9" y="7" width="6" height="8" rx="1" stroke="currentColor" strokeWidth="1.4"/>
+    </svg>
+  ),
 }
 
 // ======================== NAV ITEMS ========================
 const navItems = [
-  { href: '/', label: 'Market Overview', icon: icons.dashboard },
-  { href: '/stocks', label: 'Stock Intelligence', icon: icons.search },
-  { href: '/screener', label: 'Screener Pro', icon: icons.crosshair, badge: 'PRO' },
-  { href: '/players', label: 'Big Player Radar', icon: icons.users, badge: 'HOT' },
-  { href: '/konlo', label: 'Konglomerasi', icon: icons.target },
-  { href: '/flow', label: '5% Flow', icon: icons.flow, badge: '5%' },        // ← TAMBAH
-  { href: '/ksei1', label: '1% Tracker', icon: icons.building, badge: '1%' },  // ← TAMBAH
-  { href: '/ownership', label: 'Whale Portfolio', icon: icons.building },       // ← TAMBAH
-  { href: '/backtest', label: 'Backtest Lab', icon: icons.lab, badge: 'NEW' },
-  { href: '/pricing', label: 'Pricing', icon: icons.crown },
+  { href: '/',          label: 'Market Overview',    icon: icons.dashboard },
+  { href: '/stocks',    label: 'Stock Intelligence', icon: icons.search },
+  { href: '/screener',  label: 'Screener Pro',       icon: icons.crosshair,  badge: 'PRO' },
+  { href: '/radar',     label: 'Smart Money Radar',  icon: icons.radar,      badge: 'NEW' },
+  { href: '/insider',   label: 'Insider Alerts',     icon: icons.eye },
+  { href: '/sector',    label: 'Sector Heatmap',     icon: icons.sector },
+  { href: '/players',   label: 'Big Player Radar',   icon: icons.users,      badge: 'HOT' },
+  { href: '/konlo',     label: 'Konglomerasi',       icon: icons.target },
+  { href: '/flow',      label: '5% Flow',            icon: icons.flow,       badge: '5%' },
+  { href: '/ksei1',     label: '1% Tracker',         icon: icons.building,   badge: '1%' },
+  { href: '/ownership', label: 'Whale Portfolio',    icon: icons.building },
+  { href: '/backtest',  label: 'Backtest Lab',       icon: icons.lab,        badge: 'NEW' },
+  { href: '/pricing',   label: 'Pricing',            icon: icons.crown },
 ]
 // ======================== COMPONENT ========================
 export default function Sidebar() {
