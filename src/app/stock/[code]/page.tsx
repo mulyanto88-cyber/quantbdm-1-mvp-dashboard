@@ -9,7 +9,7 @@ import {
   Search, TrendingUp, TrendingDown, Activity, AlertTriangle, Clock, 
   Zap, Target, DollarSign, PieChart, ArrowRightLeft, Building2, 
   Flame, Scale, Globe, Eye, Shield, ArrowUp, ArrowDown, RefreshCw,
-  Loader2, ChevronRight, Radar
+  Loader2, ChevronRight, Radar, Maximize2, Minimize2
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -92,8 +92,27 @@ export default function StockDetailPage() {
   const [errorMsg, setErrorMsg] = useState('')
   
   const chartContainerRef = useRef<HTMLDivElement>(null)
+  const chartWrapRef = useRef<HTMLDivElement>(null)
   const [chartReady, setChartReady] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const loadedTabs = useRef<Set<string>>(new Set())
+
+  const toggleFullscreen = () => {
+    if (!chartWrapRef.current) return
+    if (!isFullscreen) {
+      chartWrapRef.current.requestFullscreen?.().catch(() => {})
+    } else {
+      document.exitFullscreen?.().catch(() => {})
+    }
+    setIsFullscreen(f => !f)
+  }
+
+  // Sync isFullscreen when user presses Escape
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', handler)
+    return () => document.removeEventListener('fullscreenchange', handler)
+  }, [])
 
   // ============================================================
   // LOAD LIGHTWEIGHT CHARTS
@@ -292,15 +311,16 @@ export default function StockDetailPage() {
       const markers: any[] = []
       historyData.forEach(d => {
         if (d.whale_signal || d.aov_ratio >= 1.5) {
-          markers.push({ time: d.time, position: 'aboveBar', color: '#10b981', shape: 'arrowDown' })
+          markers.push({ time: d.time, position: 'aboveBar', color: '#10b981', shape: 'circle', size: 1, text: '★' })
         }
         if (d.aov_ratio <= 0.6 && d.aov_ratio > 0) {
-          markers.push({ time: d.time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp' })
+          markers.push({ time: d.time, position: 'belowBar', color: '#ef4444', shape: 'circle', size: 1, text: '⚡' })
         }
         if (d.big_player_anomaly) {
-          markers.push({ time: d.time, position: 'belowBar', color: '#ec4899', shape: 'arrowUp' })
+          markers.push({ time: d.time, position: 'belowBar', color: '#ec4899', shape: 'circle', size: 1, text: '◆' })
         }
       })
+      markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0))
       candleSeries.setMarkers(markers)
 
       // === VWMA LINE ===
@@ -408,7 +428,7 @@ export default function StockDetailPage() {
       <div className="glass rounded-xl p-12 text-center">
         <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" />
         <p className="text-red-400 font-medium">{errorMsg}</p>
-        <Link href="/radar" className="inline-block mt-4 text-gold-400 hover:underline">← Back to Radar</Link>
+        <Link href="/screener" className="inline-block mt-4 text-gold-400 hover:underline">← Back to Screener</Link>
       </div>
     )
   }
@@ -430,13 +450,14 @@ export default function StockDetailPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <Link href="/radar" className="text-xs text-gold-400 hover:underline mb-2 inline-block">← Back to Radar</Link>
+          <Link href="/screener" className="text-xs text-gold-400 hover:underline mb-2 inline-block">← Back to Screener</Link>
           <h1 className="text-3xl font-black text-foreground">{stockData.stock_code}</h1>
           <p className="text-sm text-muted-foreground">{stockData.sector || 'Unknown Sector'}</p>
         </div>
         <div className="flex items-center gap-3">
           <select value={periodFilter} onChange={(e) => setPeriodFilter(Number(e.target.value))}
-            className="bg-white/[0.03] border border-white/[0.08] rounded-xl px-3 py-2 text-sm">
+            className="bg-[#0f172a] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-foreground"
+            style={{ colorScheme: 'dark' }}>
             <option value={60}>3 Months</option>
             <option value={120}>6 Months</option>
             <option value={240}>1 Year</option>
@@ -529,7 +550,13 @@ export default function StockDetailPage() {
       {/* TAB 1: TECHNICAL CHART */}
       {/* ============================================================ */}
       {activeTab === 'technical' && (
-        <div className="glass rounded-2xl p-4 border border-border/30 relative group">
+        <div
+          ref={chartWrapRef}
+          className={`glass rounded-2xl p-4 border border-border/30 relative group transition-all ${
+            isFullscreen ? 'fixed inset-0 z-50 rounded-none bg-[#0b1221] flex flex-col' : ''
+          }`}
+        >
+          {/* Legend (hover) */}
           <div className="absolute top-4 left-6 z-10 space-y-1.5 bg-navy-900/90 p-3 rounded-xl backdrop-blur-md border border-border/50 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none shadow-xl">
             <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> Price</div>
             <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-blue-500" /> VWMA 20</div>
@@ -537,11 +564,35 @@ export default function StockDetailPage() {
             <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-red-500/40" /> Volume (Sell)</div>
             <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-emerald-500/70" /> Net Foreign +</div>
             <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-red-500/70" /> Net Foreign -</div>
-            <div className="flex items-center gap-2 mt-1"><span className="text-emerald-400">🐋</span> Whale / AOV ≥1.5x</div>
-            <div className="flex items-center gap-2"><span className="text-red-400">🩸</span> AOV ≤0.6x</div>
-            <div className="flex items-center gap-2"><span className="text-pink-400">⚠️</span> Big Player Anomaly</div>
+            <div className="flex items-center gap-2 mt-1"><span className="text-emerald-400">★</span> Whale / AOV ≥1.5x</div>
+            <div className="flex items-center gap-2"><span className="text-red-400">⚡</span> AOV ≤0.6x</div>
+            <div className="flex items-center gap-2"><span className="text-pink-400">◆</span> Big Player Anomaly</div>
           </div>
-          <div ref={chartContainerRef} className="w-full h-[600px]" />
+
+          {/* Fullscreen controls */}
+          <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+            {/* Stock code watermark (always visible in fullscreen) */}
+            {isFullscreen && (
+              <span className="text-sm font-black text-gold-400/70 tracking-widest select-none mr-2">
+                {stockCode}
+              </span>
+            )}
+            <button
+              onClick={toggleFullscreen}
+              title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+              className="p-2 rounded-xl bg-navy-900/80 border border-border/40 text-muted-foreground hover:text-gold-400 hover:border-gold-400/40 backdrop-blur-md transition-all opacity-0 group-hover:opacity-100"
+            >
+              {isFullscreen
+                ? <Minimize2 className="w-4 h-4" />
+                : <Maximize2 className="w-4 h-4" />
+              }
+            </button>
+          </div>
+
+          <div
+            ref={chartContainerRef}
+            className={`w-full ${isFullscreen ? 'flex-1' : 'h-[600px]'}`}
+          />
         </div>
       )}
 
