@@ -403,6 +403,7 @@ export default function StockDetailPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value.toUpperCase())}
               onKeyDown={(e) => { if (e.key === 'Enter' && searchQuery.length >= 4) window.location.href = `/stock/${searchQuery}` }}
+              onFocus={(e) => e.target.select()}
               className="w-full pl-10 pr-4 py-3 bg-white/[0.03] border border-white/[0.08] rounded-xl text-sm uppercase focus:outline-none focus:border-gold-400/30"
               maxLength={4}
             />
@@ -428,7 +429,7 @@ export default function StockDetailPage() {
       <div className="glass rounded-xl p-12 text-center">
         <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" />
         <p className="text-red-400 font-medium">{errorMsg}</p>
-        <Link href="/screener" className="inline-block mt-4 text-gold-400 hover:underline">← Back to Screener</Link>
+        <Link href="/stocks" className="inline-block mt-4 text-gold-400 hover:underline">← Stock Intelligence</Link>
       </div>
     )
   }
@@ -450,7 +451,7 @@ export default function StockDetailPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <Link href="/screener" className="text-xs text-gold-400 hover:underline mb-2 inline-block">← Back to Screener</Link>
+          <Link href="/stocks" className="text-xs text-gold-400 hover:underline mb-2 inline-block">← Stock Intelligence</Link>
           <h1 className="text-3xl font-black text-foreground">{stockData.stock_code}</h1>
           <p className="text-sm text-muted-foreground">{stockData.sector || 'Unknown Sector'}</p>
         </div>
@@ -467,6 +468,7 @@ export default function StockDetailPage() {
             <input type="text" placeholder="Search..." value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value.toUpperCase())}
               onKeyDown={(e) => { if (e.key === 'Enter' && searchQuery.length >= 4) window.location.href = `/stock/${searchQuery}` }}
+              onFocus={(e) => e.target.select()}
               className="w-full pl-10 pr-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-xl text-sm uppercase focus:outline-none focus:border-gold-400/30"
               maxLength={4} />
           </div>
