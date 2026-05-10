@@ -301,6 +301,30 @@ html.dark body { background-color: #060a16; }
 
 .counter { font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
 
+/* ── Data Grid Card ──────────────────────────────────────── */
+.data-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1px;
+  background: hsl(var(--border));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.data-grid > * {
+  background: hsl(var(--card));
+  padding: 1rem 1.25rem;
+}
+
+/* ── Metric Card ─────────────────────────────────────────── */
+.metric-card { @apply p-4 rounded-xl border transition-all duration-300; }
+.metric-card .metric-label { @apply text-xs text-muted-foreground uppercase tracking-wider font-medium mb-1; }
+.metric-card .metric-value { @apply text-2xl font-bold counter; }
+
+/* ── Heatmap Cell ────────────────────────────────────────── */
+.heatmap-cell { @apply rounded transition-all duration-200 cursor-pointer; }
+.heatmap-cell:hover { @apply ring-2 ring-primary scale-110 z-10; }
+
 /* ── Misc ────────────────────────────────────────────────── */
 .accent-line {
   width: 3px; height: 20px; border-radius: 2px; flex-shrink: 0;
