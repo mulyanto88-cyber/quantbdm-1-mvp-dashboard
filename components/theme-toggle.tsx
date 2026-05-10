@@ -3,40 +3,41 @@
 import { useEffect, useState } from 'react'
 import { Sun, Moon } from 'lucide-react'
 
-export function ThemeToggle() {
-  const [dark, setDark] = useState(true)
+export default function ThemeToggle() {
+  const [isDark, setIsDark] = useState(true)
 
+  // On mount — read saved preference
   useEffect(() => {
-    const stored = localStorage.getItem('theme')
-    if (stored === 'light') {
-      setDark(false)
-      document.documentElement.classList.remove('dark')
-    }
+    const saved = localStorage.getItem('bdmflow-theme')
+    const dark  = saved ? saved === 'dark' : true // default dark
+    setIsDark(dark)
+    document.documentElement.classList.toggle('dark', dark)
   }, [])
 
-  function toggle() {
-    if (dark) {
-      document.documentElement.classList.remove('dark')
-      localStorage.setItem('theme', 'light')
-      setDark(false)
-    } else {
-      document.documentElement.classList.add('dark')
-      localStorage.setItem('theme', 'dark')
-      setDark(true)
-    }
+  const toggle = () => {
+    const next = !isDark
+    setIsDark(next)
+    document.documentElement.classList.toggle('dark', next)
+    localStorage.setItem('bdmflow-theme', next ? 'dark' : 'light')
   }
 
   return (
     <button
       onClick={toggle}
-      className="p-2 rounded-lg transition-colors hover:bg-accent"
-      title={dark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+      title={isDark ? 'Switch to Silver Light' : 'Switch to Dark Navy'}
+      className="
+        flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl
+        border transition-all duration-300 text-xs font-semibold
+        hover:scale-105 active:scale-95
+        border-border/50 hover:border-gold-400/40
+        bg-accent/30 hover:bg-accent/60
+        text-muted-foreground hover:text-foreground
+      "
     >
-      {dark ? (
-        <Sun size={18} className="text-gold-400" />
-      ) : (
-        <Moon size={18} className="text-navy-600" />
-      )}
+      {isDark
+        ? <><Sun  className="w-3.5 h-3.5 text-amber-400" /><span className="hidden sm:inline">Light</span></>
+        : <><Moon className="w-3.5 h-3.5 text-blue-400"  /><span className="hidden sm:inline">Dark</span></>
+      }
     </button>
   )
 }
