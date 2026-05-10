@@ -39,6 +39,7 @@ export default function MarketOverview() {
   const [ksei1Data, setKsei1Data] = useState<any>(null)
   const [kseiAlerts, setKseiAlerts] = useState<any[]>([])
   const [highConviction, setHighConviction] = useState<any[]>([])
+  const [selectedSector, setSelectedSector] = useState<string | null>(null)
 
   useEffect(() => { fetchAllData() }, [])
 
@@ -81,6 +82,7 @@ export default function MarketOverview() {
       const gainers: any[] = [], losers: any[] = [], foreignBuy: any[] = [], foreignSell: any[] = [], spikes: any[] = [], topVol: any[] = [], topVal: any[] = []
       let up = 0, down = 0
 
+      const allStocks: any[] = []
       const sectorMap: Record<string, any> = {}
       data.forEach((r: any) => {
         const netF = Number(r.net_foreign_value) || 0
@@ -97,6 +99,7 @@ export default function MarketOverview() {
         if ((Number(r.aov_ratio_ma20) || 0) >= 1.5) spikes.push({ code: r.stock_code, close: Number(r.close), aov: Number(r.aov_ratio_ma20), change: pct })
         topVol.push({ code: r.stock_code, close: Number(r.close), volume: vol, change: pct })
         topVal.push({ code: r.stock_code, close: Number(r.close), value: val, change: pct })
+        allStocks.push({ code: r.stock_code, close: Number(r.close), change: pct, value: val, volume: vol, netForeign: netF, sector: sec })
         // Sector aggregation
         const sec = r.sector || 'Other'
         if (!sectorMap[sec]) sectorMap[sec] = { sector: sec, count: 0, up: 0, down: 0, totalValue: 0, netForeign: 0, changeSum: 0 }
@@ -122,6 +125,7 @@ export default function MarketOverview() {
         foreignSell: foreignSell.sort((a, b) => b.netForeign - a.netForeign).slice(0, 10),
         spikes: spikes.sort((a, b) => b.aov - a.aov).slice(0, 7),
         sectorHeatmap,
+        allStocks,
       })
     } catch (e) { console.error(e) }
   }
@@ -497,18 +501,23 @@ export default function MarketOverview() {
                     : `rgba(239,68,68,${0.05 + intensity * 0.18})`
                   const borderColor = isPos ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'
                   const textColor = isPos ? '#4ade80' : '#f87171'
+                  const isSelected = selectedSector === sec.sector
                   return (
                     <div
                       key={i}
-                      style={{ background: bg, borderColor }}
-                      className="rounded-xl p-3 border cursor-default hover:scale-[1.02] transition-transform"
+                      onClick={() => setSelectedSector(isSelected ? null : sec.sector)}
+                      style={{ background: isSelected ? (isPos ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)') : bg, borderColor: isSelected ? textColor : borderColor }}
+                      className="rounded-xl p-3 border cursor-pointer hover:scale-[1.02] active:scale-[0.98] transition-all select-none"
                     >
-                      <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-wide truncate mb-1">{sec.sector}</p>
+                      <div className="flex items-start justify-between gap-1 mb-1">
+                        <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-wide truncate leading-tight">{sec.sector}</p>
+                        {isSelected && <span style={{ color: textColor }} className="text-[8px] shrink-0">▼</span>}
+                      </div>
                       <p style={{ color: textColor }} className="text-base font-black leading-none">
                         {avg > 0 ? '+' : ''}{avg.toFixed(2)}%
                       </p>
                       <div className="mt-2 h-1 rounded-full bg-white/5 overflow-hidden">
-                        <div className="h-full rounded-full bg-current" style={{ width: `${upRatio * 100}%`, color: textColor, background: textColor, opacity: 0.6 }} />
+                        <div className="h-full rounded-full" style={{ width: `${upRatio * 100}%`, background: textColor, opacity: 0.6 }} />
                       </div>
                       <div className="flex items-center justify-between mt-1.5">
                         <span className="text-[8px] text-muted-foreground">{sec.count} stk</span>
@@ -520,6 +529,64 @@ export default function MarketOverview() {
                   )
                 })}
               </div>
+
+              {/* ── Sector Drill-down Panel ── */}
+              {selectedSector && (() => {
+                const stocks = (marketData.allStocks || [])
+                  .filter((s: any) => s.sector === selectedSector)
+                  .sort((a: any, b: any) => b.value - a.value)
+                const sectorInfo = marketData.sectorHeatmap.find((s: any) => s.sector === selectedSector)
+                const netF = sectorInfo?.netForeign || 0
+                const avg  = sectorInfo?.avgChange  || 0
+                const isPos = avg >= 0
+                return (
+                  <div className="mt-3 rounded-xl border border-border/30 overflow-hidden animate-fade-in">
+                    {/* Panel header */}
+                    <div className="flex items-center justify-between px-4 py-2.5 bg-accent/20 border-b border-border/20">
+                      <div className="flex items-center gap-3">
+                        <h4 className="font-bold text-sm text-foreground">{selectedSector}</h4>
+                        <span className={`text-xs font-black ${isPos ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {avg > 0 ? '+' : ''}{avg.toFixed(2)}% avg
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">{stocks.length} stocks</span>
+                        <span className={`text-[10px] font-bold ${netF >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          Asing: {netF >= 0 ? '+' : ''}{fmtRp(netF)}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setSelectedSector(null)}
+                        className="text-[10px] text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-accent/40 transition-colors"
+                      >✕ Tutup</button>
+                    </div>
+
+                    {/* Stock list — 4 columns on large screen */}
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 divide-x divide-y divide-border/10">
+                      {stocks.map((s: any, i: number) => (
+                        <Link
+                          key={i}
+                          href={`/stock/${s.code}`}
+                          className="flex items-center justify-between px-3.5 py-2.5 hover:bg-accent/20 transition-colors group"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-mono font-black text-sm text-foreground group-hover:text-gold-400 transition-colors truncate">{s.code}</p>
+                            <p className="text-[9px] text-muted-foreground">{fmtRp(s.close)} · Val {fmtRp(s.value)}</p>
+                          </div>
+                          <div className="text-right ml-2 shrink-0">
+                            <p className={`text-xs font-bold ${s.change > 0 ? 'text-emerald-400' : s.change < 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                              {s.change > 0 ? '+' : ''}{s.change.toFixed(2)}%
+                            </p>
+                            {s.netForeign !== 0 && (
+                              <p className={`text-[8px] ${s.netForeign > 0 ? 'text-emerald-400/70' : 'text-red-400/70'}`}>
+                                {s.netForeign > 0 ? '▲' : '▼'} {fmtRp(Math.abs(s.netForeign))}
+                              </p>
+                            )}
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           )}
 
