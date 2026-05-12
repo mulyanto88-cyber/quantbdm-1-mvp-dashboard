@@ -95,31 +95,44 @@ async function getDB() {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const VALID_CODE = /^[A-Z0-9]{1,6}$/;
+const STORAGE_BASE = 'https://ifdbelggvxyimqyowczn.supabase.co/storage/v1/object/public/broker_parquet';
 
+// Build candidate URLs (skip weekends), then HEAD-check which actually exist
 async function fetchParquetUrls(days: string): Promise<string[]> {
-  const res = await fetch(`/api/broker-tracker?days=${days}`);
-  if (!res.ok) throw new Error(`Gagal mengambil file list: ${res.status}`);
-  const { urls, error } = await res.json();
-  if (error) throw new Error(error);
-  return (urls as { date: string; url: string }[]).map(f => f.url);
+  const numDays = parseInt(days);
+  const candidates: string[] = [];
+  const today = new Date();
+  for (let i = 0; candidates.length < numDays && i < numDays + 14; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    if (d.getDay() === 0 || d.getDay() === 6) continue; // skip weekend
+    const ds = d.toISOString().split('T')[0].replace(/-/g, '');
+    candidates.push(`${STORAGE_BASE}/${ds}/broker_activity_${ds}.parquet`);
+  }
+  const checks = await Promise.all(
+    candidates.map(url => fetch(url, { method: 'HEAD' }).then(r => r.ok ? url : null).catch(() => null))
+  );
+  return checks.filter(Boolean) as string[];
 }
 
+// Arrow date → "YYYY-MM-DD"
+// Treats number as MILLISECONDS (not Date32 days) based on actual parquet output
 function arrowDateToStr(val: any): string {
   if (val == null) return '';
   if (val instanceof Date) {
     if (isNaN(val.getTime())) return '';
     return val.toISOString().split('T')[0];
   }
+  if (typeof val === 'number') {
+    if (!Number.isFinite(val)) return '';
+    return new Date(val).toISOString().split('T')[0]; // ms since epoch
+  }
   if (typeof val === 'bigint') {
     const ms = Number(val);
     if (!Number.isFinite(ms)) return '';
     return new Date(ms).toISOString().split('T')[0];
   }
-  if (typeof val === 'number') {
-    if (!Number.isFinite(val)) return '';
-    return new Date(val * 86_400_000).toISOString().split('T')[0];
-  }
-  return String(val);
+  return String(val).slice(0, 10);
 }
 
 async function queryBroker(urls: string[], code: string): Promise<BrokerRow[]> {
@@ -211,13 +224,13 @@ export default function BandarmologiPage() {
     setFromCache(false);
 
     try {
-      setMsg('Mengambil daftar file...');
+      setMsg('Menyiapkan file list...');
       const urls = await fetchParquetUrls(days);
-      if (!urls.length) throw new Error('Tidak ada file parquet tersedia untuk rentang ini.');
+      if (!urls.length) throw new Error('Tidak ada file parquet tersedia. Coba kurangi rentang hari.');
 
-      setMsg(`Query ${urls.length} file parquet via DuckDB...`);
+      setMsg(`Query DuckDB — ${urls.length} file...`);
       const rows = await queryBroker(urls, codeUpper);
-      if (!rows.length) throw new Error(`Tidak ada data untuk ${codeUpper}.`);
+      if (!rows.length) throw new Error(`Tidak ada data untuk ${codeUpper}. Coba kode saham lain.`);
 
       // Hitung top 10 broker
       const brokerMap = new Map<string, number>();
