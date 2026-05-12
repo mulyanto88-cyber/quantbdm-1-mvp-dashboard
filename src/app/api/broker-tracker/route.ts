@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 
 // Supabase khusus broker parquet — project terpisah dari dashboard utama
 // Pastikan kedua env var ini ada di .env.local
-const SUPABASE_URL  = process.env.BROKER_SUPABASE_URL!;
-const SUPABASE_KEY  = process.env.BROKER_SUPABASE_ANON_KEY!;
+const SUPABASE_URL  = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPABASE_KEY  = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const STORAGE_BASE  = `${SUPABASE_URL}/storage/v1/object/public/broker_parquet`;
 const STORAGE_API   = `${SUPABASE_URL}/storage/v1/object/list/broker_parquet`;
 
@@ -15,12 +15,6 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const days = parseInt(searchParams.get('days') || '30');
 
-  if (!SUPABASE_URL || !SUPABASE_KEY) {
-    return NextResponse.json(
-      { error: 'BROKER_SUPABASE_URL atau BROKER_SUPABASE_ANON_KEY belum diset di .env.local' },
-      { status: 500 }
-    );
-  }
 
   try {
     const res = await fetch(STORAGE_API, {
