@@ -13,7 +13,8 @@ import {
 } from 'lucide-react'
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, 
-  ResponsiveContainer, AreaChart, Area, Legend as RechartsLegend
+  ResponsiveContainer, AreaChart, Area, Legend as RechartsLegend,
+  BarChart, Bar, Cell
 } from 'recharts'
 import Link from 'next/link'
 
@@ -69,7 +70,7 @@ interface HistoryPoint {
   big_player_anomaly: boolean
 }
 
-type DetailTab = 'technical' | 'smart-money' | 'whale' | 'volume' | 'broker' | 'ownership' | 'foreign-flow'
+type DetailTab = 'technical' | 'smart-money' | 'volume' | 'broker' | 'ownership' | 'foreign-flow'
 
 declare global {
   interface Window {
@@ -240,8 +241,12 @@ export default function StockDetailPage() {
       }
 
       if (tab === 'ownership') {
-        const { data } = await supabase.rpc('get_ownership_structure', { p_stock_code: code, p_date: null })
-        if (data) setOwnershipData(data)
+        const [ownerRes, whaleRes] = await Promise.all([
+          supabase.rpc('get_ownership_structure', { p_stock_code: code, p_date: null }),
+          supabase.rpc('get_whale_timing_analysis', { p_stock_code: code })
+        ])
+        if (ownerRes.data) setOwnershipData(ownerRes.data)
+        if (whaleRes.data) setWhaleData(whaleRes.data)
       }
 
       if (tab === 'foreign-flow') {
@@ -524,9 +529,8 @@ export default function StockDetailPage() {
   const tabs = [
     { id: 'technical' as DetailTab, label: 'Chart', icon: Activity, count: 0 },
     { id: 'smart-money' as DetailTab, label: 'Smart Money', icon: Radar, count: 0 },
-    { id: 'ownership' as DetailTab, label: 'Ownership', icon: PieChart, count: 0 },
+    { id: 'ownership' as DetailTab, label: 'Holder Intel', icon: PieChart, count: 0 },
     { id: 'foreign-flow' as DetailTab, label: 'Foreign Flow', icon: Globe, count: 0 },
-    { id: 'whale' as DetailTab, label: 'Whale', icon: Eye, count: 0 },
     { id: 'volume' as DetailTab, label: 'Volume Spike', icon: Zap, count: 0 },
     { id: 'broker' as DetailTab, label: 'Broker Intel', icon: Building2, count: 0 },
   ]
@@ -803,81 +807,6 @@ export default function StockDetailPage() {
       )}
 
       {/* ============================================================ */}
-      {/* TAB 3: WHALE TRACKER */}
-      {/* ============================================================ */}
-      {activeTab === 'whale' && (
-        tabLoading ? (
-          <div className="space-y-4 animate-pulse">
-            <div className="glass rounded-2xl h-64 bg-accent/30" />
-          </div>
-        ) : (
-        <div className="glass rounded-2xl overflow-hidden border border-border/30">
-          {whaleData.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-white/[0.02] border-b border-white/[0.05] text-[10px] text-muted-foreground uppercase">
-                    <th className="p-4 text-left">Investor</th>
-                    <th className="p-4 text-center">Type</th>
-                    <th className="p-4 text-right">Entry Price</th>
-                    <th className="p-4 text-right">Current</th>
-                    <th className="p-4 text-right">Return</th>
-                    <th className="p-4 text-right">Holding %</th>
-                    <th className="p-4 text-center">Trend</th>
-                    <th className="p-4 text-center">Verdict</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {whaleData.map((w: any, i: number) => (
-                    <tr key={i} className="tr-hover border-b border-white/[0.02]">
-                      <td className="p-4">
-                       <p className="font-bold text-foreground">{w.investor_name}</p>
-                        <p className="text-[10px] text-muted-foreground">
-                          {w.local_foreign === 'F' ? '🌏 Foreign' : '🇮🇩 Local'} • {w.investor_type}
-                        </p>
-                      </td>
-                      <td className="p-4 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          w.investor_type === 'Individual' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'
-                        }`}>{w.investor_type}</span>
-                      </td>
-                      <td className="p-4 text-right font-semibold">{formatNumber(w.est_entry_price)}</td>
-                      <td className="p-4 text-right font-semibold">{formatNumber(w.current_price)}</td>
-                      <td className={`p-4 text-right font-bold ${w.return_since_entry >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {w.return_since_entry ? formatPercent(w.return_since_entry) : '-'}
-                      </td>
-                      <td className="p-4 text-right">
-                        <span className="font-bold">{w.latest_percentage}%</span>
-                        <p className="text-[10px] text-muted-foreground">{formatShares(w.latest_shares)} shares</p>
-                      </td>
-                      <td className="p-4 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          w.position_trend === 'INCREASING' ? 'bg-emerald-500/20 text-emerald-400' :
-                          w.position_trend === 'DECREASING' ? 'bg-red-500/20 text-red-400' : 'bg-slate-500/20 text-slate-400'
-                        }`}>{w.position_trend}</span>
-                      </td>
-                      <td className="p-4 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          w.whale_verdict === 'ADDING_POSITION' || w.whale_verdict === 'AVERAGING_DOWN' ? 'bg-emerald-500/20 text-emerald-400' :
-                          w.whale_verdict === 'TRIMMING' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'
-                        }`}>{w.whale_verdict}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="p-12 text-center text-muted-foreground">
-              <Eye className="w-12 h-12 mx-auto mb-4 opacity-30" />
-              No whale data available (KSEI 1% required)
-            </div>
-          )}
-        </div>
-        )
-      )}
-
-      {/* ============================================================ */}
       {/* TAB 4: VOLUME SPIKES */}
       {/* ============================================================ */}
       {activeTab === 'volume' && (
@@ -1011,7 +940,7 @@ export default function StockDetailPage() {
         )
       )}
       {/* ============================================================ */}
-      {/* TAB 6: OWNERSHIP STRUCTURE */}
+      {/* TAB 6: HOLDER INTEL (Consolidated) */}
       {/* ============================================================ */}
       {activeTab === 'ownership' && (
         tabLoading ? (
@@ -1022,7 +951,7 @@ export default function StockDetailPage() {
             <div className="glass rounded-2xl h-48 bg-accent/30" />
           </div>
         ) : (
-        <div className="space-y-6">
+        <div className="space-y-8">
           {ownershipData.length > 0 ? (
             <>
               {/* Category Breakdown Grid */}
@@ -1058,42 +987,120 @@ export default function StockDetailPage() {
                 })}
               </div>
 
-              {/* Donut chart — visual via CSS */}
-              <div className="glass rounded-2xl p-6 border border-border/30">
-                <h3 className="font-bold text-foreground mb-4 flex items-center gap-2">
-                  <Target className="w-5 h-5 text-gold-400" /> Top Pemegang Saham ≥1%
-                  <span className="ml-auto text-xs text-muted-foreground font-normal">As of {ownershipData[0]?.report_date}</span>
-                </h3>
-                <div className="space-y-2">
-                  {ownershipData.map((cat: any, i: number) => {
-                    const bgColor =
-                      cat.category === 'Institusi Lokal' ? 'bg-amber-500' :
-                      cat.category === 'Individu Lokal'  ? 'bg-emerald-500' :
-                      cat.category === 'Institusi Asing' ? 'bg-blue-500' : 'bg-purple-500'
-                    return (
-                      <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] transition-colors">
-                        <span className={`w-2.5 h-2.5 rounded-full ${bgColor} flex-shrink-0`} />
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm font-bold text-foreground">{cat.top1_investor}</span>
-                            <span className="text-sm font-bold text-gold-400">{Number(cat.top1_percentage).toFixed(2)}%</span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-muted-foreground">{cat.category}</span>
-                            <span className="text-[10px] text-muted-foreground">{formatShares(Number(cat.total_shares))} shares</span>
-                          </div>
-                        </div>
+              {/* Whale Action Chart */}
+              {whaleData.length > 0 && (
+                <div className="glass rounded-2xl p-6 border border-border/30">
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h3 className="font-bold text-foreground flex items-center gap-2">
+                        <Eye className="w-5 h-5 text-gold-400" /> Top Whale Position & Action
+                      </h3>
+                      <p className="text-[10px] text-muted-foreground">Analisis pergerakan pemegang saham terbesar</p>
+                    </div>
+                    <div className="flex items-center gap-4 text-[10px] font-bold">
+                      <div className="flex items-center gap-1.5 text-emerald-400">
+                        <div className="w-2 h-2 rounded-full bg-emerald-500" /> ACCUMULATING
                       </div>
-                    )
-                  })}
+                      <div className="flex items-center gap-1.5 text-red-400">
+                        <div className="w-2 h-2 rounded-full bg-red-500" /> TRIMMING
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="h-[300px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={whaleData.slice(0, 8)} margin={{ top: 20, right: 30, left: 40, bottom: 60 }} layout="vertical">
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
+                        <XAxis type="number" hide />
+                        <YAxis 
+                          type="category" 
+                          dataKey="investor_name" 
+                          width={150} 
+                          tick={{ fontSize: 9, fill: '#94a3b8' }}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <RechartsTooltip 
+                          contentStyle={{ background: '#0B0F19', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
+                          formatter={(v: any, n: any, props: any) => [
+                            `${v}% Holding`,
+                            `Action: ${props.payload.whale_verdict}`
+                          ]}
+                        />
+                        <Bar dataKey="latest_percentage" radius={[0, 4, 4, 0]} barSize={20}>
+                          {whaleData.map((entry: any, index: number) => (
+                            <Cell key={`cell-${index}`} fill={
+                              entry.position_trend === 'INCREASING' ? '#10b981' : 
+                              entry.position_trend === 'DECREASING' ? '#ef4444' : '#3b82f6'
+                            } fillOpacity={0.8} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* Specific Whale Table (Consolidated) */}
+              {whaleData.length > 0 && (
+                <div className="glass rounded-2xl overflow-hidden border border-border/30">
+                  <div className="p-4 border-b border-white/[0.05] flex items-center justify-between bg-white/[0.01]">
+                    <h3 className="font-bold text-foreground text-sm">Whale List & Verdict</h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-white/[0.02] border-b border-white/[0.05] text-[10px] text-muted-foreground uppercase">
+                          <th className="p-4 text-left">Investor</th>
+                          <th className="p-4 text-right">Entry Price</th>
+                          <th className="p-4 text-right">Return</th>
+                          <th className="p-4 text-right">Holding %</th>
+                          <th className="p-4 text-center">Trend</th>
+                          <th className="p-4 text-center">Verdict</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {whaleData.map((w: any, i: number) => (
+                          <tr key={i} className="tr-hover border-b border-white/[0.02]">
+                            <td className="p-4">
+                            <p className="font-bold text-foreground">{w.investor_name}</p>
+                              <p className="text-[10px] text-muted-foreground">
+                                {w.local_foreign === 'F' ? '🌏 Foreign' : '🇮🇩 Local'} • {w.investor_type}
+                              </p>
+                            </td>
+                            <td className="p-4 text-right font-semibold">{formatNumber(w.est_entry_price)}</td>
+                            <td className={`p-4 text-right font-bold ${w.return_since_entry >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {w.return_since_entry ? formatPercent(w.return_since_entry) : '-'}
+                            </td>
+                            <td className="p-4 text-right">
+                              <span className="font-bold">{w.latest_percentage}%</span>
+                              <p className="text-[10px] text-muted-foreground">{formatShares(w.latest_shares)} shares</p>
+                            </td>
+                            <td className="p-4 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                w.position_trend === 'INCREASING' ? 'bg-emerald-500/20 text-emerald-400' :
+                                w.position_trend === 'DECREASING' ? 'bg-red-500/20 text-red-400' : 'bg-slate-500/20 text-slate-400'
+                              }`}>{w.position_trend}</span>
+                            </td>
+                            <td className="p-4 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                w.whale_verdict === 'ADDING_POSITION' || w.whale_verdict === 'AVERAGING_DOWN' ? 'bg-emerald-500/20 text-emerald-400' :
+                                w.whale_verdict === 'TRIMMING' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'
+                              }`}>{w.whale_verdict}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <div className="glass rounded-xl p-16 text-center text-muted-foreground">
               <PieChart className="w-16 h-16 mx-auto mb-4 opacity-20" />
-              <p className="font-bold">No KSEI ownership data for {stockCode}</p>
-              <p className="text-xs mt-1">Data requires ≥1% holding threshold (KSEI C01)</p>
+              <p className="font-bold">No Holder data for {stockCode}</p>
+              <p className="text-xs mt-1">Data requires ≥1% holding threshold</p>
             </div>
           )}
         </div>
