@@ -1,25 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Gunakan env var — jangan hardcode key di source
 const SUPABASE_URL  = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_KEY  = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const STORAGE_BASE  = `${SUPABASE_URL}/storage/v1/object/public/broker_parquet`;
 const STORAGE_API   = `${SUPABASE_URL}/storage/v1/object/list/broker_parquet`;
 
-/**
- * GET /api/broker-tracker?days=30
- *
- * Panggil Supabase Storage List API dari SERVER (bukan browser),
- * sehingga tidak terhalang COEP/CORP.
- * Return daftar URL parquet yang benar-benar ada di bucket.
- * DuckDB query tetap dilakukan di browser (client-side).
- */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const days = parseInt(searchParams.get('days') || '30');
 
   try {
-    // List semua folder (tanggal) yang ada di bucket — server-side, bebas COEP
     const res = await fetch(STORAGE_API, {
       method: 'POST',
       headers: {
@@ -35,31 +25,41 @@ export async function GET(req: NextRequest) {
     });
 
     if (!res.ok) throw new Error(`Storage list error: ${res.status}`);
-    const folders: { name: string }[] = await res.json();
+    const rawFolders = await res.json();
 
-    // Filter folder dalam rentang `days` hari terakhir
+    // ── DEBUG: kembalikan raw response supaya bisa dilihat ──
+    // Hapus blok ini setelah masalah teridentifikasi
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
 
-    const urls = folders
-      .map(f => f.name)
-      .filter(name => /^\d{8}$/.test(name))           // format YYYYMMDD
-      .filter(name => {
-        const d = new Date(
-          `${name.slice(0, 4)}-${name.slice(4, 6)}-${name.slice(6, 8)}`
-        );
-        return d >= cutoff;
-      })
-      .sort((a, b) => b.localeCompare(a))              // desc
-      .map(name => ({
-        date: `${name.slice(0, 4)}-${name.slice(4, 6)}-${name.slice(6, 8)}`,
+    const allNames = Array.isArray(rawFolders) ? rawFolders.map((f: any) => f.name) : [];
+    const passRegex = allNames.filter((n: string) => /^\d{8}$/.test(n));
+    const passDate  = passRegex.filter((name: string) => {
+      const d = new Date(`${name.slice(0,4)}-${name.slice(4,6)}-${name.slice(6,8)}`);
+      return d >= cutoff;
+    });
+
+    const urls = passDate
+      .sort((a: string, b: string) => b.localeCompare(a))
+      .map((name: string) => ({
+        date: `${name.slice(0,4)}-${name.slice(4,6)}-${name.slice(6,8)}`,
         url: `${STORAGE_BASE}/${name}/broker_activity_${name}.parquet`,
       }));
 
-    return NextResponse.json(
-      { urls },
-      { headers: { 'Cache-Control': 's-maxage=300, stale-while-revalidate' } }
-    );
+    return NextResponse.json({
+      urls,
+      // ── debug fields (hapus setelah fix) ──
+      _debug: {
+        supabase_url_used: SUPABASE_URL,
+        key_present: !!SUPABASE_KEY,
+        raw_count: Array.isArray(rawFolders) ? rawFolders.length : 'NOT_ARRAY',
+        raw_first5: Array.isArray(rawFolders) ? rawFolders.slice(0, 5) : rawFolders,
+        all_names: allNames.slice(0, 20),
+        pass_regex: passRegex,
+        pass_date: passDate,
+        cutoff_used: cutoff.toISOString(),
+      },
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
