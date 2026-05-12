@@ -6,6 +6,68 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
+import { RefreshCw, Database, Zap, TrendingUp, TrendingDown, AlertTriangle, X, Clock, CheckCircle2 } from 'lucide-react';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface BrokerRow {
+  date: string;
+  broker_code: string;
+  buy_value: number;
+  sell_value: number;
+  net_value: number;
+  net_lot: number;
+}
+
+interface CacheEntry {
+  rows: BrokerRow[];
+  topBrokers: string[];
+  fetchedAt: number;
+  code: string;
+  days: string;
+}
+
+// ── Cache Config ──────────────────────────────────────────────────────────────
+const CACHE_TTL_MS  = 4 * 60 * 60 * 1000; // 4 jam
+const CACHE_PREFIX  = 'bdmflow_broker_';
+
+function getCacheKey(code: string, days: string) {
+  return `${CACHE_PREFIX}${code.toUpperCase()}_${days}d`;
+}
+
+function saveCache(code: string, days: string, rows: BrokerRow[], topBrokers: string[]) {
+  try {
+    const entry: CacheEntry = { rows, topBrokers, fetchedAt: Date.now(), code, days };
+    sessionStorage.setItem(getCacheKey(code, days), JSON.stringify(entry));
+  } catch (e) {
+    console.warn('Cache write gagal (mungkin penuh):', e);
+  }
+}
+
+function loadCache(code: string, days: string): CacheEntry | null {
+  try {
+    const raw = sessionStorage.getItem(getCacheKey(code, days));
+    if (!raw) return null;
+    const entry: CacheEntry = JSON.parse(raw);
+    if (Date.now() - entry.fetchedAt > CACHE_TTL_MS) {
+      sessionStorage.removeItem(getCacheKey(code, days));
+      return null;
+    }
+    return entry;
+  } catch {
+    return null;
+  }
+}
+
+function clearCache(code: string, days: string) {
+  try { sessionStorage.removeItem(getCacheKey(code, days)); } catch { /* ignore */ }
+}
+
+function formatAge(fetchedAt: number): string {
+  const s = Math.floor((Date.now() - fetchedAt) / 1000);
+  if (s < 60)   return `${s} detik lalu`;
+  if (s < 3600) return `${Math.floor(s / 60)} menit lalu`;
+  return `${Math.floor(s / 3600)} jam lalu`;
+}
 
 // ── DuckDB singleton ──────────────────────────────────────────────────────────
 let _db: duckdb.AsyncDuckDB | null = null;
@@ -32,10 +94,8 @@ async function getDB() {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
 const VALID_CODE = /^[A-Z0-9]{1,6}$/;
 
-// Ambil daftar URL parquet dari API route (server-side, bebas COEP/CORP)
 async function fetchParquetUrls(days: string): Promise<string[]> {
   const res = await fetch(`/api/broker-tracker?days=${days}`);
   if (!res.ok) throw new Error(`Gagal mengambil file list: ${res.status}`);
@@ -44,38 +104,25 @@ async function fetchParquetUrls(days: string): Promise<string[]> {
   return (urls as { date: string; url: string }[]).map(f => f.url);
 }
 
-// Arrow Date32 / Date64 → "YYYY-MM-DD"
-// DuckDB WASM (Apache Arrow JS) bisa mengembalikan kolom DATE dalam 3 bentuk:
-//   1. JS Date object  → langsung pakai .toISOString()
-//   2. number (int32)  → Date32: jumlah HARI sejak 1970-01-01
-//   3. bigint          → Date64: jumlah MILIDETIK sejak 1970-01-01
-// Nullable column bisa return null, undefined, atau NaN — semua harus di-guard
-// agar tidak melempar "RangeError: Invalid time value".
 function arrowDateToStr(val: any): string {
   if (val == null) return '';
-
   if (val instanceof Date) {
-    if (isNaN(val.getTime())) return '';           // guard invalid Date
+    if (isNaN(val.getTime())) return '';
     return val.toISOString().split('T')[0];
   }
-
   if (typeof val === 'bigint') {
-    // Date64: miliseconds sejak epoch
     const ms = Number(val);
     if (!Number.isFinite(ms)) return '';
     return new Date(ms).toISOString().split('T')[0];
   }
-
   if (typeof val === 'number') {
-    if (!Number.isFinite(val)) return '';          // guard NaN / Infinity
-    // Date32: hari sejak 1970-01-01
+    if (!Number.isFinite(val)) return '';
     return new Date(val * 86_400_000).toISOString().split('T')[0];
   }
-
   return String(val);
 }
 
-async function queryBroker(urls: string[], code: string) {
+async function queryBroker(urls: string[], code: string): Promise<BrokerRow[]> {
   if (!VALID_CODE.test(code)) throw new Error('Kode saham tidak valid');
   const db   = await getDB();
   const conn = await db.connect();
@@ -101,7 +148,7 @@ async function queryBroker(urls: string[], code: string) {
       net_value:   Number(r.net_value),
       net_lot:     Number(r.net_lot),
     }))
-    .filter(r => r.date !== '');   // buang baris dengan tanggal null/invalid
+    .filter(r => r.date !== '');
 }
 
 function fmt(v: number) {
@@ -111,53 +158,95 @@ function fmt(v: number) {
   return v.toLocaleString('id-ID');
 }
 
-const COLORS = [
-  '#2563eb','#dc2626','#16a34a','#ca8a04','#9333ea',
-  '#0891b2','#be123c','#4f46e5','#ea580c','#15803d',
+const BROKER_COLORS = [
+  '#e7b733','#22c55e','#3b82f6','#a855f7','#ef4444',
+  '#06b6d4','#f97316','#ec4899','#84cc16','#64748b',
 ];
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+const PAGE_SIZE = 50;
+
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function BandarmologiPage() {
-  const [code,       setCode]       = useState('BBCA');
-  const [days,       setDays]       = useState('30');
-  const [data,       setData]       = useState<any[]>([]);
-  const [loading,    setLoading]    = useState(false);
-  const [msg,        setMsg]        = useState('');
-  const [error,      setError]      = useState('');
-  const [topBrokers, setTopBrokers] = useState<string[]>([]);
-  const [selected,   setSelected]   = useState<Set<string>>(new Set());
-  const [page,       setPage]       = useState(0);
-  const PAGE_SIZE = 50;
+  const [code,        setCode]        = useState('BBCA');
+  const [days,        setDays]        = useState('30');
+  const [data,        setData]        = useState<BrokerRow[]>([]);
+  const [loading,     setLoading]     = useState(false);
+  const [msg,         setMsg]         = useState('');
+  const [error,       setError]       = useState('');
+  const [topBrokers,  setTopBrokers]  = useState<string[]>([]);
+  const [selected,    setSelected]    = useState<Set<string>>(new Set());
+  const [page,        setPage]        = useState(0);
+  const [fromCache,   setFromCache]   = useState(false);
+  const [cacheAge,    setCacheAge]    = useState('');
+  const [fetchedAt,   setFetchedAt]   = useState<number | null>(null);
 
-  const fetchData = async () => {
-    setLoading(true); setError(''); setData([]);
+  // ── Load dari cache atau fetch fresh ──────────────────────────────────────
+  const loadData = async (forceRefresh = false) => {
+    const codeUpper = code.toUpperCase();
+    if (!VALID_CODE.test(codeUpper)) {
+      setError('Kode saham tidak valid (maks 6 huruf/angka)');
+      return;
+    }
+
+    // Cek cache dulu
+    if (!forceRefresh) {
+      const cached = loadCache(codeUpper, days);
+      if (cached) {
+        setData(cached.rows);
+        setTopBrokers(cached.topBrokers);
+        setSelected(new Set(cached.topBrokers.slice(0, 5)));
+        setFromCache(true);
+        setCacheAge(formatAge(cached.fetchedAt));
+        setFetchedAt(cached.fetchedAt);
+        setPage(0);
+        setError('');
+        return;
+      }
+    }
+
+    // Fetch fresh
+    setLoading(true);
+    setError('');
+    setData([]);
+    setFromCache(false);
+
     try {
-      // 1. Ambil daftar URL dari API route (server-side — bebas COEP)
-      setMsg('Mengambil file list...');
-      const valid = await fetchParquetUrls(days);
-      if (!valid.length) throw new Error('Tidak ada file parquet tersedia untuk rentang ini.');
+      setMsg('Mengambil daftar file...');
+      const urls = await fetchParquetUrls(days);
+      if (!urls.length) throw new Error('Tidak ada file parquet tersedia untuk rentang ini.');
 
-      // 2. Query DuckDB di browser
-      setMsg(`Query DuckDB — ${valid.length} file...`);
-      const rows = await queryBroker(valid, code.toUpperCase());
-      if (!rows.length) throw new Error(`Tidak ada data untuk ${code.toUpperCase()}.`);
-      setData(rows);
+      setMsg(`Query ${urls.length} file parquet via DuckDB...`);
+      const rows = await queryBroker(urls, codeUpper);
+      if (!rows.length) throw new Error(`Tidak ada data untuk ${codeUpper}.`);
 
-      // 3. Hitung top 10 broker by absolute net_value
+      // Hitung top 10 broker
       const brokerMap = new Map<string, number>();
       rows.forEach(r => brokerMap.set(r.broker_code, (brokerMap.get(r.broker_code) ?? 0) + Math.abs(r.net_value)));
       const top10 = Array.from(brokerMap.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, 10)
         .map(([c]) => c);
+
+      // Simpan ke cache
+      saveCache(codeUpper, days, rows, top10);
+
+      setData(rows);
       setTopBrokers(top10);
       setSelected(new Set(top10.slice(0, 5)));
       setPage(0);
+      setFetchedAt(Date.now());
+      setCacheAge('baru saja');
     } catch (e: any) {
       setError(e.message ?? 'Terjadi kesalahan');
     } finally {
-      setLoading(false); setMsg('');
+      setLoading(false);
+      setMsg('');
     }
+  };
+
+  const handleForceRefresh = () => {
+    clearCache(code.toUpperCase(), days);
+    loadData(true);
   };
 
   const toggle = (c: string) => {
@@ -166,7 +255,18 @@ export default function BandarmologiPage() {
     setSelected(s);
   };
 
-  // Pivot data untuk chart (di-memo agar tidak hitung ulang tiap render)
+  // Stats ringkasan
+  const stats = useMemo(() => {
+    if (!data.length) return null;
+    const brokerTotals = new Map<string, number>();
+    data.forEach(r => brokerTotals.set(r.broker_code, (brokerTotals.get(r.broker_code) ?? 0) + r.net_value));
+    const topBuy  = Array.from(brokerTotals.entries()).sort((a, b) => b[1] - a[1])[0];
+    const topSell = Array.from(brokerTotals.entries()).sort((a, b) => a[1] - b[1])[0];
+    const totalNet = data.reduce((s, r) => s + r.net_value, 0);
+    return { topBuy, topSell, totalNet };
+  }, [data]);
+
+  // Pivot untuk chart
   const chartData = useMemo(() => {
     const map: Record<string, any> = {};
     data.forEach(r => {
@@ -184,96 +284,231 @@ export default function BandarmologiPage() {
   const totalPages = Math.ceil(data.length / PAGE_SIZE);
   const pageData   = data.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="p-4 md:p-6 space-y-6">
+    <div className="space-y-6 animate-fade-in pb-10">
 
-      {/* Header */}
-      <div>
-        <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Broker Tracker</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Net value broker per saham — DuckDB WASM + Supabase Storage
-        </p>
-      </div>
-
-      {/* Controls */}
-      <div className="flex flex-wrap gap-3">
-        <input
-          type="text"
-          value={code}
-          maxLength={6}
-          placeholder="Kode saham"
-          onChange={e => setCode(e.target.value.toUpperCase())}
-          className="border dark:border-gray-700 rounded-lg px-4 py-2 w-32 uppercase font-mono text-sm
-                     bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none
-                     focus:ring-2 focus:ring-blue-500"
-        />
-        <select
-          value={days}
-          onChange={e => setDays(e.target.value)}
-          className="border dark:border-gray-700 rounded-lg px-4 py-2 text-sm
-                     bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none
-                     focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="7">7 hari</option>
-          <option value="14">14 hari</option>
-          <option value="30">30 hari</option>
-          <option value="60">60 hari</option>
-        </select>
-        <button
-          onClick={fetchData}
-          disabled={loading}
-          className="bg-blue-600 text-white px-5 py-2 rounded-lg hover:bg-blue-700
-                     disabled:opacity-50 text-sm font-medium transition-colors"
-        >
-          {loading ? `⏳ ${msg}` : 'Lacak'}
-        </button>
-      </div>
-
-      {/* Error */}
-      {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800
-                        text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
-          ❌ {error}
+      {/* ── Header ── */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 className="text-3xl md:text-4xl font-black tracking-tight">
+            <Database className="w-8 h-8 text-gold-400 inline mr-2" />
+            <span className="gradient-gold">Broker</span>{' '}
+            <span className="text-foreground">Tracker</span>
+          </h1>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Net value broker per saham · DuckDB WASM + Supabase Storage
+          </p>
         </div>
-      )}
 
-      {/* Broker pills */}
-      {topBrokers.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {topBrokers.map((c, i) => (
-            <button
-              key={c}
-              onClick={() => toggle(c)}
-              className="px-3 py-1 rounded-full text-xs font-semibold border transition-all"
-              style={{
-                backgroundColor: selected.has(c) ? COLORS[i % COLORS.length] : 'transparent',
-                color:           selected.has(c) ? '#fff' : COLORS[i % COLORS.length],
-                borderColor:     COLORS[i % COLORS.length],
-              }}
+        {/* Cache status badge */}
+        {data.length > 0 && (
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold border ${
+            fromCache
+              ? 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+              : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+          }`}>
+            {fromCache
+              ? <><Clock className="w-3.5 h-3.5" /> Cache · {cacheAge}</>
+              : <><CheckCircle2 className="w-3.5 h-3.5" /> Fresh data</>
+            }
+          </div>
+        )}
+      </div>
+
+      {/* ── Controls ── */}
+      <div className="glass rounded-2xl p-5 border border-border/30 space-y-4">
+        <div className="flex flex-wrap gap-3 items-end">
+          <div>
+            <label className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1.5 block">Kode Saham</label>
+            <input
+              type="text"
+              value={code}
+              maxLength={6}
+              placeholder="BBCA"
+              onChange={e => setCode(e.target.value.toUpperCase())}
+              onKeyDown={e => e.key === 'Enter' && loadData()}
+              className="bg-white/[0.03] border border-white/[0.08] rounded-xl px-4 py-2.5 w-32 uppercase font-mono font-bold text-sm focus:outline-none focus:border-gold-400/40 text-foreground transition-colors"
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1.5 block">Lookback</label>
+            <select
+              value={days}
+              onChange={e => setDays(e.target.value)}
+              className="bg-white/[0.03] border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-gold-400/40 text-foreground"
             >
-              {c}
+              <option value="7">7 Hari</option>
+              <option value="14">14 Hari</option>
+              <option value="30">30 Hari</option>
+              <option value="60">60 Hari</option>
+              <option value="90">90 Hari</option>
+            </select>
+          </div>
+
+          <div className="flex gap-2 pb-0.5">
+            {/* Lacak (cache-aware) */}
+            <button
+              onClick={() => loadData(false)}
+              disabled={loading}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gold-400/10 border border-gold-400/30 text-gold-400 text-sm font-bold hover:bg-gold-400/20 disabled:opacity-50 transition-all"
+            >
+              <Zap className={`w-4 h-4 ${loading ? 'animate-pulse' : ''}`} />
+              {loading ? msg || 'Loading...' : 'Lacak'}
             </button>
-          ))}
+
+            {/* Force Refresh — bypass cache */}
+            {data.length > 0 && (
+              <button
+                onClick={handleForceRefresh}
+                disabled={loading}
+                title="Paksa ambil data baru (abaikan cache)"
+                className="flex items-center gap-2 px-3 py-2.5 rounded-xl glass border border-border/30 text-muted-foreground text-sm hover:text-foreground hover:border-gold-400/30 disabled:opacity-50 transition-all"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Loading progress bar */}
+        {loading && (
+          <div className="space-y-1.5">
+            <p className="text-xs text-muted-foreground flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-gold-400 animate-pulse" />
+              {msg}
+            </p>
+            <div className="h-1 rounded-full bg-white/[0.05] overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-gold-400 to-yellow-500 rounded-full animate-pulse" style={{ width: '60%' }} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Error ── */}
+      {error && (
+        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 text-red-400 text-sm">
+          <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError('')}><X className="w-4 h-4" /></button>
         </div>
       )}
 
-      {/* Chart */}
+      {/* ── Stats Cards ── */}
+      {stats && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {[
+            {
+              label: 'Top Akumulator',
+              value: stats.topBuy[0],
+              sub: `+${fmt(stats.topBuy[1])}`,
+              color: 'text-emerald-400',
+              icon: TrendingUp,
+              border: 'hover:border-emerald-400/30',
+            },
+            {
+              label: 'Top Distributor',
+              value: stats.topSell[0],
+              sub: `${fmt(stats.topSell[1])}`,
+              color: 'text-red-400',
+              icon: TrendingDown,
+              border: 'hover:border-red-400/30',
+            },
+            {
+              label: 'Net Flow Semua Broker',
+              value: fmt(stats.totalNet),
+              sub: stats.totalNet >= 0 ? 'Net Buy' : 'Net Sell',
+              color: stats.totalNet >= 0 ? 'text-emerald-400' : 'text-red-400',
+              icon: Database,
+              border: 'hover:border-gold-400/30',
+            },
+          ].map((m, i) => {
+            const Icon = m.icon;
+            return (
+              <div key={i} className={`glass rounded-xl p-4 border border-border/30 ${m.border} transition-all group`}>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[11px] text-muted-foreground uppercase tracking-wider">{m.label}</p>
+                  <Icon className={`w-4 h-4 ${m.color}`} />
+                </div>
+                <p className={`text-2xl font-black ${m.color}`}>{m.value}</p>
+                <p className="text-[11px] text-muted-foreground mt-1">{m.sub}</p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Broker Pills ── */}
+      {topBrokers.length > 0 && (
+        <div className="glass rounded-xl p-4 border border-border/30 space-y-2">
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wider">
+            Top 10 Broker — klik untuk tampil/sembunyikan di chart
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {topBrokers.map((c, i) => (
+              <button
+                key={c}
+                onClick={() => toggle(c)}
+                className="px-3 py-1.5 rounded-full text-xs font-bold border transition-all hover:scale-105"
+                style={{
+                  backgroundColor: selected.has(c) ? BROKER_COLORS[i % BROKER_COLORS.length] : 'transparent',
+                  color:           selected.has(c) ? '#0B0F19' : BROKER_COLORS[i % BROKER_COLORS.length],
+                  borderColor:     BROKER_COLORS[i % BROKER_COLORS.length],
+                  opacity:         selected.has(c) ? 1 : 0.7,
+                }}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Chart ── */}
       {chartData.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 md:p-6">
-          <h2 className="font-medium mb-4 text-gray-900 dark:text-white">Net Value — {code}</h2>
+        <div className="glass rounded-2xl border border-border/30 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-bold text-foreground">
+              Net Value Broker — <span className="gradient-gold">{code.toUpperCase()}</span>
+              <span className="text-muted-foreground font-normal text-sm ml-2">({days} hari)</span>
+            </h2>
+            {fromCache && fetchedAt && (
+              <span className="text-[10px] text-muted-foreground">
+                📦 cache · {formatAge(fetchedAt)}
+              </span>
+            )}
+          </div>
           <ResponsiveContainer width="100%" height={380}>
             <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={v => v.slice(5)} />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={fmt} />
-              <Tooltip formatter={(v: any, n: any) => [`Rp ${Number(v).toLocaleString('id-ID')}`, n]} />
-              <Legend />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+              <XAxis
+                dataKey="date"
+                tick={{ fontSize: 10, fill: '#64748b' }}
+                tickFormatter={v => v.slice(5)}
+              />
+              <YAxis
+                tick={{ fontSize: 10, fill: '#64748b' }}
+                tickFormatter={fmt}
+                width={55}
+              />
+              <Tooltip
+                contentStyle={{
+                  background: 'rgba(11,15,25,0.95)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: '12px',
+                  fontSize: '12px',
+                }}
+                formatter={(v: any, n: any) => [`Rp ${Number(v).toLocaleString('id-ID')}`, n]}
+              />
+              <Legend wrapperStyle={{ fontSize: '12px' }} />
               {Array.from(selected).map(c => (
                 <Line
                   key={c}
                   type="monotone"
                   dataKey={c}
-                  stroke={COLORS[topBrokers.indexOf(c) % COLORS.length]}
+                  stroke={BROKER_COLORS[topBrokers.indexOf(c) % BROKER_COLORS.length]}
                   strokeWidth={2}
                   dot={{ r: 3 }}
                   connectNulls
@@ -284,33 +519,39 @@ export default function BandarmologiPage() {
         </div>
       )}
 
-      {/* Tabel dengan paginasi */}
+      {/* ── Tabel Detail ── */}
       {data.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 md:p-6">
-          <h2 className="font-medium mb-3 text-gray-900 dark:text-white">Detail — {code}</h2>
+        <div className="glass rounded-2xl overflow-hidden border border-border/30">
+          <div className="p-4 border-b border-white/[0.05] flex items-center justify-between">
+            <h2 className="font-bold text-foreground">
+              Detail — <span className="gradient-gold">{code.toUpperCase()}</span>
+            </h2>
+            <span className="text-xs text-muted-foreground">{data.length} baris</span>
+          </div>
+
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="w-full text-sm">
               <thead>
-                <tr className="border-b dark:border-gray-700 text-gray-500 dark:text-gray-400 text-left">
-                  <th className="py-2 px-3">Tanggal</th>
-                  <th className="py-2 px-3">Broker</th>
-                  <th className="py-2 px-3 text-right">Buy</th>
-                  <th className="py-2 px-3 text-right">Sell</th>
-                  <th className="py-2 px-3 text-right font-bold">Net</th>
-                  <th className="py-2 px-3 text-right">Net Lot</th>
+                <tr className="bg-white/[0.02] border-b border-white/[0.05] text-[10px] text-muted-foreground uppercase tracking-wider">
+                  <th className="p-3 text-left">Tanggal</th>
+                  <th className="p-3 text-left">Broker</th>
+                  <th className="p-3 text-right">Buy</th>
+                  <th className="p-3 text-right">Sell</th>
+                  <th className="p-3 text-right font-bold">Net</th>
+                  <th className="p-3 text-right">Net Lot</th>
                 </tr>
               </thead>
               <tbody>
                 {pageData.map((r, i) => (
-                  <tr key={i} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                    <td className="py-2 px-3 text-gray-500 dark:text-gray-400">{r.date}</td>
-                    <td className="py-2 px-3 font-medium text-gray-900 dark:text-white">{r.broker_code}</td>
-                    <td className="py-2 px-3 text-right text-green-600 dark:text-green-400">{fmt(r.buy_value)}</td>
-                    <td className="py-2 px-3 text-right text-red-600 dark:text-red-400">{fmt(r.sell_value)}</td>
-                    <td className={`py-2 px-3 text-right font-bold ${r.net_value > 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                      {fmt(r.net_value)}
+                  <tr key={i} className="tr-hover border-b border-white/[0.02]">
+                    <td className="p-3 text-muted-foreground text-xs">{r.date}</td>
+                    <td className="p-3 font-mono font-bold text-foreground">{r.broker_code}</td>
+                    <td className="p-3 text-right text-emerald-400">{fmt(r.buy_value)}</td>
+                    <td className="p-3 text-right text-red-400">{fmt(r.sell_value)}</td>
+                    <td className={`p-3 text-right font-bold ${r.net_value >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {r.net_value >= 0 ? '+' : ''}{fmt(r.net_value)}
                     </td>
-                    <td className={`py-2 px-3 text-right ${r.net_lot > 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                    <td className={`p-3 text-right text-xs ${r.net_lot >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                       {r.net_lot.toLocaleString('id-ID')}
                     </td>
                   </tr>
@@ -319,37 +560,36 @@ export default function BandarmologiPage() {
             </table>
           </div>
 
-          {/* Paginasi */}
+          {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-4 px-1">
-              <span className="text-xs text-gray-400">
-                Halaman {page + 1} dari {totalPages} &nbsp;·&nbsp; {data.length} baris
+            <div className="p-4 border-t border-white/[0.05] flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">
+                Halaman <span className="text-gold-400 font-bold">{page + 1}</span> dari {totalPages} · {data.length} baris
               </span>
               <div className="flex gap-2">
                 <button
                   onClick={() => setPage(p => Math.max(0, p - 1))}
                   disabled={page === 0}
-                  className="px-3 py-1 text-xs border dark:border-gray-600 rounded
-                             disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-700
-                             dark:text-gray-300 transition-colors"
+                  className="px-3 py-1.5 text-xs glass border border-border/30 rounded-xl disabled:opacity-40 hover:border-gold-400/30 transition-all"
                 >
-                  ← Sebelumnya
+                  ← Prev
                 </button>
                 <button
                   onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
                   disabled={page === totalPages - 1}
-                  className="px-3 py-1 text-xs border dark:border-gray-600 rounded
-                             disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-700
-                             dark:text-gray-300 transition-colors"
+                  className="px-3 py-1.5 text-xs glass border border-border/30 rounded-xl disabled:opacity-40 hover:border-gold-400/30 transition-all"
                 >
-                  Berikutnya →
+                  Next →
                 </button>
               </div>
             </div>
           )}
+
+          <div className="p-3 border-t border-white/[0.05] text-[10px] text-muted-foreground bg-white/[0.01]">
+            💡 Cache TTL: 4 jam per sesi · Data dari Supabase Storage (Parquet) via DuckDB WASM
+          </div>
         </div>
       )}
-
     </div>
   );
 }
