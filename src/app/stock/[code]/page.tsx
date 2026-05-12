@@ -484,7 +484,6 @@ export default function StockDetailPage() {
     if (kseiAnalytics) return kseiAnalytics;
     if (!whaleData.length) return null
 
-    const totalWhalePct = whaleData.reduce((s, w) => s + (w.latest_percentage || 0), 0)
     const strategicHolders = whaleData.filter(w => w.latest_percentage >= 10 || w.investor_type === 'Corporate')
     const institutionalHolders = whaleData.filter(w => ['Insurance', 'Pension Funds', 'Mutual Funds', 'Financial Institutional', 'Sovereign Wealth Fund'].includes(w.investor_type))
     const hnwHolders = whaleData.filter(w => w.investor_type === 'Individual')
@@ -496,13 +495,20 @@ export default function StockDetailPage() {
     // Concentration Score (HHI-like simple version)
     const concentration = whaleData.slice(0, 5).reduce((s, w) => s + (w.latest_percentage || 0), 0)
 
+    // Local vs Foreign
+    const localPct = whaleData.filter(w => w.local_foreign === 'L').reduce((s, w) => s + (w.latest_percentage || 0), 0)
+    const foreignPct = whaleData.filter(w => w.local_foreign === 'F').reduce((s, w) => s + (w.latest_percentage || 0), 0)
+
     return {
       strategicPct,
       institutionalPct,
       hnwPct,
+      localPct,
+      foreignPct,
       concentration,
       realFreeFloat: Math.max(0, 100 - strategicPct),
-      isCorneringRisk: (100 - strategicPct) < 15
+      isCorneringRisk: (100 - strategicPct) < 15,
+      netWhaleFlow: whaleData.reduce((s, w) => s + (w.change_percentage || 0), 0)
     }
   }, [whaleData, kseiAnalytics])
 
@@ -632,7 +638,7 @@ export default function StockDetailPage() {
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 stagger">
         {[
-          { label: 'Public Shares', value: formatShares(publicShares), sub: `${(stockData?.free_float || 0).toFixed(1)}% Float`, icon: <PieChart className="w-4 h-4 text-cyan-400" /> },
+          { label: 'Public Shares', value: formatShares(publicShares), sub: holderAnalytics ? `${holderAnalytics.realFreeFloat.toFixed(1)}% Real Float` : `${(stockData?.free_float || 0).toFixed(1)}% Float`, icon: <PieChartIcon className="w-4 h-4 text-cyan-400" /> },
           { label: 'Float Cap', value: formatRupiah(floatCap), icon: <DollarSign className="w-4 h-4 text-gold-400" /> },
           { label: 'Turnover', value: `${dailyTurnover.toFixed(2)}%`, icon: <ArrowRightLeft className="w-4 h-4 text-purple-400" />, color: dailyTurnover > 5 ? 'text-emerald-400' : dailyTurnover < 1 ? 'text-red-400' : 'text-amber-400' },
           { label: 'AOV Ratio', value: `${(stockData.aov_ratio_ma20 || 1).toFixed(2)}x`, icon: <Scale className="w-4 h-4 text-pink-400" /> },
@@ -1139,7 +1145,15 @@ export default function StockDetailPage() {
                     <Shield className="w-4 h-4 text-gold-400" />
                     <span className="text-[10px] text-muted-foreground uppercase tracking-widest">Concentration</span>
                   </div>
-                  <p className="text-2xl font-black text-foreground">{holderAnalytics?.concentration.toFixed(1)}%</p>
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-2xl font-black text-foreground">{holderAnalytics?.concentration.toFixed(1)}%</p>
+                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
+                      holderAnalytics?.concentration > 80 ? 'bg-red-500/20 text-red-400' : 
+                      holderAnalytics?.concentration > 50 ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'
+                    }`}>
+                      {holderAnalytics?.concentration > 80 ? 'EXTREME' : holderAnalytics?.concentration > 50 ? 'HIGH' : 'MODERATE'}
+                    </span>
+                  </div>
                   <p className="text-[10px] text-muted-foreground mt-1">Dikuasai Top 5 Whales</p>
                   <div className="mt-3 h-1 rounded-full bg-white/5 overflow-hidden">
                     <div className="h-full bg-gold-400" style={{ width: `${holderAnalytics?.concentration}%` }} />
@@ -1181,6 +1195,73 @@ export default function StockDetailPage() {
                 </div>
               </div>
 
+              {/* Whale In/Out Tracker - New Segment */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="glass rounded-2xl p-6 border border-emerald-500/20 bg-emerald-500/[0.02]">
+                  <h4 className="text-sm font-bold text-emerald-400 mb-4 flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4" /> Top Accumulators (Whales)
+                  </h4>
+                  <div className="space-y-3">
+                    {(kseiWhaleData.length > 0 ? kseiWhaleData : whaleData)
+                      .filter((w: any) => w.change_percentage > 0)
+                      .sort((a: any, b: any) => b.change_percentage - a.change_percentage)
+                      .slice(0, 4)
+                      .map((w: any, i: number) => (
+                        <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.03] border border-white/[0.05]">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-[10px] font-bold text-emerald-400">
+                              {w.investor_name.slice(0, 2)}
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold text-foreground truncate max-w-[140px]">{w.investor_name}</p>
+                              <p className="text-[10px] text-muted-foreground">{w.dna || 'Investor'}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-black text-emerald-400">+{w.change_percentage.toFixed(2)}%</p>
+                            <p className="text-[10px] text-muted-foreground">{formatShares(w.latest_shares)} total</p>
+                          </div>
+                        </div>
+                      ))}
+                    {!(kseiWhaleData.length > 0 ? kseiWhaleData : whaleData).some((w: any) => w.change_percentage > 0) && (
+                      <p className="text-center py-8 text-xs text-muted-foreground italic">No whales accumulating in the last period</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="glass rounded-2xl p-6 border-red-500/20 bg-red-500/[0.02]">
+                  <h4 className="text-sm font-bold text-red-400 mb-4 flex items-center gap-2">
+                    <TrendingDown className="w-4 h-4" /> Top Distributors (Whales)
+                  </h4>
+                  <div className="space-y-3">
+                    {(kseiWhaleData.length > 0 ? kseiWhaleData : whaleData)
+                      .filter((w: any) => w.change_percentage < 0)
+                      .sort((a: any, b: any) => a.change_percentage - b.change_percentage)
+                      .slice(0, 4)
+                      .map((w: any, i: number) => (
+                        <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.03] border border-white/[0.05]">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center text-[10px] font-bold text-red-400">
+                              {w.investor_name.slice(0, 2)}
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold text-foreground truncate max-w-[140px]">{w.investor_name}</p>
+                              <p className="text-[10px] text-muted-foreground">{w.dna || 'Investor'}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-black text-red-400">{w.change_percentage.toFixed(2)}%</p>
+                            <p className="text-[10px] text-muted-foreground">{formatShares(w.latest_shares)} total</p>
+                          </div>
+                        </div>
+                      ))}
+                    {!(kseiWhaleData.length > 0 ? kseiWhaleData : whaleData).some((w: any) => w.change_percentage < 0) && (
+                      <p className="text-center py-8 text-xs text-muted-foreground italic">No whales distributing in the last period</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {/* Category Breakdown Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {ownershipData.map((cat: any, i: number) => {
@@ -1198,7 +1279,7 @@ export default function StockDetailPage() {
                   return (
                     <div key={i} className={`glass rounded-2xl p-5 border ${borderColor} card-hover`}>
                       <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${catColor} flex items-center justify-center mb-3 shadow-lg`}>
-                        <PieChart className="w-5 h-5 text-white" />
+                        <PieChartIcon className="w-5 h-5 text-white" />
                       </div>
                       <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{cat.category}</p>
                       <p className="text-3xl font-black text-foreground mt-1">{Number(cat.total_percentage).toFixed(1)}%</p>
@@ -1342,10 +1423,14 @@ export default function StockDetailPage() {
                                 }`}>{w.position_trend}</span>
                               </td>
                               <td className="p-4 text-center">
-                                <span className={`px-3 py-1 rounded-lg text-[10px] font-black ${
+                                <span className={`px-3 py-1 rounded-lg text-[10px] font-black flex items-center justify-center gap-1.5 ${
                                   w.whale_verdict === 'ADDING_POSITION' || w.whale_verdict === 'AVERAGING_DOWN' ? 'bg-emerald-500/20 text-emerald-400' :
                                   w.whale_verdict === 'TRIMMING' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'
-                                }`}>{w.whale_verdict || 'HOLDING'}</span>
+                                }`}>
+                                  {w.whale_verdict === 'ADDING_POSITION' && <TrendingUp className="w-3 h-3" />}
+                                  {w.whale_verdict === 'TRIMMING' && <TrendingDown className="w-3 h-3" />}
+                                  {w.whale_verdict || 'HOLDING'}
+                                </span>
                               </td>
                             </tr>
                           )
