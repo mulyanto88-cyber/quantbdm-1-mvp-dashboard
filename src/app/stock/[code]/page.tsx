@@ -472,6 +472,33 @@ export default function StockDetailPage() {
     })
   }, [historyData])
 
+  // Holder DNA Analytics
+  const holderAnalytics = useMemo(() => {
+    if (!whaleData.length) return null
+
+    const totalWhalePct = whaleData.reduce((s, w) => s + (w.latest_percentage || 0), 0)
+    const strategicHolders = whaleData.filter(w => w.latest_percentage >= 10 || w.investor_type === 'Corporate')
+    const institutionalHolders = whaleData.filter(w => ['Insurance', 'Pension Funds', 'Mutual Funds', 'Financial Institutional', 'Sovereign Wealth Fund'].includes(w.investor_type))
+    const hnwHolders = whaleData.filter(w => w.investor_type === 'Individual')
+
+    const strategicPct = strategicHolders.reduce((s, w) => s + (w.latest_percentage || 0), 0)
+    const institutionalPct = institutionalHolders.reduce((s, w) => s + (w.latest_percentage || 0), 0)
+    const hnwPct = hnwHolders.reduce((s, w) => s + (w.latest_percentage || 0), 0)
+    
+    // Concentration Score (HHI-like simple version)
+    const concentration = whaleData.slice(0, 5).reduce((s, w) => s + (w.latest_percentage || 0), 0)
+
+    return {
+      totalWhalePct,
+      strategicPct,
+      institutionalPct,
+      hnwPct,
+      concentration,
+      realFreeFloat: Math.max(0, 100 - totalWhalePct),
+      isCorneringRisk: (100 - totalWhalePct) < 10
+    }
+  }, [whaleData])
+
   // ============================================================
   // RENDER
   // ============================================================
@@ -950,6 +977,55 @@ export default function StockDetailPage() {
         <div className="space-y-8">
           {ownershipData.length > 0 ? (
             <>
+              {/* Analytics Header Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="glass rounded-2xl p-5 border border-gold-500/20">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Shield className="w-4 h-4 text-gold-400" />
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest">Concentration</span>
+                  </div>
+                  <p className="text-2xl font-black text-foreground">{holderAnalytics?.concentration.toFixed(1)}%</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">Dikuasai Top 5 Whales</p>
+                  <div className="mt-3 h-1 rounded-full bg-white/5 overflow-hidden">
+                    <div className="h-full bg-gold-400" style={{ width: `${holderAnalytics?.concentration}%` }} />
+                  </div>
+                </div>
+
+                <div className="glass rounded-2xl p-5 border border-blue-500/20">
+                  <div className="flex items-center gap-2 mb-2">
+                    <RefreshCw className="w-4 h-4 text-blue-400" />
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest">Real Free Float</span>
+                  </div>
+                  <p className="text-2xl font-black text-foreground">{holderAnalytics?.realFreeFloat.toFixed(1)}%</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">Estimasi Barang Beredar</p>
+                  <div className="mt-3 h-1 rounded-full bg-white/5 overflow-hidden">
+                    <div className="h-full bg-blue-400" style={{ width: `${holderAnalytics?.realFreeFloat}%` }} />
+                  </div>
+                </div>
+
+                <div className="glass rounded-2xl p-5 border border-emerald-500/20">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Building2 className="w-4 h-4 text-emerald-400" />
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest">Institutional</span>
+                  </div>
+                  <p className="text-2xl font-black text-foreground">{holderAnalytics?.institutionalPct.toFixed(1)}%</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">Smart/Stable Money</p>
+                  <div className="mt-3 h-1 rounded-full bg-white/5 overflow-hidden">
+                    <div className="h-full bg-emerald-400" style={{ width: `${holderAnalytics?.institutionalPct}%` }} />
+                  </div>
+                </div>
+
+                <div className="glass rounded-2xl p-5 border border-purple-500/20">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Flame className="w-4 h-4 text-purple-400" />
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest">Cornering Risk</span>
+                  </div>
+                  <p className="text-2xl font-black text-foreground">{holderAnalytics?.isCorneringRisk ? 'HIGH' : 'LOW'}</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">Likuiditas & Manipulasi</p>
+                  <div className={`mt-3 h-1 rounded-full ${holderAnalytics?.isCorneringRisk ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                </div>
+              </div>
+
               {/* Category Breakdown Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {ownershipData.map((cat: any, i: number) => {
@@ -1056,36 +1132,55 @@ export default function StockDetailPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {whaleData.map((w: any, i: number) => (
-                          <tr key={i} className="tr-hover border-b border-white/[0.02]">
-                            <td className="p-4">
-                            <p className="font-bold text-foreground">{w.investor_name}</p>
-                              <p className="text-[10px] text-muted-foreground">
-                                {w.local_foreign === 'F' ? '🌏 Foreign' : '🇮🇩 Local'} • {w.investor_type}
-                              </p>
-                            </td>
-                            <td className="p-4 text-right font-semibold">{formatNumber(w.est_entry_price)}</td>
-                            <td className={`p-4 text-right font-bold ${w.return_since_entry >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                              {w.return_since_entry ? formatPercent(w.return_since_entry) : '-'}
-                            </td>
-                            <td className="p-4 text-right">
-                              <span className="font-bold">{w.latest_percentage}%</span>
-                              <p className="text-[10px] text-muted-foreground">{formatShares(w.latest_shares)} shares</p>
-                            </td>
-                            <td className="p-4 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                w.position_trend === 'INCREASING' ? 'bg-emerald-500/20 text-emerald-400' :
-                                w.position_trend === 'DECREASING' ? 'bg-red-500/20 text-red-400' : 'bg-slate-500/20 text-slate-400'
-                              }`}>{w.position_trend}</span>
-                            </td>
-                            <td className="p-4 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                w.whale_verdict === 'ADDING_POSITION' || w.whale_verdict === 'AVERAGING_DOWN' ? 'bg-emerald-500/20 text-emerald-400' :
-                                w.whale_verdict === 'TRIMMING' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'
-                              }`}>{w.whale_verdict}</span>
-                            </td>
-                          </tr>
-                        ))}
+                        {whaleData.map((w: any, i: number) => {
+                          const isInst = ['Insurance', 'Pension Funds', 'Mutual Funds', 'Financial Institutional', 'Sovereign Wealth Fund'].includes(w.investor_type)
+                          const isStrategic = w.latest_percentage >= 10 || w.investor_type === 'Corporate'
+                          
+                          return (
+                            <tr key={i} className="tr-hover border-b border-white/[0.02]">
+                              <td className="p-4">
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${
+                                    isStrategic ? 'bg-gold-500/20 text-gold-400' :
+                                    isInst ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-500/20 text-slate-400'
+                                  }`}>
+                                    {w.investor_name.slice(0, 2)}
+                                  </div>
+                                  <div>
+                                    <p className="font-bold text-foreground flex items-center gap-2">
+                                      {w.investor_name}
+                                      {isStrategic && <Shield className="w-3 h-3 text-gold-400" />}
+                                    </p>
+                                    <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                      {w.local_foreign === 'F' ? '🌏 Foreign' : '🇮🇩 Local'} • 
+                                      <span className={isInst ? 'text-blue-400' : ''}>{w.investor_type}</span>
+                                    </p>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="p-4 text-right font-semibold">{formatNumber(w.est_entry_price)}</td>
+                              <td className={`p-4 text-right font-bold ${w.return_since_entry >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {w.return_since_entry ? formatPercent(w.return_since_entry) : '-'}
+                              </td>
+                              <td className="p-4 text-right">
+                                <span className="font-bold">{w.latest_percentage}%</span>
+                                <p className="text-[10px] text-muted-foreground">{formatShares(w.latest_shares)} shares</p>
+                              </td>
+                              <td className="p-4 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  w.position_trend === 'INCREASING' ? 'bg-emerald-500/20 text-emerald-400' :
+                                  w.position_trend === 'DECREASING' ? 'bg-red-500/20 text-red-400' : 'bg-slate-500/20 text-slate-400'
+                                }`}>{w.position_trend}</span>
+                              </td>
+                              <td className="p-4 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  w.whale_verdict === 'ADDING_POSITION' || w.whale_verdict === 'AVERAGING_DOWN' ? 'bg-emerald-500/20 text-emerald-400' :
+                                  w.whale_verdict === 'TRIMMING' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'
+                                }`}>{w.whale_verdict}</span>
+                              </td>
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>
