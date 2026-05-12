@@ -100,6 +100,7 @@ const navItems = [
   { href: '/radar',     label: 'Smart Money Radar',  icon: icons.radar,      badge: 'NEW' },
   { href: '/insider',   label: 'Insider Alerts',     icon: icons.eye },
   { href: '/sector',    label: 'Sector Heatmap',     icon: icons.sector },
+  { href: '/bandarmologi', label: 'Broker Tracker', icon: icons.flow, badge: 'NEW' },
   { href: '/players',   label: 'Big Player Radar',   icon: icons.users,      badge: 'HOT' },
   { href: '/konlo',     label: 'Konglomerasi',       icon: icons.target },
   { href: '/flow',      label: '5% Flow',            icon: icons.flow,       badge: '5%' },
