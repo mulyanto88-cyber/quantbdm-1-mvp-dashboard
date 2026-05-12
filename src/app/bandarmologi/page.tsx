@@ -6,7 +6,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
-import { RefreshCw, Database, Zap, TrendingUp, TrendingDown, AlertTriangle, X, Clock, CheckCircle2 } from 'lucide-react';
+import { RefreshCw, Database, Zap, TrendingUp, TrendingDown, AlertTriangle, X, Clock, CheckCircle2, Maximize2, Minimize2 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface BrokerRow {
@@ -192,6 +192,8 @@ export default function BandarmologiPage() {
   const [fromCache,   setFromCache]   = useState(false);
   const [cacheAge,    setCacheAge]    = useState('');
   const [fetchedAt,   setFetchedAt]   = useState<number | null>(null);
+
+  const [isFullScreen, setIsFullScreen] = useState(false);
 
   // ── Load dari cache atau fetch fresh ──────────────────────────────────────
   const loadData = async (forceRefresh = false) => {
@@ -481,54 +483,107 @@ export default function BandarmologiPage() {
 
       {/* ── Chart ── */}
       {chartData.length > 0 && (
-        <div className="glass rounded-2xl border border-border/30 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-foreground">
-              Net Value Broker — <span className="gradient-gold">{code.toUpperCase()}</span>
-              <span className="text-muted-foreground font-normal text-sm ml-2">({days} hari)</span>
+        <div className={`glass rounded-2xl border border-border/30 p-5 transition-all duration-300 ${
+          isFullScreen ? 'fixed inset-0 z-[100] bg-background/95 backdrop-blur-xl flex flex-col p-8' : 'relative'
+        }`}>
+          <div className={`flex items-center justify-between mb-4 ${isFullScreen ? 'flex-col gap-6' : ''}`}>
+            <h2 className={`font-bold text-foreground ${isFullScreen ? 'text-5xl text-center' : ''}`}>
+              {isFullScreen ? (
+                <span className="gradient-gold">{code.toUpperCase()}</span>
+              ) : (
+                <>
+                  Net Value Broker — <span className="gradient-gold">{code.toUpperCase()}</span>
+                  <span className="text-muted-foreground font-normal text-sm ml-2">({days} hari)</span>
+                </>
+              )}
             </h2>
-            {fromCache && fetchedAt && (
-              <span className="text-[10px] text-muted-foreground">
-                📦 cache · {formatAge(fetchedAt)}
-              </span>
-            )}
+            
+            <div className={`flex items-center gap-4 ${isFullScreen ? 'mt-4' : ''}`}>
+              {!isFullScreen && fromCache && fetchedAt && (
+                <span className="text-[10px] text-muted-foreground">
+                  📦 cache · {formatAge(fetchedAt)}
+                </span>
+              )}
+              <button
+                onClick={() => setIsFullScreen(!isFullScreen)}
+                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+                title={isFullScreen ? "Exit Fullscreen" : "Fullscreen View"}
+              >
+                {isFullScreen ? <Minimize2 className="w-5 h-5 text-gold-400" /> : <Maximize2 className="w-4 h-4 text-muted-foreground" />}
+              </button>
+            </div>
           </div>
-          <ResponsiveContainer width="100%" height={380}>
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 10, fill: '#64748b' }}
-                tickFormatter={v => v.slice(5)}
-              />
-              <YAxis
-                tick={{ fontSize: 10, fill: '#64748b' }}
-                tickFormatter={fmt}
-                width={55}
-              />
-              <Tooltip
-                contentStyle={{
-                  background: 'rgba(11,15,25,0.95)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  borderRadius: '12px',
-                  fontSize: '12px',
-                }}
-                formatter={(v: any, n: any) => [`Rp ${Number(v).toLocaleString('id-ID')}`, n]}
-              />
-              <Legend wrapperStyle={{ fontSize: '12px' }} />
-              {Array.from(selected).map(c => (
-                <Line
-                  key={c}
-                  type="monotone"
-                  dataKey={c}
-                  stroke={BROKER_COLORS[topBrokers.indexOf(c) % BROKER_COLORS.length]}
-                  strokeWidth={2}
-                  dot={{ r: 3 }}
-                  connectNulls
+
+          <div className={`flex-1 w-full ${isFullScreen ? 'min-h-0' : ''}`}>
+            <ResponsiveContainer width="100%" height={isFullScreen ? '100%' : 380}>
+              <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: isFullScreen ? 12 : 10, fill: '#64748b' }}
+                  tickFormatter={v => v.slice(5)}
+                  axisLine={false}
+                  tickLine={false}
                 />
+                <YAxis
+                  tick={{ fontSize: isFullScreen ? 12 : 10, fill: '#64748b' }}
+                  tickFormatter={fmt}
+                  width={isFullScreen ? 80 : 55}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: 'rgba(11,15,25,0.95)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '16px',
+                    fontSize: isFullScreen ? '14px' : '12px',
+                    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+                  }}
+                  itemStyle={{ padding: '2px 0' }}
+                  labelStyle={{ marginBottom: '8px', color: '#94a3b8', fontWeight: 'bold' }}
+                  formatter={(v: any, n: any) => {
+                    const val = Number(v);
+                    const formatted = `Rp ${val.toLocaleString('id-ID')}`;
+                    const sign = val > 0 ? '▲ +' : val < 0 ? '▼ ' : '';
+                    const color = val > 0 ? '#10b981' : val < 0 ? '#ef4444' : '#94a3b8';
+                    return [<span style={{ color }}>{sign}{formatted}</span>, n];
+                  }}
+                />
+                {!isFullScreen && <Legend wrapperStyle={{ paddingTop: '20px', fontSize: '12px' }} />}
+                {/* 0 Reference Line */}
+                <path d={`M 0,${380/2} L 1000,${380/2}`} stroke="rgba(255,255,255,0.1)" strokeDasharray="5 5" />
+                
+                {Array.from(selected).map(c => (
+                  <Line
+                    key={c}
+                    type="monotone"
+                    dataKey={c}
+                    stroke={BROKER_COLORS[topBrokers.indexOf(c) % BROKER_COLORS.length]}
+                    strokeWidth={isFullScreen ? 3 : 2}
+                    dot={isFullScreen ? { r: 4, strokeWidth: 2, fill: '#0B0F19' } : { r: 3 }}
+                    activeDot={{ r: 6, strokeWidth: 0 }}
+                    connectNulls
+                    animationDuration={1000}
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          
+          {isFullScreen && (
+            <div className="mt-8 flex justify-center gap-6">
+              {Array.from(selected).map((c, i) => (
+                <div key={c} className="flex items-center gap-2">
+                  <div 
+                    className="w-3 h-3 rounded-full" 
+                    style={{ backgroundColor: BROKER_COLORS[topBrokers.indexOf(c) % BROKER_COLORS.length] }} 
+                  />
+                  <span className="text-lg font-bold text-foreground">{c}</span>
+                </div>
               ))}
-            </LineChart>
-          </ResponsiveContainer>
+            </div>
+          )}
         </div>
       )}
 
