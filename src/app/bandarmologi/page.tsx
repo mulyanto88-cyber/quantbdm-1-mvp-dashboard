@@ -44,6 +44,18 @@ async function fetchParquetUrls(days: string): Promise<string[]> {
   return (urls as { date: string; url: string }[]).map(f => f.url);
 }
 
+// Arrow Date32 → "YYYY-MM-DD"
+// DuckDB WASM mengembalikan kolom DATE sebagai integer (hari sejak Unix epoch),
+// bukan JS Date object. Fungsi ini handle keduanya.
+function arrowDateToStr(val: any): string {
+  if (val instanceof Date) return val.toISOString().split('T')[0];
+  if (typeof val === 'number') {
+    // Date32: jumlah hari sejak 1970-01-01
+    return new Date(val * 86_400_000).toISOString().split('T')[0];
+  }
+  return String(val);
+}
+
 async function queryBroker(urls: string[], code: string) {
   if (!VALID_CODE.test(code)) throw new Error('Kode saham tidak valid');
   const db   = await getDB();
@@ -62,7 +74,7 @@ async function queryBroker(urls: string[], code: string) {
   `);
   await conn.close();
   return result.toArray().map((r: any) => ({
-    date:        r.date instanceof Date ? r.date.toISOString().split('T')[0] : String(r.date),
+    date:        arrowDateToStr(r.date),
     broker_code: String(r.broker_code),
     buy_value:   Number(r.buy_value),
     sell_value:  Number(r.sell_value),
@@ -94,25 +106,14 @@ export default function BandarmologiPage() {
   const [topBrokers, setTopBrokers] = useState<string[]>([]);
   const [selected,   setSelected]   = useState<Set<string>>(new Set());
   const [page,       setPage]       = useState(0);
-  const [debug,      setDebug]      = useState('');  // ← debug sementara, hapus nanti
   const PAGE_SIZE = 50;
 
   const fetchData = async () => {
-    setLoading(true); setError(''); setData([]); setDebug('');
+    setLoading(true); setError(''); setData([]);
     try {
       // 1. Ambil daftar URL dari API route (server-side — bebas COEP)
       setMsg('Mengambil file list...');
-
-      // DEBUG: cek raw response dari API route
-      const res = await fetch(`/api/broker-tracker?days=${days}`);
-      const json = await res.json();
-      setDebug(`API status: ${res.status} | Response: ${JSON.stringify(json).slice(0, 300)}`);
-
-      if (!res.ok) throw new Error(`Gagal mengambil file list: ${res.status} — ${json.error ?? ''}`);
-      const { urls: fileList, error: apiError } = json;
-      if (apiError) throw new Error(apiError);
-      const valid: string[] = (fileList ?? []).map((f: { url: string }) => f.url);
-
+      const valid = await fetchParquetUrls(days);
       if (!valid.length) throw new Error('Tidak ada file parquet tersedia untuk rentang ini.');
 
       // 2. Query DuckDB di browser
@@ -206,14 +207,6 @@ export default function BandarmologiPage() {
           {loading ? `⏳ ${msg}` : 'Lacak'}
         </button>
       </div>
-
-      {/* ── DEBUG PANEL (hapus setelah diagnosa) ── */}
-      {debug && (
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700
-                        text-yellow-800 dark:text-yellow-300 px-4 py-3 rounded-lg text-xs font-mono break-all">
-          🔍 <strong>DEBUG:</strong> {debug}
-        </div>
-      )}
 
       {/* Error */}
       {error && (
