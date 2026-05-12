@@ -1,13 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const SUPABASE_URL  = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_KEY  = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+// Supabase khusus broker parquet — project terpisah dari dashboard utama
+// Pastikan kedua env var ini ada di .env.local
+const SUPABASE_URL  = process.env.BROKER_SUPABASE_URL!;
+const SUPABASE_KEY  = process.env.BROKER_SUPABASE_ANON_KEY!;
 const STORAGE_BASE  = `${SUPABASE_URL}/storage/v1/object/public/broker_parquet`;
 const STORAGE_API   = `${SUPABASE_URL}/storage/v1/object/list/broker_parquet`;
 
+/**
+ * GET /api/broker-tracker?days=30
+ * Ambil daftar URL parquet dari Supabase Storage (server-side, bebas COEP).
+ */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const days = parseInt(searchParams.get('days') || '30');
+
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    return NextResponse.json(
+      { error: 'BROKER_SUPABASE_URL atau BROKER_SUPABASE_ANON_KEY belum diset di .env.local' },
+      { status: 500 }
+    );
+  }
 
   try {
     const res = await fetch(STORAGE_API, {
@@ -25,41 +38,28 @@ export async function GET(req: NextRequest) {
     });
 
     if (!res.ok) throw new Error(`Storage list error: ${res.status}`);
-    const rawFolders = await res.json();
+    const folders: { name: string }[] = await res.json();
 
-    // ── DEBUG: kembalikan raw response supaya bisa dilihat ──
-    // Hapus blok ini setelah masalah teridentifikasi
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
 
-    const allNames = Array.isArray(rawFolders) ? rawFolders.map((f: any) => f.name) : [];
-    const passRegex = allNames.filter((n: string) => /^\d{8}$/.test(n));
-    const passDate  = passRegex.filter((name: string) => {
-      const d = new Date(`${name.slice(0,4)}-${name.slice(4,6)}-${name.slice(6,8)}`);
-      return d >= cutoff;
-    });
-
-    const urls = passDate
-      .sort((a: string, b: string) => b.localeCompare(a))
-      .map((name: string) => ({
+    const urls = folders
+      .map(f => f.name)
+      .filter(name => /^\d{8}$/.test(name))
+      .filter(name => {
+        const d = new Date(`${name.slice(0,4)}-${name.slice(4,6)}-${name.slice(6,8)}`);
+        return d >= cutoff;
+      })
+      .sort((a, b) => b.localeCompare(a))
+      .map(name => ({
         date: `${name.slice(0,4)}-${name.slice(4,6)}-${name.slice(6,8)}`,
         url: `${STORAGE_BASE}/${name}/broker_activity_${name}.parquet`,
       }));
 
-    return NextResponse.json({
-      urls,
-      // ── debug fields (hapus setelah fix) ──
-      _debug: {
-        supabase_url_used: SUPABASE_URL,
-        key_present: !!SUPABASE_KEY,
-        raw_count: Array.isArray(rawFolders) ? rawFolders.length : 'NOT_ARRAY',
-        raw_first5: Array.isArray(rawFolders) ? rawFolders.slice(0, 5) : rawFolders,
-        all_names: allNames.slice(0, 20),
-        pass_regex: passRegex,
-        pass_date: passDate,
-        cutoff_used: cutoff.toISOString(),
-      },
-    });
+    return NextResponse.json(
+      { urls },
+      { headers: { 'Cache-Control': 's-maxage=300, stale-while-revalidate' } }
+    );
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
