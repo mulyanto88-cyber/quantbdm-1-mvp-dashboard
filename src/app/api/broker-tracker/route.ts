@@ -1,20 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Supabase khusus broker parquet — project terpisah dari dashboard utama
-// Pastikan kedua env var ini ada di .env.local
-const SUPABASE_URL  = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_KEY  = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const STORAGE_BASE  = `${SUPABASE_URL}/storage/v1/object/public/broker_parquet`;
-const STORAGE_API   = `${SUPABASE_URL}/storage/v1/object/list/broker_parquet`;
+// Hardcode Supabase Broksum — sama persis dengan Data-Broksum yang sudah jalan
+const SUPABASE_URL = 'https://ifdbelggvxyimqyowczn.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlmZGJlbGdndnh5aW1xeW93Y3puIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4MTM4MDgsImV4cCI6MjA5MjM4OTgwOH0.OD5_Nft5oZGuKaw4tOLf01q6dWR700YvBw9IelyTqBE';
+const STORAGE_BASE = `${SUPABASE_URL}/storage/v1/object/public/broker_parquet`;
+const STORAGE_API  = `${SUPABASE_URL}/storage/v1/object/list/broker_parquet`;
 
-/**
- * GET /api/broker-tracker?days=30
- * Ambil daftar URL parquet dari Supabase Storage (server-side, bebas COEP).
- */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const days = parseInt(searchParams.get('days') || '30');
-
 
   try {
     const res = await fetch(STORAGE_API, {
@@ -47,7 +41,7 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.localeCompare(a))
       .map(name => ({
         date: `${name.slice(0,4)}-${name.slice(4,6)}-${name.slice(6,8)}`,
-        url: `${STORAGE_BASE}/${name}/broker_activity_${name}.parquet`,
+        url:  `${STORAGE_BASE}/${name}/broker_activity_${name}.parquet`,
       }));
 
     return NextResponse.json(
