@@ -7,7 +7,7 @@ import { formatRupiah, formatPercent, formatNumber, formatShares } from '@/lib/u
 import type { SmartMoneyStock } from '@/lib/supabase'
 import { 
   Search, TrendingUp, TrendingDown, Activity, AlertTriangle, Clock, 
-  Zap, Target, DollarSign, PieChart, ArrowRightLeft, Building2, 
+  Zap, Target, DollarSign, PieChart as PieChartIcon, ArrowRightLeft, Building2, 
   Flame, Scale, Globe, Eye, Shield, ArrowUp, ArrowDown, RefreshCw,
   Loader2, ChevronRight, Radar, Maximize2, Minimize2
 } from 'lucide-react'
