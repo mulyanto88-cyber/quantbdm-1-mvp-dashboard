@@ -11,6 +11,10 @@ import {
   Flame, Scale, Globe, Eye, Shield, ArrowUp, ArrowDown, RefreshCw,
   Loader2, ChevronRight, Radar, Maximize2, Minimize2
 } from 'lucide-react'
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, 
+  ResponsiveContainer, AreaChart, Area, Legend as RechartsLegend
+} from 'recharts'
 import Link from 'next/link'
 
 // ============================================================
@@ -445,6 +449,18 @@ export default function StockDetailPage() {
   const smiScore = smartMoneyIndex?.smart_money_score || 0
   const signalBubbles = volumeSpikes.filter((s: any) => s.spike_type.includes('BULLISH')).length
   const signalDistributions = volumeSpikes.filter((s: any) => s.spike_type.includes('BEARISH') || s.spike_type.includes('DOWN')).length
+
+  // Foreign Correlation Data
+  const foreignCorrelationData = useMemo(() => {
+    let cumulative = 0
+    return historyData.map(d => {
+      cumulative += d.net_foreign
+      return {
+        ...d,
+        cumulative_foreign: cumulative
+      }
+    })
+  }, [historyData])
 
   // ============================================================
   // RENDER
@@ -1087,6 +1103,85 @@ export default function StockDetailPage() {
         <div className="space-y-6">
           {foreignFlowData.length > 0 ? (
             <>
+              {/* Correlation Chart */}
+              <div className="glass rounded-2xl p-6 border border-border/30">
+                <h3 className="font-bold text-foreground mb-6 flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-emerald-400" /> Price vs Foreign Flow Correlation
+                </h3>
+                <div className="h-[400px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={foreignCorrelationData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                      <XAxis 
+                        dataKey="time" 
+                        tick={{ fontSize: 10, fill: '#64748b' }}
+                        tickFormatter={(v) => v.slice(5)}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis 
+                        yId="left"
+                        orientation="left"
+                        domain={['auto', 'auto']}
+                        tick={{ fontSize: 10, fill: '#64748b' }}
+                        tickFormatter={(v) => v.toLocaleString('id-ID')}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis 
+                        yId="right"
+                        orientation="right"
+                        domain={['auto', 'auto']}
+                        tick={{ fontSize: 10, fill: '#3b82f6' }}
+                        tickFormatter={(v) => fmt(v)}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <RechartsTooltip
+                        contentStyle={{
+                          background: 'rgba(11,15,25,0.95)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                        }}
+                        formatter={(value: any, name: string) => [
+                          name === 'Price' ? value.toLocaleString('id-ID') : formatRupiah(value),
+                          name
+                        ]}
+                      />
+                      <RechartsLegend wrapperStyle={{ paddingTop: '20px', fontSize: '11px' }} />
+                      <Line 
+                        yId="left"
+                        type="monotone" 
+                        dataKey="close" 
+                        name="Price"
+                        stroke="#e7b733" 
+                        strokeWidth={3}
+                        dot={false}
+                        activeDot={{ r: 6 }}
+                        animationDuration={1500}
+                      />
+                      <Line 
+                        yId="right"
+                        type="monotone" 
+                        dataKey="cumulative_foreign" 
+                        name="Cum. Foreign Flow"
+                        stroke="#3b82f6" 
+                        strokeWidth={3}
+                        dot={false}
+                        activeDot={{ r: 6 }}
+                        animationDuration={1500}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-4 p-3 bg-blue-500/5 border border-blue-500/10 rounded-xl">
+                  <p className="text-[10px] text-muted-foreground leading-relaxed">
+                    💡 <span className="text-blue-400 font-bold">Correlation Note:</span> Jika garis Kuning (Price) dan Biru (Foreign) bergerak searah, maka saham ini memiliki korelasi foreign yang kuat. Divergence (garis berlawanan) bisa menjadi sinyal reversal.
+                  </p>
+                </div>
+              </div>
+
               {foreignFlowData.map((d: any, i: number) => {
                 const divergenceType = d.divergence_type || 'NEUTRAL'
                 const isBullish = divergenceType.includes('BULLISH') || divergenceType.includes('STEALTH')
