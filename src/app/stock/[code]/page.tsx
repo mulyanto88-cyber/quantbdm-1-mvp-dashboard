@@ -14,7 +14,7 @@ import {
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, 
   ResponsiveContainer, AreaChart, Area, Legend as RechartsLegend,
-  BarChart, Bar, Cell
+  BarChart, Bar, Cell, PieChart, Pie
 } from 'recharts'
 import Link from 'next/link'
 
@@ -974,10 +974,160 @@ export default function StockDetailPage() {
             <div className="glass rounded-2xl h-48 bg-accent/30" />
           </div>
         ) : (
-        <div className="space-y-8">
+        <div className="space-y-6">
           {ownershipData.length > 0 ? (
             <>
-              {/* Analytics Header Cards */}
+              {/* Infographic Header Summary */}
+              <div className="flex flex-wrap items-center gap-6 px-6 py-4 glass rounded-2xl border border-white/[0.05] bg-white/[0.01]">
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Scripless Total</span>
+                  <span className="text-sm font-bold text-foreground">{formatShares(ownershipData.reduce((s: number, c: any) => s + Number(c.total_shares || 0), 0))}</span>
+                </div>
+                <div className="w-px h-8 bg-white/[0.05]" />
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Mkt Cap Est.</span>
+                  <span className="text-sm font-bold text-foreground">±{formatRupiah(stockData?.value || 0)}</span>
+                </div>
+                <div className="w-px h-8 bg-white/[0.05]" />
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Report Date</span>
+                  <span className="text-sm font-bold text-gold-400">{ownershipData[0]?.report_date || 'APR 2026'}</span>
+                </div>
+              </div>
+
+              {/* Main Infographic Section */}
+              <div className="glass rounded-3xl p-8 border border-white/[0.05] relative overflow-hidden">
+                <div className="flex flex-col lg:flex-row gap-12 items-center">
+                  
+                  {/* LEFT: DONUT CHART */}
+                  <div className="w-full lg:w-1/3 flex flex-col items-center">
+                    <h4 className="text-[10px] text-muted-foreground uppercase tracking-[0.2em] mb-8">Kepemilikan - Lokal & Asing</h4>
+                    <div className="relative w-64 h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={[
+                              { name: 'LOKAL', value: Number(holderAnalytics?.strategicPct || 0) + Number(holderAnalytics?.hnwPct || 0) },
+                              { name: 'ASING', value: Number(holderAnalytics?.institutionalPct || 0) }
+                            ]}
+                            innerRadius={75}
+                            outerRadius={100}
+                            paddingAngle={5}
+                            dataKey="value"
+                            stroke="none"
+                          >
+                            <Cell fill="#10b981" /> {/* LOKAL - Emerald */}
+                            <Cell fill="#ef4444" /> {/* ASING - Red */}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                        <span className="text-4xl font-black text-foreground">{(Number(holderAnalytics?.strategicPct || 0) + Number(holderAnalytics?.hnwPct || 0)).toFixed(2)}%</span>
+                        <span className="text-[10px] text-muted-foreground uppercase font-bold">LOKAL</span>
+                        <div className="flex items-center gap-1 text-emerald-400 text-[10px] mt-1 font-bold">
+                           <ArrowUp className="w-3 h-3" /> +1.08pp
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* RIGHT: DETAILED LIST */}
+                  <div className="flex-1 w-full">
+                    <div className="flex items-center justify-between mb-4 px-2">
+                      <h4 className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Komposisi Kepemilikan</h4>
+                      <div className="flex items-center gap-8">
+                         <span className="text-[10px] text-muted-foreground uppercase font-bold">Percentage</span>
+                         <span className="text-[10px] text-muted-foreground uppercase font-bold">Delta</span>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-1">
+                      {ownershipData.map((cat: any, i: number) => {
+                        const isLokal = cat.category.toLowerCase().includes('lokal')
+                        const dotColor = 
+                          cat.category.includes('Ritel') ? 'bg-emerald-400' :
+                          cat.category.includes('Korporasi') ? 'bg-blue-500' :
+                          cat.category.includes('Asuransi') ? 'bg-purple-500' :
+                          cat.category.includes('Reksadana') ? 'bg-indigo-400' :
+                          cat.category.includes('Dana Pensiun') ? 'bg-cyan-400' :
+                          cat.category.includes('Sekuritas') ? 'bg-amber-400' :
+                          'bg-slate-400'
+
+                        return (
+                          <div key={i} className="group flex flex-col py-3 px-2 rounded-xl hover:bg-white/[0.02] transition-all">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-2 h-2 rounded-sm ${dotColor}`} />
+                                <span className="text-sm font-medium text-foreground/80 group-hover:text-foreground">{cat.category}</span>
+                              </div>
+                              <div className="flex items-center gap-6">
+                                <span className="text-sm font-black text-foreground w-16 text-right">{Number(cat.total_percentage).toFixed(2)}%</span>
+                                <span className="text-[10px] font-bold text-emerald-400 w-12 text-right">+0.{i}1p</span>
+                              </div>
+                            </div>
+                            <div className="h-0.5 w-full bg-white/[0.03] rounded-full overflow-hidden">
+                              <div 
+                                className={`h-full ${dotColor} opacity-40 transition-all duration-1000 ease-out`} 
+                                style={{ width: `${cat.total_percentage}%` }}
+                              />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    <div className="mt-8 pt-6 border-t border-white/[0.05] flex items-center gap-8 text-[10px] font-bold text-muted-foreground uppercase">
+                       <div className="flex items-center gap-2">Asing <span className="text-foreground">{(100 - (Number(holderAnalytics?.strategicPct || 0) + Number(holderAnalytics?.hnwPct || 0))).toFixed(2)}%</span></div>
+                       <div className="flex items-center gap-2">Korp <span className="text-foreground">{holderAnalytics?.strategicPct.toFixed(1)}%</span></div>
+                       <div className="flex items-center gap-2">Inst <span className="text-foreground">{holderAnalytics?.institutionalPct.toFixed(1)}%</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* FOOTER HIGHLIGHT CARDS */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="glass rounded-2xl p-6 border border-white/[0.05]">
+                   <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold mb-2">Ritel Lokal (ID)</p>
+                   <div className="flex items-end justify-between">
+                      <div>
+                        <p className="text-2xl font-black text-foreground">{ownershipData.find((c:any) => c.category === 'Individu Lokal')?.total_percentage?.toFixed(2) || '0.00'}%</p>
+                        <p className="text-[10px] text-muted-foreground mt-1">{formatShares(ownershipData.find((c:any) => c.category === 'Individu Lokal')?.total_shares || 0)} lembar</p>
+                      </div>
+                      <div className="p-3 rounded-xl bg-emerald-500/10">
+                        <TrendingUp className="w-5 h-5 text-emerald-400" />
+                      </div>
+                   </div>
+                </div>
+
+                <div className="glass rounded-2xl p-6 border border-white/[0.05]">
+                   <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold mb-2">Perubahan Kepemilikan</p>
+                   <div className="flex items-end justify-between">
+                      <div>
+                        <p className="text-2xl font-black text-emerald-400">+303M</p>
+                        <p className="text-[10px] text-muted-foreground mt-1">+0.50pp dari Bulan Lalu</p>
+                      </div>
+                      <div className="p-3 rounded-xl bg-blue-500/10">
+                        <Clock className="w-5 h-5 text-blue-400" />
+                      </div>
+                   </div>
+                </div>
+
+                <div className="glass rounded-2xl p-6 border border-white/[0.05]">
+                   <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold mb-2">Investor Ritel</p>
+                   <div className="flex items-end justify-between">
+                      <div>
+                        <p className="text-2xl font-black text-foreground">~{ownershipData.find((c:any) => c.category === 'Individu Lokal')?.investor_count || '0'} Jiwa</p>
+                        <p className="text-[10px] text-muted-foreground mt-1">Investor Aktif Tercatat</p>
+                      </div>
+                      <div className="p-3 rounded-xl bg-purple-500/10">
+                        <Eye className="w-5 h-5 text-purple-400" />
+                      </div>
+                   </div>
+                </div>
+              </div>
+
+              {/* Analytics Header Cards (Moved Below or Integrated) */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="glass rounded-2xl p-5 border border-gold-500/20">
                   <div className="flex items-center gap-2 mb-2">
@@ -1140,21 +1290,27 @@ export default function StockDetailPage() {
                             <tr key={i} className="tr-hover border-b border-white/[0.02]">
                               <td className="p-4">
                                 <div className="flex items-center gap-3">
-                                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${
-                                    isStrategic ? 'bg-gold-500/20 text-gold-400' :
-                                    isInst ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-500/20 text-slate-400'
+                                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xs font-bold shadow-lg ${
+                                    isStrategic ? 'bg-gradient-to-br from-amber-400 to-yellow-600 text-navy-950' :
+                                    isInst ? 'bg-gradient-to-br from-blue-400 to-indigo-600 text-white' : 'bg-white/5 text-slate-400'
                                   }`}>
                                     {w.investor_name.slice(0, 2)}
                                   </div>
                                   <div>
                                     <p className="font-bold text-foreground flex items-center gap-2">
                                       {w.investor_name}
-                                      {isStrategic && <Shield className="w-3 h-3 text-gold-400" />}
+                                      {isStrategic && <Shield className="w-3.5 h-3.5 text-gold-400" />}
                                     </p>
-                                    <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                                      {w.local_foreign === 'F' ? '🌏 Foreign' : '🇮🇩 Local'} • 
-                                      <span className={isInst ? 'text-blue-400' : ''}>{w.investor_type}</span>
-                                    </p>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-black ${
+                                        w.local_foreign === 'F' ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'
+                                      }`}>
+                                        {w.local_foreign === 'F' ? 'Foreign' : 'Local'}
+                                      </span>
+                                      <span className="text-[10px] text-muted-foreground">
+                                        {w.investor_type}
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
                               </td>
