@@ -94,14 +94,25 @@ export default function BandarmologiPage() {
   const [topBrokers, setTopBrokers] = useState<string[]>([]);
   const [selected,   setSelected]   = useState<Set<string>>(new Set());
   const [page,       setPage]       = useState(0);
+  const [debug,      setDebug]      = useState('');  // ← debug sementara, hapus nanti
   const PAGE_SIZE = 50;
 
   const fetchData = async () => {
-    setLoading(true); setError(''); setData([]);
+    setLoading(true); setError(''); setData([]); setDebug('');
     try {
       // 1. Ambil daftar URL dari API route (server-side — bebas COEP)
       setMsg('Mengambil file list...');
-      const valid = await fetchParquetUrls(days);
+
+      // DEBUG: cek raw response dari API route
+      const res = await fetch(`/api/broker-tracker?days=${days}`);
+      const json = await res.json();
+      setDebug(`API status: ${res.status} | Response: ${JSON.stringify(json).slice(0, 300)}`);
+
+      if (!res.ok) throw new Error(`Gagal mengambil file list: ${res.status} — ${json.error ?? ''}`);
+      const { urls: fileList, error: apiError } = json;
+      if (apiError) throw new Error(apiError);
+      const valid: string[] = (fileList ?? []).map((f: { url: string }) => f.url);
+
       if (!valid.length) throw new Error('Tidak ada file parquet tersedia untuk rentang ini.');
 
       // 2. Query DuckDB di browser
@@ -195,6 +206,14 @@ export default function BandarmologiPage() {
           {loading ? `⏳ ${msg}` : 'Lacak'}
         </button>
       </div>
+
+      {/* ── DEBUG PANEL (hapus setelah diagnosa) ── */}
+      {debug && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700
+                        text-yellow-800 dark:text-yellow-300 px-4 py-3 rounded-lg text-xs font-mono break-all">
+          🔍 <strong>DEBUG:</strong> {debug}
+        </div>
+      )}
 
       {/* Error */}
       {error && (
