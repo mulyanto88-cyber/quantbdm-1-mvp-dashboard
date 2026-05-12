@@ -33,28 +33,15 @@ async function getDB() {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// Ambil tanggal di timezone Jakarta (hindari meleset saat dini hari)
-function jakartaDateStr(daysBack: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - daysBack);
-  // 'sv' locale → format "YYYY-MM-DD" persis di timezone yang dipilih
-  return new Intl.DateTimeFormat('sv', { timeZone: 'Asia/Jakarta' }).format(d);
-}
-
 const VALID_CODE = /^[A-Z0-9]{1,6}$/;
 
-const STORAGE_BASE =
-  (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '') +
-  '/storage/v1/object/public/broker_parquet';
-
-// Cek file dengan GET Range (HEAD diblok COEP, GET public bucket OK)
-async function fileExists(url: string): Promise<boolean> {
-  try {
-    const r = await fetch(url, { headers: { Range: 'bytes=0-1' } });
-    return r.ok || r.status === 206;
-  } catch {
-    return false;
-  }
+// Ambil daftar URL parquet dari API route (server-side, bebas COEP/CORP)
+async function fetchParquetUrls(days: string): Promise<string[]> {
+  const res = await fetch(`/api/broker-tracker?days=${days}`);
+  if (!res.ok) throw new Error(`Gagal mengambil file list: ${res.status}`);
+  const { urls, error } = await res.json();
+  if (error) throw new Error(error);
+  return (urls as { date: string; url: string }[]).map(f => f.url);
 }
 
 async function queryBroker(urls: string[], code: string) {
@@ -112,31 +99,18 @@ export default function BandarmologiPage() {
   const fetchData = async () => {
     setLoading(true); setError(''); setData([]);
     try {
-      // 1. Generate daftar URL berdasarkan tanggal Jakarta
-      setMsg('Menyiapkan file list...');
-      const urls: string[] = [];
-      const total = parseInt(days);
-      for (let i = 0, added = 0; added < total && i < total + 14; i++) {
-        const ds = jakartaDateStr(i).replace(/-/g, ''); // "YYYYMMDD"
-        const dow = new Date(jakartaDateStr(i)).getDay();
-        if (dow === 0 || dow === 6) continue;           // skip weekend
-        urls.push(`${STORAGE_BASE}/${ds}/broker_activity_${ds}.parquet`);
-        added++;
-      }
-
-      // 2. Cek file yang benar-benar ada (GET Range, bukan HEAD)
-      setMsg('Mengecek file tersedia...');
-      const checks  = await Promise.all(urls.map(u => fileExists(u).then(ok => ok ? u : null)));
-      const valid   = checks.filter(Boolean) as string[];
+      // 1. Ambil daftar URL dari API route (server-side — bebas COEP)
+      setMsg('Mengambil file list...');
+      const valid = await fetchParquetUrls(days);
       if (!valid.length) throw new Error('Tidak ada file parquet tersedia untuk rentang ini.');
 
-      // 3. Query DuckDB di browser
+      // 2. Query DuckDB di browser
       setMsg(`Query DuckDB — ${valid.length} file...`);
       const rows = await queryBroker(valid, code.toUpperCase());
       if (!rows.length) throw new Error(`Tidak ada data untuk ${code.toUpperCase()}.`);
       setData(rows);
 
-      // 4. Hitung top 10 broker by absolute net_value
+      // 3. Hitung top 10 broker by absolute net_value
       const brokerMap = new Map<string, number>();
       rows.forEach(r => brokerMap.set(r.broker_code, (brokerMap.get(r.broker_code) ?? 0) + Math.abs(r.net_value)));
       const top10 = Array.from(brokerMap.entries())
