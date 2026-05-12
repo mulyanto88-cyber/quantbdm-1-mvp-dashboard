@@ -308,20 +308,24 @@ export default function StockDetailPage() {
       })))
 
       // === MARKERS ===
-      const markers: any[] = []
-      historyData.forEach(d => {
-        if (d.whale_signal || d.aov_ratio >= 1.5) {
-          markers.push({ time: d.time, position: 'aboveBar', color: '#10b981', shape: 'circle', size: 1, text: '★' })
-        }
-        if (d.aov_ratio <= 0.6 && d.aov_ratio > 0) {
-          markers.push({ time: d.time, position: 'belowBar', color: '#ef4444', shape: 'circle', size: 1, text: '⚡' })
-        }
-        if (d.big_player_anomaly) {
-          markers.push({ time: d.time, position: 'belowBar', color: '#ec4899', shape: 'circle', size: 1, text: '◆' })
-        }
-      })
-      markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0))
-      candleSeries.setMarkers(markers)
+      if (!isFullscreen) {
+        const markers: any[] = []
+        historyData.forEach(d => {
+          if (d.whale_signal || d.aov_ratio >= 1.5) {
+            markers.push({ time: d.time, position: 'aboveBar', color: '#10b981', shape: 'circle', size: 1, text: '★' })
+          }
+          if (d.aov_ratio <= 0.6 && d.aov_ratio > 0) {
+            markers.push({ time: d.time, position: 'belowBar', color: '#ef4444', shape: 'circle', size: 1, text: '⚡' })
+          }
+          if (d.big_player_anomaly) {
+            markers.push({ time: d.time, position: 'belowBar', color: '#ec4899', shape: 'circle', size: 1, text: '◆' })
+          }
+        })
+        markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0))
+        candleSeries.setMarkers(markers)
+      } else {
+        candleSeries.setMarkers([])
+      }
 
       // === VWMA LINE ===
       const vwmaSeries = chart.addLineSeries({
@@ -365,6 +369,62 @@ export default function StockDetailPage() {
       })))
 
       chart.timeScale().fitContent()
+
+      // === TOOLTIP LOGIC ===
+      const toolTip = document.getElementById('chart-tooltip')
+      const tooltipPrice = document.getElementById('tooltip-price')
+      const tooltipChange = document.getElementById('tooltip-change')
+      const tooltipVolume = document.getElementById('tooltip-volume')
+      const tooltipDate = document.getElementById('tooltip-date')
+
+      chart.subscribeCrosshairMove((param: any) => {
+        if (
+          param.point === undefined ||
+          !param.time ||
+          param.point.x < 0 ||
+          param.point.x > chartContainerRef.current!.clientWidth ||
+          param.point.y < 0 ||
+          param.point.y > chartContainerRef.current!.clientHeight
+        ) {
+          if (toolTip) toolTip.style.display = 'none'
+          return
+        }
+
+        const data = param.seriesData.get(candleSeries)
+        if (data) {
+          const { open, close, time } = data
+          const change = ((close - open) / open) * 100
+          const volumeData = param.seriesData.get(volSeries)
+          
+          if (toolTip) {
+            toolTip.style.display = 'block'
+            
+            // Positioning (avoid edge)
+            const x = param.point.x
+            const y = param.point.y
+            const tooltipWidth = 160
+            const tooltipHeight = 100
+            let left = x + 20
+            if (left > chartContainerRef.current!.clientWidth - tooltipWidth) {
+              left = x - tooltipWidth - 20
+            }
+            toolTip.style.left = left + 'px'
+            toolTip.style.top = y + 'px'
+
+            if (tooltipPrice) tooltipPrice.innerText = close.toLocaleString('id-ID')
+            if (tooltipDate) tooltipDate.innerText = String(time)
+            if (tooltipVolume) tooltipVolume.innerText = volumeData ? formatShares(volumeData.value) : '-'
+            
+            if (tooltipChange) {
+              const sign = change >= 0 ? '+' : ''
+              tooltipChange.innerText = `${sign}${change.toFixed(2)}%`
+              tooltipChange.style.color = change >= 0 ? '#10b981' : '#ef4444'
+            }
+          }
+        } else {
+          if (toolTip) toolTip.style.display = 'none'
+        }
+      })
 
       return () => {
         chart.remove()
@@ -559,26 +619,52 @@ export default function StockDetailPage() {
           }`}
         >
           {/* Legend (hover) */}
-          <div className="absolute top-4 left-6 z-10 space-y-1.5 bg-navy-900/90 p-3 rounded-xl backdrop-blur-md border border-border/50 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none shadow-xl">
-            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> Price</div>
-            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-blue-500" /> VWMA 20</div>
-            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-emerald-500/40" /> Volume (Buy)</div>
-            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-red-500/40" /> Volume (Sell)</div>
-            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-emerald-500/70" /> Net Foreign +</div>
-            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-red-500/70" /> Net Foreign -</div>
-            <div className="flex items-center gap-2 mt-1"><span className="text-emerald-400">★</span> Whale / AOV ≥1.5x</div>
-            <div className="flex items-center gap-2"><span className="text-red-400">⚡</span> AOV ≤0.6x</div>
-            <div className="flex items-center gap-2"><span className="text-pink-400">◆</span> Big Player Anomaly</div>
+          {!isFullscreen && (
+            <div className="absolute top-4 left-6 z-10 space-y-1.5 bg-navy-900/90 p-3 rounded-xl backdrop-blur-md border border-border/50 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none shadow-xl">
+              <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> Price</div>
+              <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-blue-500" /> VWMA 20</div>
+              <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-emerald-500/40" /> Volume (Buy)</div>
+              <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-red-500/40" /> Volume (Sell)</div>
+              <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-emerald-500/70" /> Net Foreign +</div>
+              <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm bg-red-500/70" /> Net Foreign -</div>
+              <div className="flex items-center gap-2 mt-1"><span className="text-emerald-400">★</span> Whale / AOV ≥1.5x</div>
+              <div className="flex items-center gap-2"><span className="text-red-400">⚡</span> AOV ≤0.6x</div>
+              <div className="flex items-center gap-2"><span className="text-pink-400">◆</span> Big Player Anomaly</div>
+            </div>
+          )}
+
+          {/* Fullscreen Watermark (Centered) */}
+          {isFullscreen && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 overflow-hidden">
+              <span className="text-[20vw] font-black text-white/[0.03] select-none uppercase tracking-tighter leading-none">
+                {stockCode}
+              </span>
+            </div>
+          )}
+
+          {/* Floating Tooltip */}
+          <div id="chart-tooltip" className="absolute top-4 left-4 z-30 pointer-events-none hidden p-4 bg-navy-900/90 border border-white/10 rounded-2xl backdrop-blur-xl shadow-2xl min-w-[160px]">
+            <div className="flex items-center justify-between mb-2">
+              <span id="tooltip-date" className="text-[10px] text-muted-foreground font-mono"></span>
+            </div>
+            <div className="space-y-1">
+              <div className="flex justify-between items-end gap-4">
+                <span className="text-[10px] text-muted-foreground uppercase font-bold">Price</span>
+                <span id="tooltip-price" className="text-xl font-black"></span>
+              </div>
+              <div className="flex justify-between items-center gap-4 border-t border-white/5 pt-1 mt-1">
+                <span className="text-[10px] text-muted-foreground uppercase font-bold">Change</span>
+                <span id="tooltip-change" className="text-xs font-black"></span>
+              </div>
+              <div className="flex justify-between items-center gap-4">
+                <span className="text-[10px] text-muted-foreground uppercase font-bold">Volume</span>
+                <span id="tooltip-volume" className="text-xs font-medium"></span>
+              </div>
+            </div>
           </div>
 
           {/* Fullscreen controls */}
           <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
-            {/* Stock code watermark (always visible in fullscreen) */}
-            {isFullscreen && (
-              <span className="text-sm font-black text-gold-400/70 tracking-widest select-none mr-2">
-                {stockCode}
-              </span>
-            )}
             <button
               onClick={toggleFullscreen}
               title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
