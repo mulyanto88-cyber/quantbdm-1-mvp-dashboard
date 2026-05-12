@@ -44,15 +44,34 @@ async function fetchParquetUrls(days: string): Promise<string[]> {
   return (urls as { date: string; url: string }[]).map(f => f.url);
 }
 
-// Arrow Date32 → "YYYY-MM-DD"
-// DuckDB WASM mengembalikan kolom DATE sebagai integer (hari sejak Unix epoch),
-// bukan JS Date object. Fungsi ini handle keduanya.
+// Arrow Date32 / Date64 → "YYYY-MM-DD"
+// DuckDB WASM (Apache Arrow JS) bisa mengembalikan kolom DATE dalam 3 bentuk:
+//   1. JS Date object  → langsung pakai .toISOString()
+//   2. number (int32)  → Date32: jumlah HARI sejak 1970-01-01
+//   3. bigint          → Date64: jumlah MILIDETIK sejak 1970-01-01
+// Nullable column bisa return null, undefined, atau NaN — semua harus di-guard
+// agar tidak melempar "RangeError: Invalid time value".
 function arrowDateToStr(val: any): string {
-  if (val instanceof Date) return val.toISOString().split('T')[0];
+  if (val == null) return '';
+
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return '';           // guard invalid Date
+    return val.toISOString().split('T')[0];
+  }
+
+  if (typeof val === 'bigint') {
+    // Date64: miliseconds sejak epoch
+    const ms = Number(val);
+    if (!Number.isFinite(ms)) return '';
+    return new Date(ms).toISOString().split('T')[0];
+  }
+
   if (typeof val === 'number') {
-    // Date32: jumlah hari sejak 1970-01-01
+    if (!Number.isFinite(val)) return '';          // guard NaN / Infinity
+    // Date32: hari sejak 1970-01-01
     return new Date(val * 86_400_000).toISOString().split('T')[0];
   }
+
   return String(val);
 }
 
@@ -73,14 +92,16 @@ async function queryBroker(urls: string[], code: string) {
     ORDER BY date DESC, net_value DESC
   `);
   await conn.close();
-  return result.toArray().map((r: any) => ({
-    date:        arrowDateToStr(r.date),
-    broker_code: String(r.broker_code),
-    buy_value:   Number(r.buy_value),
-    sell_value:  Number(r.sell_value),
-    net_value:   Number(r.net_value),
-    net_lot:     Number(r.net_lot),
-  }));
+  return result.toArray()
+    .map((r: any) => ({
+      date:        arrowDateToStr(r.date),
+      broker_code: String(r.broker_code),
+      buy_value:   Number(r.buy_value),
+      sell_value:  Number(r.sell_value),
+      net_value:   Number(r.net_value),
+      net_lot:     Number(r.net_lot),
+    }))
+    .filter(r => r.date !== '');   // buang baris dengan tanggal null/invalid
 }
 
 function fmt(v: number) {
