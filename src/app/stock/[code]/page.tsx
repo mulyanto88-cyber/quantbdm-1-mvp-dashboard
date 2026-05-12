@@ -221,10 +221,6 @@ export default function StockDetailPage() {
         if (leadRes.data) setLeadIndicator(leadRes.data)
       }
 
-      if (tab === 'whale') {
-        const { data } = await supabase.rpc('get_whale_timing_analysis', { p_stock_code: code })
-        if (data) setWhaleData(data)
-      }
 
       if (tab === 'volume') {
         const [spikeRes, aovRes] = await Promise.all([
