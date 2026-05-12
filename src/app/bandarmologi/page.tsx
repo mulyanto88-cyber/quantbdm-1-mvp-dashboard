@@ -28,7 +28,7 @@ interface CacheEntry {
 
 // ── Cache Config ──────────────────────────────────────────────────────────────
 const CACHE_TTL_MS  = 4 * 60 * 60 * 1000; // 4 jam
-const CACHE_PREFIX  = 'bdmflow_broker_';
+const CACHE_PREFIX  = 'bdmflow_broker_v2_';
 
 function getCacheKey(code: string, days: string) {
   return `${CACHE_PREFIX}${code.toUpperCase()}_${days}d`;
@@ -142,10 +142,10 @@ async function queryBroker(urls: string[], code: string): Promise<BrokerRow[]> {
   const list = urls.map(u => `'${u}'`).join(', ');
   const result = await conn.query(`
     SELECT date, broker_code,
-      SUM(CASE WHEN side = 'BUY'  THEN value ELSE 0      END)::BIGINT AS buy_value,
-      SUM(CASE WHEN side = 'SELL' THEN value ELSE 0      END)::BIGINT AS sell_value,
-      SUM(CASE WHEN side = 'BUY'  THEN value ELSE -value END)::BIGINT AS net_value,
-      SUM(CASE WHEN side = 'BUY'  THEN lot   ELSE -lot   END)::BIGINT AS net_lot
+      SUM(CASE WHEN side = 'BUY'  THEN value ELSE 0 END)::BIGINT AS buy_value,
+      SUM(CASE WHEN side = 'SELL' THEN value ELSE 0 END)::BIGINT AS sell_value,
+      SUM(value)::BIGINT AS net_value,
+      SUM(lot)::BIGINT AS net_lot
     FROM read_parquet([${list}])
     WHERE stock_code = '${code}'
     GROUP BY date, broker_code
