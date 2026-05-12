@@ -1120,7 +1120,7 @@ export default function StockDetailPage() {
                         tickLine={false}
                       />
                       <YAxis 
-                        yId="left"
+                        yAxisId="left"
                         orientation="left"
                         domain={['auto', 'auto']}
                         tick={{ fontSize: 10, fill: '#64748b' }}
@@ -1129,7 +1129,7 @@ export default function StockDetailPage() {
                         tickLine={false}
                       />
                       <YAxis 
-                        yId="right"
+                        yAxisId="right"
                         orientation="right"
                         domain={['auto', 'auto']}
                         tick={{ fontSize: 10, fill: '#3b82f6' }}
@@ -1151,7 +1151,7 @@ export default function StockDetailPage() {
                       />
                       <RechartsLegend wrapperStyle={{ paddingTop: '20px', fontSize: '11px' }} />
                       <Line 
-                        yId="left"
+                        yAxisId="left"
                         type="monotone" 
                         dataKey="close" 
                         name="Price"
@@ -1162,7 +1162,7 @@ export default function StockDetailPage() {
                         animationDuration={1500}
                       />
                       <Line 
-                        yId="right"
+                        yAxisId="right"
                         type="monotone" 
                         dataKey="cumulative_foreign" 
                         name="Cum. Foreign Flow"
