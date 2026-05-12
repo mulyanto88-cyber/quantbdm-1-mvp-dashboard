@@ -95,6 +95,8 @@ export default function StockDetailPage() {
   const [historyData, setHistoryData] = useState<HistoryPoint[]>([])
   const [smartMoneyIndex, setSmartMoneyIndex] = useState<any>(null)
   const [whaleData, setWhaleData] = useState<any[]>([])
+  const [kseiWhaleData, setKseiWhaleData] = useState<any[]>([])
+  const [kseiAnalytics, setKseiAnalytics] = useState<any>(null)
   const [leadIndicator, setLeadIndicator] = useState<any[]>([])
   const [volumeSpikes, setVolumeSpikes] = useState<any[]>([])
   const [aovProfile, setAovProfile] = useState<any[]>([])
@@ -237,12 +239,17 @@ export default function StockDetailPage() {
       }
 
       if (tab === 'ownership') {
-        const [ownerRes, whaleRes] = await Promise.all([
+        const [ownerRes, whaleRes, kseiRes] = await Promise.all([
           supabase.rpc('get_ownership_structure', { p_stock_code: code, p_date: null }),
-          supabase.rpc('get_whale_timing_analysis', { p_stock_code: code })
+          supabase.rpc('get_whale_timing_analysis', { p_stock_code: code }),
+          fetch(`/api/ksei-whale?code=${code}`).then(res => res.json())
         ])
         if (ownerRes.data) setOwnershipData(ownerRes.data)
         if (whaleRes.data) setWhaleData(whaleRes.data)
+        if (kseiRes && !kseiRes.error) {
+          setKseiWhaleData(kseiRes.whales || [])
+          setKseiAnalytics(kseiRes.holderAnalytics)
+        }
       }
 
       if (tab === 'foreign-flow') {
@@ -474,6 +481,7 @@ export default function StockDetailPage() {
 
   // Holder DNA Analytics
   const holderAnalytics = useMemo(() => {
+    if (kseiAnalytics) return kseiAnalytics;
     if (!whaleData.length) return null
 
     const totalWhalePct = whaleData.reduce((s, w) => s + (w.latest_percentage || 0), 0)
@@ -489,15 +497,14 @@ export default function StockDetailPage() {
     const concentration = whaleData.slice(0, 5).reduce((s, w) => s + (w.latest_percentage || 0), 0)
 
     return {
-      totalWhalePct,
       strategicPct,
       institutionalPct,
       hnwPct,
       concentration,
-      realFreeFloat: Math.max(0, 100 - totalWhalePct),
-      isCorneringRisk: (100 - totalWhalePct) < 10
+      realFreeFloat: Math.max(0, 100 - strategicPct),
+      isCorneringRisk: (100 - strategicPct) < 15
     }
-  }, [whaleData])
+  }, [whaleData, kseiAnalytics])
 
   // ============================================================
   // RENDER
@@ -1004,11 +1011,10 @@ export default function StockDetailPage() {
                     <h4 className="text-[10px] text-muted-foreground uppercase tracking-[0.2em] mb-8">Kepemilikan - Lokal & Asing</h4>
                     <div className="relative w-64 h-64">
                       <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
                           <Pie
                             data={[
-                              { name: 'LOKAL', value: Number(holderAnalytics?.strategicPct || 0) + Number(holderAnalytics?.hnwPct || 0) },
-                              { name: 'ASING', value: Number(holderAnalytics?.institutionalPct || 0) }
+                              { name: 'LOKAL', value: holderAnalytics?.localPct || 0 },
+                              { name: 'ASING', value: holderAnalytics?.foreignPct || 0 }
                             ]}
                             innerRadius={75}
                             outerRadius={100}
@@ -1017,15 +1023,14 @@ export default function StockDetailPage() {
                             stroke="none"
                           >
                             <Cell fill="#10b981" /> {/* LOKAL - Emerald */}
-                            <Cell fill="#ef4444" /> {/* ASING - Red */}
+                            <Cell fill="#3b82f6" /> {/* ASING - Blue */}
                           </Pie>
-                        </PieChart>
                       </ResponsiveContainer>
                       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                        <span className="text-4xl font-black text-foreground">{(Number(holderAnalytics?.strategicPct || 0) + Number(holderAnalytics?.hnwPct || 0)).toFixed(2)}%</span>
+                        <span className="text-4xl font-black text-foreground">{(holderAnalytics?.localPct || 0).toFixed(1)}%</span>
                         <span className="text-[10px] text-muted-foreground uppercase font-bold">LOKAL</span>
                         <div className="flex items-center gap-1 text-emerald-400 text-[10px] mt-1 font-bold">
-                           <ArrowUp className="w-3 h-3" /> +1.08pp
+                           <Globe className="w-3 h-3" /> Whale DNA
                         </div>
                       </div>
                     </div>
@@ -1077,9 +1082,9 @@ export default function StockDetailPage() {
                     </div>
 
                     <div className="mt-8 pt-6 border-t border-white/[0.05] flex items-center gap-8 text-[10px] font-bold text-muted-foreground uppercase">
-                       <div className="flex items-center gap-2">Asing <span className="text-foreground">{(100 - (Number(holderAnalytics?.strategicPct || 0) + Number(holderAnalytics?.hnwPct || 0))).toFixed(2)}%</span></div>
-                       <div className="flex items-center gap-2">Korp <span className="text-foreground">{holderAnalytics?.strategicPct.toFixed(1)}%</span></div>
-                       <div className="flex items-center gap-2">Inst <span className="text-foreground">{holderAnalytics?.institutionalPct.toFixed(1)}%</span></div>
+                       <div className="flex items-center gap-2">Asing <span className="text-foreground">{(holderAnalytics?.foreignPct || 0).toFixed(1)}%</span></div>
+                       <div className="flex items-center gap-2">Strategic <span className="text-foreground">{(holderAnalytics?.strategicPct || 0).toFixed(1)}%</span></div>
+                       <div className="flex items-center gap-2">Inst <span className="text-foreground">{(holderAnalytics?.institutionalPct || 0).toFixed(1)}%</span></div>
                     </div>
                   </div>
                 </div>
@@ -1210,34 +1215,41 @@ export default function StockDetailPage() {
               </div>
 
               {/* Whale Action Chart */}
-              {whaleData.length > 0 && (
+              {(kseiWhaleData.length > 0 || whaleData.length > 0) && (
                 <div className="glass rounded-2xl p-6 border border-border/30">
                   <div className="flex items-center justify-between mb-6">
                     <div>
                       <h3 className="font-bold text-foreground flex items-center gap-2">
-                        <Eye className="w-5 h-5 text-gold-400" /> Top Whale Position & Action
+                        <Eye className="w-5 h-5 text-gold-400" /> Top Whale Position & DNA
                       </h3>
-                      <p className="text-[10px] text-muted-foreground">Analisis pergerakan pemegang saham terbesar</p>
+                      <p className="text-[10px] text-muted-foreground">Analisis pergerakan pemegang saham terbesar (&gt;1%)</p>
                     </div>
                     <div className="flex items-center gap-4 text-[10px] font-bold">
                       <div className="flex items-center gap-1.5 text-emerald-400">
-                        <div className="w-2 h-2 rounded-full bg-emerald-500" /> ACCUMULATING
+                        <div className="w-2 h-2 rounded-full bg-emerald-500" /> ADDING
                       </div>
                       <div className="flex items-center gap-1.5 text-red-400">
                         <div className="w-2 h-2 rounded-full bg-red-500" /> TRIMMING
                       </div>
+                      <div className="flex items-center gap-1.5 text-blue-400">
+                        <div className="w-2 h-2 rounded-full bg-blue-500" /> STABLE
+                      </div>
                     </div>
                   </div>
                   
-                  <div className="h-[300px] w-full">
+                  <div className="h-[400px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={whaleData.slice(0, 8)} margin={{ top: 20, right: 30, left: 40, bottom: 60 }} layout="vertical">
+                      <BarChart 
+                        data={(kseiWhaleData.length > 0 ? kseiWhaleData : whaleData).slice(0, 12)} 
+                        margin={{ top: 20, right: 30, left: 40, bottom: 60 }} 
+                        layout="vertical"
+                      >
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
                         <XAxis type="number" hide />
                         <YAxis 
                           type="category" 
                           dataKey="investor_name" 
-                          width={150} 
+                          width={180} 
                           tick={{ fontSize: 9, fill: '#94a3b8' }}
                           axisLine={false}
                           tickLine={false}
@@ -1245,12 +1257,13 @@ export default function StockDetailPage() {
                         <RechartsTooltip 
                           contentStyle={{ background: '#0B0F19', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
                           formatter={(v: any, n: any, props: any) => [
-                            `${v}% Holding`,
-                            `Action: ${props.payload.whale_verdict}`
+                            `${v.toFixed(2)}% Holding`,
+                            `Type: ${props.payload.dna || props.payload.investor_type}`,
+                            `Action: ${props.payload.whale_verdict || 'N/A'}`
                           ]}
                         />
                         <Bar dataKey="latest_percentage" radius={[0, 4, 4, 0]} barSize={20}>
-                          {whaleData.map((entry: any, index: number) => (
+                          {(kseiWhaleData.length > 0 ? kseiWhaleData : whaleData).map((entry: any, index: number) => (
                             <Cell key={`cell-${index}`} fill={
                               entry.position_trend === 'INCREASING' ? '#10b981' : 
                               entry.position_trend === 'DECREASING' ? '#ef4444' : '#3b82f6'
@@ -1273,18 +1286,18 @@ export default function StockDetailPage() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-white/[0.02] border-b border-white/[0.05] text-[10px] text-muted-foreground uppercase">
-                          <th className="p-4 text-left">Investor</th>
-                          <th className="p-4 text-right">Entry Price</th>
-                          <th className="p-4 text-right">Return</th>
+                          <th className="p-4 text-left">Investor & DNA</th>
+                          <th className="p-4 text-right">Last Chg (%)</th>
                           <th className="p-4 text-right">Holding %</th>
                           <th className="p-4 text-center">Trend</th>
                           <th className="p-4 text-center">Verdict</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {whaleData.map((w: any, i: number) => {
-                          const isInst = ['Insurance', 'Pension Funds', 'Mutual Funds', 'Financial Institutional', 'Sovereign Wealth Fund'].includes(w.investor_type)
-                          const isStrategic = w.latest_percentage >= 10 || w.investor_type === 'Corporate'
+                        {(kseiWhaleData.length > 0 ? kseiWhaleData : whaleData).map((w: any, i: number) => {
+                          const dna = w.dna || (['Insurance', 'Pension Funds', 'Mutual Funds', 'Financial Institutional', 'Sovereign Wealth Fund'].includes(w.investor_type) ? 'Institutional' : (w.latest_percentage >= 5 ? 'Strategic' : 'HNW'))
+                          const isStrategic = dna === 'Strategic'
+                          const isInst = dna === 'Institutional'
                           
                           return (
                             <tr key={i} className="tr-hover border-b border-white/[0.02]">
@@ -1302,24 +1315,24 @@ export default function StockDetailPage() {
                                       {isStrategic && <Shield className="w-3.5 h-3.5 text-gold-400" />}
                                     </p>
                                     <div className="flex items-center gap-2 mt-0.5">
-                                      <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-black ${
-                                        w.local_foreign === 'F' ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'
+                                      <span className={`text-[9px] px-1.5 py-0.5 rounded-sm font-black ${
+                                        isStrategic ? 'bg-gold-500/20 text-gold-400' :
+                                        isInst ? 'bg-blue-500/20 text-blue-400' : 'bg-emerald-500/20 text-emerald-400'
                                       }`}>
-                                        {w.local_foreign === 'F' ? 'Foreign' : 'Local'}
+                                        {dna}
                                       </span>
-                                      <span className="text-[10px] text-muted-foreground">
-                                        {w.investor_type}
+                                      <span className="text-[10px] text-muted-foreground uppercase">
+                                        {w.local_foreign === 'F' ? 'Foreign' : 'Local'} • {w.investor_type}
                                       </span>
                                     </div>
                                   </div>
                                 </div>
                               </td>
-                              <td className="p-4 text-right font-semibold">{formatNumber(w.est_entry_price)}</td>
-                              <td className={`p-4 text-right font-bold ${w.return_since_entry >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                {w.return_since_entry ? formatPercent(w.return_since_entry) : '-'}
+                              <td className={`p-4 text-right font-bold ${w.change_percentage >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {w.change_percentage ? `${w.change_percentage > 0 ? '+' : ''}${w.change_percentage.toFixed(2)}%` : '0.00%'}
                               </td>
                               <td className="p-4 text-right">
-                                <span className="font-bold">{w.latest_percentage}%</span>
+                                <span className="font-bold text-lg">{w.latest_percentage.toFixed(2)}%</span>
                                 <p className="text-[10px] text-muted-foreground">{formatShares(w.latest_shares)} shares</p>
                               </td>
                               <td className="p-4 text-center">
@@ -1329,10 +1342,10 @@ export default function StockDetailPage() {
                                 }`}>{w.position_trend}</span>
                               </td>
                               <td className="p-4 text-center">
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                <span className={`px-3 py-1 rounded-lg text-[10px] font-black ${
                                   w.whale_verdict === 'ADDING_POSITION' || w.whale_verdict === 'AVERAGING_DOWN' ? 'bg-emerald-500/20 text-emerald-400' :
                                   w.whale_verdict === 'TRIMMING' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'
-                                }`}>{w.whale_verdict}</span>
+                                }`}>{w.whale_verdict || 'HOLDING'}</span>
                               </td>
                             </tr>
                           )
