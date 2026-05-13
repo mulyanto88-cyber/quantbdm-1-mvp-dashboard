@@ -465,10 +465,6 @@ export default function BandarmologiPage() {
   const totalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE));
   const pageData = data.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
-  // ── Pagination for Screener Table ─────────────────────────────────────────
-  const screenerPages = Math.max(1, Math.ceil(screenerFiltered.length / PAGE_SIZE));
-  const screenerPageData = screenerFiltered.slice(screenerPage * PAGE_SIZE, (screenerPage + 1) * PAGE_SIZE);
-
   // ── Screener Filtered & Sorted (UPDATE) ───────────────────────────────────
   const screenerFiltered = useMemo(() => {
     let filtered = [...screenerData];
@@ -507,6 +503,10 @@ export default function BandarmologiPage() {
     
     return filtered;
   }, [screenerData, screenerFilter, screenerSort]);
+
+  // ── Pagination for Screener Table ─────────────────────────────────────────
+  const screenerPages = Math.max(1, Math.ceil(screenerFiltered.length / PAGE_SIZE));
+  const screenerPageData = screenerFiltered.slice(screenerPage * PAGE_SIZE, (screenerPage + 1) * PAGE_SIZE);
 
   // ── RENDER ─────────────────────────────────────────────────────────────────
   return (
