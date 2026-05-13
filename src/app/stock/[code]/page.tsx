@@ -575,17 +575,17 @@ export default function StockDetailPage() {
   if (!stockData) return null
 
   const tabs = [
-    { id: 'technical' as DetailTab, label: 'Chart', icon: Activity, count: 0 },
-    { id: 'smart-money' as DetailTab, label: 'Smart Money', icon: Radar, count: 0 },
-    { id: 'ownership' as DetailTab, label: 'Holder Intel', icon: PieChart, count: 0 },
-    { id: 'foreign-flow' as DetailTab, label: 'Foreign Flow', icon: Globe, count: 0 },
-    { id: 'volume' as DetailTab, label: 'Volume Spike', icon: Zap, count: 0 },
-    { id: 'broker' as DetailTab, label: 'Broker Intel', icon: Building2, count: 0 },
+    { id: 'technical', label: 'Chart', icon: Activity, count: 0 },
+    { id: 'smart-money', label: 'Smart Money', icon: Radar, count: 0 },
+    { id: 'ownership', label: 'Holder Intel', icon: PieChart, count: 0 },
+    { id: 'foreign-flow', label: 'Foreign Flow', icon: Globe, count: 0 },
+    { id: 'volume', label: 'Volume Spike', icon: Zap, count: 0 },
+    { id: 'broker', label: 'Broker Intel', icon: Building2, count: 0 },
   ];
 
   return (
+    <>
     <div className="space-y-8 animate-fade-in pb-12">
-      {/* PREMIUM INTELLIGENCE HEADER */}
       <div className="relative group">
         <div className="absolute -inset-0.5 bg-gradient-to-r from-gold-500/20 to-emerald-500/20 rounded-[2.5rem] blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
         <div className="glass rounded-[2.5rem] p-8 border border-white/[0.08] shadow-2xl relative overflow-hidden">
@@ -1724,5 +1724,6 @@ export default function StockDetailPage() {
         )
       )}
     </div>
+    </>
   )
 }
