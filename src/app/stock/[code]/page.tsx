@@ -97,6 +97,8 @@ export default function StockDetailPage() {
   const [whaleData, setWhaleData] = useState<any[]>([])
   const [kseiWhaleData, setKseiWhaleData] = useState<any[]>([])
   const [kseiAnalytics, setKseiAnalytics] = useState<any>(null)
+  const [convictionData, setConvictionData] = useState<any>(null)
+  const [kseiBrokerSummary, setKseiBrokerSummary] = useState<any[]>([])
   const [leadIndicator, setLeadIndicator] = useState<any[]>([])
   const [volumeSpikes, setVolumeSpikes] = useState<any[]>([])
   const [aovProfile, setAovProfile] = useState<any[]>([])
@@ -160,7 +162,7 @@ export default function StockDetailPage() {
     loadedTabs.current = new Set(['technical'])
 
     try {
-      const [latestResult, historyResult] = await Promise.all([
+      const [latestResult, historyResult, convictionRes, kseiRes] = await Promise.all([
         supabase
           .from('daily_transactions')
           .select('*')
@@ -174,6 +176,8 @@ export default function StockDetailPage() {
           .eq('stock_code', code)
           .order('trading_date', { ascending: false })
           .limit(periodFilter),
+        supabase.rpc('get_conviction_score', { p_stock_code: code, p_window: 5 }),
+        fetch(`/api/ksei-whale?code=${code}`).then(res => res.json())
       ])
 
       if (latestResult.error || !latestResult.data) {
@@ -181,6 +185,17 @@ export default function StockDetailPage() {
         return
       }
       setStockData(latestResult.data)
+      
+      // Set Conviction Data
+      if (convictionRes.data?.[0]) {
+        setConvictionData(convictionRes.data[0])
+      }
+      
+      // Set KSEI Whale Data
+      if (kseiRes && !kseiRes.error) {
+        setKseiWhaleData(kseiRes.whales || [])
+        setKseiAnalytics(kseiRes.holderAnalytics)
+      }
 
       if (!historyResult.error && historyResult.data) {
         setHistoryData(historyResult.data.reverse().map((d: any) => ({
@@ -239,17 +254,14 @@ export default function StockDetailPage() {
       }
 
       if (tab === 'ownership') {
-        const [ownerRes, whaleRes, kseiRes] = await Promise.all([
+        const [ownerRes, whaleRes, brokerSumRes] = await Promise.all([
           supabase.rpc('get_ownership_structure', { p_stock_code: code, p_date: null }),
           supabase.rpc('get_whale_timing_analysis', { p_stock_code: code }),
-          fetch(`/api/ksei-whale?code=${code}`).then(res => res.json())
+          supabase.rpc('get_ksei5_broker_summary', { start_date: '2026-01-01' }) // FIXED RPC
         ])
         if (ownerRes.data) setOwnershipData(ownerRes.data)
         if (whaleRes.data) setWhaleData(whaleRes.data)
-        if (kseiRes && !kseiRes.error) {
-          setKseiWhaleData(kseiRes.whales || [])
-          setKseiAnalytics(kseiRes.holderAnalytics)
-        }
+        if (brokerSumRes.data) setKseiBrokerSummary(brokerSumRes.data)
       }
 
       if (tab === 'foreign-flow') {
@@ -572,66 +584,108 @@ export default function StockDetailPage() {
   ]
 
   return (
-    <div className="space-y-6 animate-fade-in pb-10">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <Link href="/stocks" className="text-xs text-gold-400 hover:underline mb-2 inline-block">← Stock Intelligence</Link>
-          <h1 className="text-3xl font-black text-foreground">{stockData.stock_code}</h1>
-          <p className="text-sm text-muted-foreground">{stockData.sector || 'Unknown Sector'}</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <select value={periodFilter} onChange={(e) => setPeriodFilter(Number(e.target.value))}
-            className="bg-[#0f172a] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-foreground"
-            style={{ colorScheme: 'dark' }}>
-            <option value={60}>3 Months</option>
-            <option value={120}>6 Months</option>
-            <option value={240}>1 Year</option>
-          </select>
-          <div className="relative w-48">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input type="text" placeholder="Search..." value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value.toUpperCase())}
-              onKeyDown={(e) => { if (e.key === 'Enter' && searchQuery.length >= 4) window.location.href = `/stock/${searchQuery}` }}
-              onFocus={(e) => e.target.select()}
-              className="w-full pl-10 pr-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-xl text-sm uppercase focus:outline-none focus:border-gold-400/30"
-              maxLength={4} />
-          </div>
-        </div>
-      </div>
-
-      {/* Stock Header Card */}
-      <div className="glass rounded-2xl p-6 border-t-4 border-t-gold-500">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-4xl font-black">{formatNumber(stockData.close)}</span>
-              <span className={`flex items-center text-lg font-bold ${isPositive ? 'text-emerald-400' : isNegative ? 'text-red-400' : 'text-muted-foreground'}`}>
-                {isPositive ? <TrendingUp className="w-5 h-5" /> : isNegative ? <TrendingDown className="w-5 h-5" /> : null}
-                {formatPercent(stockData.change_percent)}
-              </span>
-            </div>
-            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-              <span>H: {formatNumber(stockData.high)}</span>
-              <span>L: {formatNumber(stockData.low)}</span>
-              <span>O: {formatNumber(stockData.open_price)}</span>
-              <Clock className="w-3 h-3" />
-              <span>{stockData.trading_date}</span>
-            </div>
-          </div>
-          {smartMoneyIndex && (
-            <div className="flex items-center gap-3">
-              <div className="text-center px-4 py-2 rounded-xl bg-white/[0.03] border border-white/[0.08]">
-                <p className="text-[10px] text-muted-foreground uppercase">Smart Money Score</p>
-                <p className={`text-2xl font-black ${
-                  smartMoneyIndex?.signal === 'STRONG_BUY' ? 'text-emerald-400' : smartMoneyIndex?.signal === 'WATCH' ? 'text-amber-400' : 'text-slate-400'
-                }`}>{Math.round(smiScore)}</p>
+    <div className="space-y-8 animate-fade-in pb-12">
+      {/* 🚀 PREMIUM INTELLIGENCE HEADER */}
+      <div className="relative group">
+        <div className="absolute -inset-0.5 bg-gradient-to-r from-gold-500/20 to-emerald-500/20 rounded-[2.5rem] blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
+        <div className="glass rounded-[2.5rem] p-8 border border-white/[0.08] shadow-2xl relative overflow-hidden">
+          <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+            {/* 1. Identity & Price */}
+            <div className="lg:col-span-4 space-y-5">
+              <div className="flex items-center gap-3">
+                <div className="w-14 h-14 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-center shadow-inner">
+                  <Activity className="w-7 h-7 text-emerald-400" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-4xl font-black tracking-tighter text-white">{stockCode}</h1>
+                    <span className="px-3 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-black uppercase">
+                      {stockData?.sector || 'Stock'}
+                    </span>
+                  </div>
+                  <p className="text-muted-foreground text-xs font-bold tracking-widest uppercase opacity-60">Institutional Intelligence Pulse</p>
+                </div>
               </div>
-              <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${
-                smartMoneyIndex?.signal === 'STRONG_BUY' ? 'signal-strong-buy' : smartMoneyIndex?.signal === 'WATCH' ? 'signal-watch' : 'signal-neutral'
-              }`}>{smartMoneyIndex?.signal || 'NEUTRAL'}</span>
+              
+              <div className="flex items-baseline gap-4">
+                <span className="text-6xl font-black text-white tracking-tighter drop-shadow-2xl">
+                  {stockData?.close ? formatRupiah(stockData.close) : '---'}
+                </span>
+                <div className={`flex items-center gap-1.5 px-4 py-2 rounded-2xl font-black text-lg ${
+                  (stockData?.change_percent || 0) >= 0 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                }`}>
+                  {(stockData?.change_percent || 0) >= 0 ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
+                  {Math.abs(stockData?.change_percent || 0).toFixed(2)}%
+                </div>
+              </div>
             </div>
-          )}
+
+            {/* 2. Conviction Brain (The Core Verdict) */}
+            <div className="lg:col-span-4 flex flex-col items-center justify-center p-8 rounded-[2.5rem] bg-white/[0.02] border border-white/5 relative group/score">
+              <div className="flex items-center gap-2 mb-4 relative">
+                <Shield className="w-4 h-4 text-gold-400" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Market Conviction</span>
+              </div>
+              <div className="relative">
+                <svg className="w-36 h-36 transform -rotate-90">
+                  <circle cx="72" cy="72" r="64" stroke="currentColor" strokeWidth="10" fill="transparent" className="text-white/5" />
+                  <circle cx="72" cy="72" r="64" stroke="currentColor" strokeWidth="10" fill="transparent" 
+                    strokeDasharray={402} 
+                    strokeDashoffset={402 - (402 * (convictionData?.score || 50)) / 100}
+                    strokeLinecap="round"
+                    className={`${(convictionData?.score || 0) > 70 ? 'text-emerald-400' : (convictionData?.score || 0) > 40 ? 'text-gold-400' : 'text-red-400'} transition-all duration-1000`} 
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-5xl font-black text-white tracking-tighter">{convictionData?.score || '--'}</span>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase opacity-50">Score</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. Liquidity & DNA Summary */}
+            <div className="lg:col-span-4 grid grid-cols-2 gap-4">
+              <div className="p-6 rounded-[2rem] bg-white/[0.03] border border-white/5 hover:border-emerald-500/30 transition-all">
+                <div className="flex items-center gap-2 mb-3">
+                  <Globe className="w-4 h-4 text-emerald-400" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Real Float</span>
+                </div>
+                <p className="text-4xl font-black text-white mb-1 tracking-tighter">{holderAnalytics?.realFreeFloat?.toFixed(1) || '--'}%</p>
+                <span className={`text-[10px] font-black px-2.5 py-1 rounded-xl ${
+                  (holderAnalytics?.realFreeFloat || 0) < 20 ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                }`}>
+                  {(holderAnalytics?.realFreeFloat || 0) < 20 ? '🔥 TIGHT' : '💎 LIKUID'}
+                </span>
+              </div>
+
+              <div className="p-6 rounded-[2rem] bg-white/[0.03] border border-white/5 hover:border-gold-500/30 transition-all">
+                <div className="flex items-center gap-2 mb-3">
+                  <Zap className="w-4 h-4 text-gold-400" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Smart Money</span>
+                </div>
+                <p className="text-4xl font-black text-white mb-1 tracking-tighter">{holderAnalytics?.institutionalPct?.toFixed(1) || '--'}%</p>
+                <span className="text-[10px] font-black text-gold-400 bg-gold-500/10 border border-gold-500/20 px-2.5 py-1 rounded-xl">
+                  INSTITUTIONAL
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="mt-8 pt-6 border-t border-white/5 flex flex-wrap items-center gap-x-10 gap-y-4">
+             <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[11px] font-medium text-muted-foreground">
+                  Status: <span className="text-white font-black">{stockData?.signal || 'MONITORING'}</span>
+                </span>
+             </div>
+             <div className="flex items-center gap-4 text-xs text-muted-foreground ml-auto">
+               <span>H: {formatNumber(stockData?.high)}</span>
+               <span>L: {formatNumber(stockData?.low)}</span>
+               <span>O: {formatNumber(stockData?.open_price)}</span>
+               <Clock className="w-3 h-3" />
+               <span>{stockData?.trading_date}</span>
+             </div>
+          </div>
         </div>
       </div>
 
@@ -1361,9 +1415,10 @@ export default function StockDetailPage() {
               {whaleData.length > 0 && (
                 <div className="glass rounded-2xl overflow-hidden border border-border/30">
                   <div className="p-4 border-b border-white/[0.05] flex items-center justify-between bg-white/[0.01]">
-                    <h3 className="font-bold text-foreground text-sm">Whale List & Verdict</h3>
+                    <h3 className="font-bold text-foreground text-sm">Whale List & DNA Analysis</h3>
                   </div>
                   <div className="overflow-x-auto">
+                    {/* ... Whale Table Content (Existing) ... */}
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-white/[0.02] border-b border-white/[0.05] text-[10px] text-muted-foreground uppercase">
@@ -1439,6 +1494,66 @@ export default function StockDetailPage() {
                     </table>
                   </div>
                 </div>
+
+                {/* 🛡️ NEW: WHALE BROKER ACTIVITY (LAYER 2 INTEGRATION) */}
+                {kseiBrokerSummary.length > 0 && (
+                  <div className="glass rounded-2xl overflow-hidden border border-gold-500/20 mt-6 shadow-xl">
+                    <div className="p-5 border-b border-white/[0.05] flex items-center justify-between bg-gold-500/5">
+                      <div>
+                        <h3 className="font-black text-gold-400 text-sm flex items-center gap-2">
+                          <Building2 className="w-5 h-5" /> WHALE BROKER ACTIVITY (LAYER 2)
+                        </h3>
+                        <p className="text-[10px] text-muted-foreground">Agregasi pergerakan broker penguasa porsi &gt;5%</p>
+                      </div>
+                      <span className="px-3 py-1 rounded-full bg-gold-500/10 text-gold-400 text-[10px] font-black border border-gold-500/20">
+                        LIVE FROM KSEI
+                      </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-white/[0.02] border-b border-white/[0.05] text-[10px] text-muted-foreground uppercase">
+                            <th className="p-4 text-left">Broker</th>
+                            <th className="p-4 text-right">Shares Awal</th>
+                            <th className="p-4 text-right">Shares Akhir</th>
+                            <th className="p-4 text-right">Net Change</th>
+                            <th className="p-4 text-center">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {kseiBrokerSummary.slice(0, 5).map((b: any, i: number) => {
+                            const isBuying = b.net_change > 0;
+                            return (
+                              <tr key={i} className="tr-hover border-b border-white/[0.02]">
+                                <td className="p-4">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center font-black text-gold-400 border border-white/10">
+                                      {b.kode_broker}
+                                    </div>
+                                    <p className="font-bold text-white text-xs">{b.nama_broker}</p>
+                                  </div>
+                                </td>
+                                <td className="p-4 text-right text-muted-foreground">{fmt(b.total_saham_awal)}</td>
+                                <td className="p-4 text-right font-bold">{fmt(b.total_saham_akhir)}</td>
+                                <td className={`p-4 text-right font-black ${isBuying ? 'text-emerald-400' : b.net_change < 0 ? 'text-red-400' : 'text-slate-400'}`}>
+                                  {isBuying ? '+' : ''}{fmt(b.net_change)}
+                                </td>
+                                <td className="p-4 text-center">
+                                  <span className={`px-3 py-1 rounded-full text-[10px] font-black ${
+                                    isBuying ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 
+                                    b.net_change < 0 ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-white/5 text-slate-400'
+                                  }`}>
+                                    {isBuying ? 'ACCUMULATING' : b.net_change < 0 ? 'REDUCING' : 'HOLDING'}
+                                  </span>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               )}
             </>
           ) : (
