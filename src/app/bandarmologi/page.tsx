@@ -1116,6 +1116,8 @@ export default function BandarmologiPage() {
               </div>
             </>
           )}
+        </>
+      )}
 
       {/* Footer info */}
       <div className="text-center text-[10px] text-muted-foreground pt-4">
