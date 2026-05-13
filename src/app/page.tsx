@@ -276,56 +276,142 @@ export default function MarketOverview() {
   }
 
   return (
-    <div className="space-y-8 pb-10 animate-fade-in">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative">
-        <div className="absolute -top-20 -left-20 w-64 h-64 bg-gold-500/20 rounded-full blur-[100px] pointer-events-none" />
-        <div className="absolute -top-20 right-20 w-64 h-64 bg-blue-500/20 rounded-full blur-[100px] pointer-events-none" />
-        <div className="relative z-10">
-          <h1 className="text-4xl md:text-5xl font-black text-white tracking-tight">
-            Market <span className="text-transparent bg-clip-text bg-gradient-to-r from-gold-300 via-yellow-500 to-gold-400 drop-shadow-[0_0_15px_rgba(231,183,51,0.3)]">Intelligence</span>
-          </h1>
-          <p className="text-slate-400 mt-2 text-sm md:text-base font-medium tracking-wide">Institutional grade flow analysis & KSEI tracker</p>
-        </div>
-        <div className="flex items-center gap-3 px-5 py-2.5 bg-green-500/10 rounded-full border border-green-500/20 backdrop-blur-md relative z-10">
-          <div className="w-2.5 h-2.5 rounded-full bg-green-400 animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.8)]" />
-          <span className="text-xs font-black text-green-400 uppercase tracking-widest">Live Connect</span>
+    <div className="space-y-10 pb-12 animate-fade-in">
+      {/* ── PREMIUM INTELLIGENCE HERO ── */}
+      <div className="relative group">
+        <div className="absolute -inset-1 bg-gradient-to-r from-gold-500/20 via-emerald-500/10 to-blue-500/20 rounded-[2.5rem] blur-2xl opacity-30"></div>
+        <div className="glass rounded-[2.5rem] p-8 md:p-10 border border-white/[0.08] shadow-2xl relative overflow-hidden">
+          {/* Animated Background Elements */}
+          <div className="absolute top-0 right-0 w-96 h-96 bg-gold-500/5 rounded-full blur-[100px] -mr-32 -mt-32 animate-pulse" />
+          <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-500/5 rounded-full blur-[80px] -ml-20 -mb-20" />
+          
+          <div className="relative z-10 flex flex-col lg:flex-row gap-12 items-center">
+            {/* 1. Market Verdict Gauge */}
+            <div className="flex flex-col items-center justify-center p-8 rounded-[2.5rem] bg-white/[0.02] border border-white/5 relative group/score w-full lg:w-72 shrink-0">
+              <div className="flex items-center gap-2 mb-6">
+                <ShieldCheck className="w-4 h-4 text-gold-400" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Market Sentiment</span>
+              </div>
+              <div className="relative">
+                <svg className="w-44 h-44 transform -rotate-90">
+                  <circle cx="88" cy="88" r="78" stroke="currentColor" strokeWidth="12" fill="transparent" className="text-white/5" />
+                  <circle cx="88" cy="88" r="78" stroke="currentColor" strokeWidth="12" fill="transparent" 
+                    strokeDasharray={490} 
+                    strokeDashoffset={490 - (490 * (marketData?.totalForeign > 0 ? 75 : 45)) / 100}
+                    strokeLinecap="round"
+                    className={`${marketData?.totalForeign > 0 ? 'text-emerald-400' : 'text-gold-400'} transition-all duration-1000 shadow-[0_0_15px_rgba(34,197,94,0.3)]`} 
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-5xl font-black text-white tracking-tighter">
+                    {marketData?.totalForeign > 0 ? 'BULL' : 'NEUT'}
+                  </span>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">Verdict</span>
+                </div>
+              </div>
+              <div className="mt-6 flex flex-col items-center gap-1">
+                 <span className={`text-xs font-black ${marketData?.totalForeign > 0 ? 'text-emerald-400' : 'text-gold-400'}`}>
+                   {marketData?.totalForeign > 0 ? 'Institutional Accumulation' : 'Wait & See Mode'}
+                 </span>
+                 <span className="text-[9px] text-muted-foreground">Based on aggregate flow DNA</span>
+              </div>
+            </div>
+
+            {/* 2. Main Title & Quick Stats */}
+            <div className="flex-1 space-y-8">
+              <div>
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="px-3 py-1 rounded-full bg-gold-400/10 border border-gold-400/20 text-[10px] font-black text-gold-400 uppercase tracking-widest">
+                    Institutional Terminal v2.0
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Live Flow Sync</span>
+                  </div>
+                </div>
+                <h1 className="text-5xl md:text-7xl font-black text-white tracking-tighter leading-none">
+                  Market <span className="text-transparent bg-clip-text bg-gradient-to-r from-gold-200 via-yellow-500 to-gold-500 drop-shadow-2xl">Intelligence</span>
+                </h1>
+                <p className="text-slate-400 mt-4 text-lg font-medium tracking-wide max-w-2xl leading-relaxed">
+                  Real-time cross-analysis of daily transactions, institutional ownership patterns, and strategic Whale movements.
+                </p>
+              </div>
+
+              {/* Market Pulse Mini Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  { label: 'Turnover', value: fmtRp(marketData?.totalValue), icon: DollarSign, color: 'text-gold-400' },
+                  { label: 'Foreign Net', value: fmtRp(marketData?.totalForeign), icon: Globe, color: marketData?.totalForeign >= 0 ? 'text-emerald-400' : 'text-red-400' },
+                  { label: 'Market Breadth', value: `${marketData?.up}↑ / ${marketData?.down}↓`, icon: Activity, color: 'text-blue-400' },
+                  { label: 'Whale Alerts', value: marketData?.spikes?.length || 0, icon: Zap, color: 'text-purple-400' },
+                ].map((stat, i) => (
+                  <div key={i} className="p-4 rounded-2xl bg-white/[0.03] border border-white/5 hover:border-white/10 transition-all group/stat">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <stat.icon className={`w-3.5 h-3.5 ${stat.color} opacity-60 group-hover/stat:opacity-100 transition-opacity`} />
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{stat.label}</span>
+                    </div>
+                    <p className={`text-lg font-black text-white truncate`}>{stat.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Premium Tab Navigation */}
-      <div className="glass rounded-2xl p-1.5 flex gap-1 overflow-x-auto border border-border/50 shadow-lg shadow-black/10">
-        {tabs.map(tab => {
-          const Icon = tab.icon
-          const isActive = activeTab === tab.id
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2.5 px-5 py-3 rounded-xl text-sm font-semibold transition-all duration-300 whitespace-nowrap relative ${
-                isActive 
-                  ? 'bg-gradient-to-r from-gold-400 to-yellow-500 text-navy-900 shadow-lg shadow-gold-400/20' 
-                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-              }`}
-            >
-              <Icon className={`w-4 h-4 ${isActive ? 'text-navy-900' : ''}`} />
-              {tab.label}
-              {isActive && (
-                <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-8 h-1 bg-gold-400 rounded-full hidden md:block" />
-              )}
-            </button>
-          )
-        })}
+      {/* ── PREMIUM TABS NAVIGATION ── */}
+      <div className="sticky top-4 z-40 px-2 py-2">
+        <div className="max-w-4xl mx-auto glass rounded-2xl p-1.5 flex gap-1 border border-white/10 shadow-2xl backdrop-blur-2xl">
+          {tabs.map(tab => {
+            const Icon = tab.icon
+            const isActive = activeTab === tab.id
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex-1 flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl text-sm font-black transition-all duration-500 relative overflow-hidden group ${
+                  isActive 
+                    ? 'bg-gradient-to-r from-gold-400 via-yellow-500 to-gold-400 text-navy-900 shadow-xl shadow-gold-400/20' 
+                    : 'text-muted-foreground hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <Icon className={`w-4 h-4 ${isActive ? 'animate-pulse' : 'opacity-50 group-hover:opacity-100'}`} />
+                <span className="hidden md:inline tracking-tight uppercase">{tab.label}</span>
+                <span className="md:hidden tracking-tight">{tab.label.split(' ')[0]}</span>
+                {isActive && (
+                  <div className="absolute inset-0 bg-white/10 animate-shine" />
+                )}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
-      {/* Date Indicator */}
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Clock className="w-3 h-3" />
-        <span>
-          {activeTab === 'market' && `Latest Trading: ${latestTxDate}`}
-          {activeTab === 'ksei5' && `Latest KSEI 5%: ${latestKsei5Date}`}
-          {activeTab === 'ksei1' && `Latest KSEI 1%: ${latestKsei1Date}`}
-        </span>
+      {/* Date Indicator & Verdict Flash */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-2">
+        <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">
+          <div className="flex items-center gap-2">
+            <Clock className="w-3 h-3" />
+            <span>Last Sync: {
+              activeTab === 'market' ? latestTxDate : 
+              activeTab === 'ksei5' ? latestKsei5Date : latestKsei1Date
+            }</span>
+          </div>
+          <div className="w-1 h-1 rounded-full bg-white/20" />
+          <div className="flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <span>System Status: Optimal</span>
+          </div>
+        </div>
+
+        {activeTab === 'market' && (
+          <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/5">
+             <Target className="w-3.5 h-3.5 text-gold-400" />
+             <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest leading-none">
+               Market Verdict: <span className="text-emerald-400">Institutional Accumulation Mode</span>
+             </span>
+          </div>
+        )}
       </div>
 
       {/* ==================== TAB 1: MARKET PULSE ==================== */}
@@ -480,48 +566,75 @@ export default function MarketOverview() {
             </div>
           </div>
 
-          {/* ── Row 4: Sector Heatmap (from daily_transactions) ── */}
+          {/* ── Row 4: Sector Heatmap (Premium Tree-grid) ── */}
           {marketData.sectorHeatmap?.length > 0 && (
-            <div className="glass rounded-xl p-4 border border-border/30 hover:border-gold-400/30 transition-all">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-purple-400" /> Sector Heatmap
-                </h3>
-                <span className="text-[9px] text-muted-foreground">by daily_transactions · top 12 by value</span>
+            <div className="glass rounded-3xl p-6 border border-white/10 shadow-2xl relative overflow-hidden group/heatmap">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/5 rounded-full blur-[80px] -mr-20 -mt-20" />
+              
+              <div className="flex items-center justify-between mb-6 relative z-10">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+                    <Activity className="w-5 h-5 text-purple-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-lg text-white tracking-tight">Sector Intelligence Map</h3>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Institutional Flow Velocity</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                   <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-emerald-400/60" /> Accumulation</div>
+                   <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-red-400/60" /> Distribution</div>
+                </div>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 relative z-10">
                 {marketData.sectorHeatmap.map((sec: any, i: number) => {
                   const netF = sec.netForeign
                   const avg  = sec.avgChange
                   const upRatio = sec.count > 0 ? sec.up / sec.count : 0
                   const isPos = avg >= 0
-                  const intensity = Math.min(Math.abs(avg) / 3, 1)
-                  const bg = isPos
-                    ? `rgba(34,197,94,${0.05 + intensity * 0.18})`
-                    : `rgba(239,68,68,${0.05 + intensity * 0.18})`
-                  const borderColor = isPos ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'
-                  const textColor = isPos ? '#4ade80' : '#f87171'
+                  const isWhaleActive = Math.abs(netF) > 5e9 // > 5B
+                  
                   const isSelected = selectedSector === sec.sector
                   return (
                     <div
                       key={i}
                       onClick={() => setSelectedSector(isSelected ? null : sec.sector)}
-                      style={{ background: isSelected ? (isPos ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)') : bg, borderColor: isSelected ? textColor : borderColor }}
-                      className="rounded-xl p-3 border cursor-pointer hover:scale-[1.02] active:scale-[0.98] transition-all select-none"
+                      className={`relative rounded-2xl p-4 border transition-all duration-500 cursor-pointer group/sec ${
+                        isSelected 
+                          ? 'ring-2 ring-gold-400/50 bg-white/[0.08] border-gold-400/30' 
+                          : 'bg-white/[0.03] border-white/5 hover:bg-white/[0.06] hover:border-white/10'
+                      }`}
                     >
-                      <div className="flex items-start justify-between gap-1 mb-1">
-                        <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-wide truncate leading-tight">{sec.sector}</p>
-                        {isSelected && <span style={{ color: textColor }} className="text-[8px] shrink-0">▼</span>}
+                      <div className="flex items-start justify-between mb-3">
+                        <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest truncate max-w-[80%]">{sec.sector}</p>
+                        {isWhaleActive && (
+                          <div className="w-2 h-2 rounded-full bg-gold-400 shadow-[0_0_8px_rgba(231,183,51,0.6)] animate-pulse" title="Whale Activity Detected" />
+                        )}
                       </div>
-                      <p style={{ color: textColor }} className="text-base font-black leading-none">
-                        {avg > 0 ? '+' : ''}{avg.toFixed(2)}%
-                      </p>
-                      <div className="mt-2 h-1 rounded-full bg-white/5 overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${upRatio * 100}%`, background: textColor, opacity: 0.6 }} />
+                      
+                      <div className="flex items-baseline gap-1">
+                        <span className={`text-2xl font-black tracking-tighter ${isPos ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {avg > 0 ? '+' : ''}{avg.toFixed(2)}%
+                        </span>
                       </div>
-                      <div className="flex items-center justify-between mt-1.5">
-                        <span className="text-[8px] text-muted-foreground">{sec.count} stk</span>
-                        <span style={{ color: netF >= 0 ? '#34d399' : '#f87171' }} className="text-[8px] font-bold">
+
+                      <div className="mt-4 space-y-2">
+                        <div className="flex justify-between items-center text-[9px] font-bold text-muted-foreground/60 uppercase tracking-widest">
+                          <span>Breadth</span>
+                          <span>{Math.round(upRatio * 100)}%</span>
+                        </div>
+                        <div className="h-1 rounded-full bg-white/5 overflow-hidden">
+                          <div 
+                            className={`h-full transition-all duration-1000 ${isPos ? 'bg-emerald-400' : 'bg-red-400'}`} 
+                            style={{ width: `${upRatio * 100}%`, opacity: isSelected ? 1 : 0.4 }} 
+                          />
+                        </div>
+                      </div>
+
+                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-muted-foreground">{sec.count} STK</span>
+                        <span className={`text-[10px] font-black ${netF >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                           {netF >= 0 ? '▲' : '▼'} {fmtRp(Math.abs(netF))}
                         </span>
                       </div>
@@ -530,7 +643,7 @@ export default function MarketOverview() {
                 })}
               </div>
 
-              {/* ── Sector Drill-down Panel ── */}
+              {/* ── Sector Drill-down (Premium Panel) ── */}
               {selectedSector && (() => {
                 const stocks = (marketData.allStocks || [])
                   .filter((s: any) => s.sector === selectedSector)
@@ -540,46 +653,52 @@ export default function MarketOverview() {
                 const avg  = sectorInfo?.avgChange  || 0
                 const isPos = avg >= 0
                 return (
-                  <div className="mt-3 rounded-xl border border-border/30 overflow-hidden animate-fade-in">
-                    {/* Panel header */}
-                    <div className="flex items-center justify-between px-4 py-2.5 bg-accent/20 border-b border-border/20">
-                      <div className="flex items-center gap-3">
-                        <h4 className="font-bold text-sm text-foreground">{selectedSector}</h4>
-                        <span className={`text-xs font-black ${isPos ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {avg > 0 ? '+' : ''}{avg.toFixed(2)}% avg
-                        </span>
-                        <span className="text-[10px] text-muted-foreground">{stocks.length} stocks</span>
-                        <span className={`text-[10px] font-bold ${netF >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          Asing: {netF >= 0 ? '+' : ''}{fmtRp(netF)}
-                        </span>
+                  <div className="mt-6 rounded-3xl border border-gold-400/20 bg-gold-400/[0.02] overflow-hidden animate-in slide-in-from-top-4 duration-500 shadow-2xl relative z-10">
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between px-6 py-4 bg-white/[0.02] border-b border-white/5 gap-4">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-2xl bg-gold-400/10 border border-gold-400/20 flex items-center justify-center">
+                          <Building2 className="w-6 h-6 text-gold-400" />
+                        </div>
+                        <div>
+                          <h4 className="font-black text-xl text-white tracking-tight">{selectedSector} Intelligence</h4>
+                          <div className="flex items-center gap-3 mt-0.5">
+                             <span className={`text-xs font-black ${isPos ? 'text-emerald-400' : 'text-red-400'}`}>
+                               {isPos ? 'Bullish' : 'Bearish'} Momentum: {avg > 0 ? '+' : ''}{avg.toFixed(2)}%
+                             </span>
+                             <span className="w-1 h-1 rounded-full bg-white/20" />
+                             <span className={`text-xs font-black ${netF >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                               Flow: {netF >= 0 ? 'Accumulation' : 'Distribution'} ({fmtRp(netF)})
+                             </span>
+                          </div>
+                        </div>
                       </div>
                       <button
                         onClick={() => setSelectedSector(null)}
-                        className="text-[10px] text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-accent/40 transition-colors"
-                      >✕ Tutup</button>
+                        className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-black uppercase tracking-widest text-muted-foreground hover:text-white transition-all"
+                      >Close Panel</button>
                     </div>
 
-                    {/* Stock list — 4 columns on large screen */}
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 divide-x divide-y divide-border/10">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 p-2 gap-2">
                       {stocks.map((s: any, i: number) => (
                         <Link
                           key={i}
                           href={`/stock/${s.code}`}
-                          className="flex items-center justify-between px-3.5 py-2.5 hover:bg-accent/20 transition-colors group"
+                          className="flex flex-col p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 transition-all group/stock"
                         >
-                          <div className="min-w-0">
-                            <p className="font-mono font-black text-sm text-foreground group-hover:text-gold-400 transition-colors truncate">{s.code}</p>
-                            <p className="text-[9px] text-muted-foreground">{fmtRp(s.close)} · Val {fmtRp(s.value)}</p>
-                          </div>
-                          <div className="text-right ml-2 shrink-0">
-                            <p className={`text-xs font-bold ${s.change > 0 ? 'text-emerald-400' : s.change < 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                          <div className="flex justify-between items-start mb-2">
+                            <span className="font-mono font-black text-lg text-white group-hover/stock:text-gold-400 transition-colors leading-none">{s.code}</span>
+                            <span className={`text-xs font-black ${s.change > 0 ? 'text-emerald-400' : s.change < 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
                               {s.change > 0 ? '+' : ''}{s.change.toFixed(2)}%
-                            </p>
-                            {s.netForeign !== 0 && (
-                              <p className={`text-[8px] ${s.netForeign > 0 ? 'text-emerald-400/70' : 'text-red-400/70'}`}>
-                                {s.netForeign > 0 ? '▲' : '▼'} {fmtRp(Math.abs(s.netForeign))}
-                              </p>
-                            )}
+                            </span>
+                          </div>
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Price: {fmtRp(s.close)}</p>
+                          <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
+                             <span className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-widest">Val: {fmtNum(s.value)}</span>
+                             {s.netForeign !== 0 && (
+                               <span className={`text-[9px] font-black ${s.netForeign > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                 {s.netForeign > 0 ? '▲' : '▼'} {fmtNum(Math.abs(s.netForeign))}
+                               </span>
+                             )}
                           </div>
                         </Link>
                       ))}
@@ -590,154 +709,230 @@ export default function MarketOverview() {
             </div>
           )}
 
-          {/* ── High Conviction & KSEI Alert ── */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* High Conviction */}
-            {highConviction.length > 0 && (
-              <div className="glass rounded-2xl overflow-hidden border border-border/30 hover:border-gold-400/30 transition-all duration-300">
-                <div className="px-5 py-3 border-b border-border/20 bg-white/[0.01] flex items-center justify-between">
-                  <h3 className="font-bold text-sm text-purple-400">🎯 High Conviction Stocks</h3>
-                  <Link href="/screener" className="text-[10px] text-gold-400 hover:underline">See all →</Link>
-                </div>
-                <div className="divide-y divide-border/20">
-                  {highConviction.map((s: any, i: number) => (
-                    <Link key={i} href={`/stock/${s.stock_code}`} className="flex items-center justify-between p-3.5 hover:bg-accent/20 transition-colors group">
-                      <div className="flex items-center gap-3">
-                        <div className="w-7 h-7 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
-                          <span className="text-[10px] font-black text-purple-400">{Math.round(s.conviction_score)}</span>
+          {/* ── Row 5: Institutional High-Conviction Feed ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* High Conviction Feed */}
+            <div className="lg:col-span-7 space-y-4">
+               <div className="flex items-center justify-between px-2">
+                  <div className="flex items-center gap-2">
+                    <Target className="w-4 h-4 text-emerald-400" />
+                    <h3 className="font-black text-white uppercase tracking-widest text-xs">High Conviction Alpha</h3>
+                  </div>
+                  <Link href="/screener" className="text-[10px] font-black text-gold-400 hover:text-white transition-colors uppercase tracking-widest">View Strategy Radar →</Link>
+               </div>
+               
+               <div className="grid grid-cols-1 gap-3">
+                 {highConviction.map((s: any, i: number) => (
+                   <Link key={i} href={`/stock/${s.stock_code}`} className="group relative overflow-hidden">
+                     <div className="absolute -inset-1 bg-gradient-to-r from-emerald-500/10 to-gold-500/10 rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500" />
+                     <div className="glass rounded-2xl p-5 border border-white/5 group-hover:border-white/10 relative transition-all flex items-center gap-6">
+                        <div className="w-14 h-14 rounded-2xl bg-white/[0.03] border border-white/10 flex flex-col items-center justify-center shrink-0">
+                           <span className="text-xl font-black text-white leading-none">{Math.round(s.conviction_score)}</span>
+                           <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest mt-1">Score</span>
                         </div>
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-mono font-black text-foreground group-hover:text-gold-400 transition-colors">{s.stock_code}</span>
-                            {s.is_stealth && <span className="text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 rounded">STEALTH</span>}
-                          </div>
-                          <span className="text-[10px] text-muted-foreground">{s.sector}</span>
+                        
+                        <div className="flex-1 min-w-0">
+                           <div className="flex items-center gap-3 mb-1">
+                              <h4 className="text-xl font-black text-white group-hover:text-gold-400 transition-colors leading-none">{s.stock_code}</h4>
+                              <span className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-[0.2em]">{s.sector}</span>
+                              {s.is_stealth && <span className="text-[9px] bg-gold-400/10 text-gold-400 border border-gold-400/20 px-2 py-0.5 rounded-lg font-black tracking-widest uppercase">Stealth Accumulation</span>}
+                           </div>
+                           <div className="flex items-center gap-4 text-xs font-medium text-muted-foreground">
+                              <span className="flex items-center gap-1"><DollarSign className="w-3 h-3" /> {fmtRp(s.price)}</span>
+                              <span className="w-1 h-1 rounded-full bg-white/10" />
+                              <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> Flow Velocity: {s.institutional_flow?.toFixed(1)}</span>
+                           </div>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-bold text-foreground">Rp {s.price?.toLocaleString('id-ID')}</p>
-                        <p className="text-[10px] text-muted-foreground">Flow: {s.institutional_flow?.toFixed(1)}</p>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
 
-            {/* KSEI Movement Alert */}
-            {kseiAlerts.length > 0 && (
-              <div className="glass rounded-2xl overflow-hidden border border-border/30 hover:border-gold-400/30 transition-all duration-300">
-                <div className="px-5 py-3 border-b border-border/20 bg-white/[0.01] flex items-center justify-between">
-                  <h3 className="font-bold text-sm text-amber-400">🚨 KSEI Movement Alert</h3>
-                  <Link href="/flow" className="text-[10px] text-gold-400 hover:underline">See all →</Link>
-                </div>
-                <div className="divide-y divide-border/20">
+                        <div className="text-right shrink-0">
+                           <div className={`text-lg font-black ${s.price_chg_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                             {s.price_chg_pct > 0 ? '+' : ''}{s.price_chg_pct.toFixed(2)}%
+                           </div>
+                           <ArrowRightLeft className="w-4 h-4 text-white/10 ml-auto mt-2 group-hover:text-gold-400 transition-colors" />
+                        </div>
+                     </div>
+                   </Link>
+                 ))}
+               </div>
+            </div>
+
+            {/* KSEI Alerts Sidebar */}
+            <div className="lg:col-span-5 space-y-4">
+               <div className="flex items-center justify-between px-2">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-gold-400" />
+                    <h3 className="font-black text-white uppercase tracking-widest text-xs">Real-Time Whale Tracker</h3>
+                  </div>
+               </div>
+               
+               <div className="glass rounded-3xl border border-white/5 divide-y divide-white/5 overflow-hidden">
                   {kseiAlerts.map((a: any, i: number) => {
                     const isAccum = Number(a.scripless_diff) > 0
                     return (
-                      <div key={i} className="p-3.5 hover:bg-accent/20 transition-colors">
-                        <div className="flex items-start justify-between gap-2">
+                      <div key={i} className="p-5 hover:bg-white/[0.02] transition-colors group/alert">
+                        <div className="flex items-start justify-between gap-4">
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <Link href={`/stock/${a.share_code}`} className="font-mono font-black text-foreground hover:text-gold-400 transition-colors">{a.share_code}</Link>
-                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${isAccum ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
-                                {isAccum ? '▲ ACCUM' : '▼ REDUC'}
-                              </span>
+                            <div className="flex items-center gap-2.5 mb-2">
+                              <Link href={`/stock/${a.share_code}`} className="text-lg font-black text-white hover:text-gold-400 transition-colors leading-none">{a.share_code}</Link>
+                              <div className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
+                                isAccum ? 'bg-emerald-400/10 text-emerald-400 border-emerald-400/20' : 'bg-red-400/10 text-red-400 border-red-400/20'
+                              }`}>
+                                {isAccum ? 'Strategic Accum' : 'Position Reduction'}
+                              </div>
                             </div>
-                            <p className="text-[10px] text-muted-foreground truncate mt-0.5">{a.investor_name}</p>
-                            <p className="text-[9px] text-muted-foreground/60">{a.investor_type} · {a.new_date}</p>
+                            <h5 className="text-xs font-bold text-slate-200 truncate">{a.investor_name}</h5>
+                            <div className="flex items-center gap-2 mt-1.5 opacity-60">
+                               <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{a.investor_type}</span>
+                               <span className="w-1 h-1 rounded-full bg-white/20" />
+                               <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{a.new_date}</span>
+                            </div>
                           </div>
-                          <div className="text-right flex-shrink-0">
-                            <p className={`text-sm font-bold ${isAccum ? 'text-emerald-400' : 'text-red-400'}`}>
-                              {isAccum ? '+' : ''}{fmtNum(Math.abs(Number(a.scripless_diff)))}
-                            </p>
-                            <p className="text-[9px] text-muted-foreground">shares</p>
+                          <div className="text-right shrink-0">
+                             <p className={`text-lg font-black leading-none ${isAccum ? 'text-emerald-400' : 'text-red-400'}`}>
+                               {isAccum ? '+' : ''}{fmtNum(Math.abs(Number(a.scripless_diff)))}
+                             </p>
+                             <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-2">Shares Delta</p>
                           </div>
                         </div>
                       </div>
                     )
                   })}
-                </div>
-              </div>
-            )}
+                  <Link href="/flow" className="block p-4 text-center text-[10px] font-black text-gold-400 hover:text-white hover:bg-white/5 transition-all uppercase tracking-widest">
+                    Access Complete Flow Intelligence →
+                  </Link>
+               </div>
+            </div>
           </div>
         </div>
       )}
 
       {/* ==================== TAB 2: KSEI 5% FLOW ==================== */}
       {activeTab === 'ksei5' && ksei5Data && (
-        <div className="space-y-6 animate-fade-in">
+        <div className="space-y-8 animate-fade-in">
+          {/* Summary Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { title: 'Total Buy', value: fmtRp(ksei5Data.totalBuy), icon: TrendingUp, color: 'text-green-400' },
-              { title: 'Total Sell', value: fmtRp(ksei5Data.totalSell), icon: TrendingDown, color: 'text-red-400' },
-              { title: 'Net Flow', value: fmtRp(ksei5Data.netFlow), icon: ArrowRightLeft, color: ksei5Data.netFlow >= 0 ? 'text-green-400' : 'text-red-400' },
-              { title: 'Active Stocks', value: ksei5Data.activeStocks, icon: Target, color: 'text-blue-400' },
+              { title: 'Whale Accumulation', value: fmtRp(ksei5Data.totalBuy), icon: TrendingUp, color: 'text-emerald-400', desc: 'Total Buy >5%' },
+              { title: 'Whale Distribution', value: fmtRp(ksei5Data.totalSell), icon: TrendingDown, color: 'text-red-400', desc: 'Total Sell >5%' },
+              { title: 'Net Institutional Flow', value: fmtRp(ksei5Data.netFlow), icon: ArrowRightLeft, color: ksei5Data.netFlow >= 0 ? 'text-emerald-400' : 'text-red-400', desc: 'Net Strategic Move' },
+              { title: 'Strategic Emitens', value: ksei5Data.activeStocks, icon: Target, color: 'text-blue-400', desc: 'Active stock coverage' },
             ].map((m, i) => {
               const Icon = m.icon
               return (
-                <div key={i} className="glass rounded-2xl p-5 card-hover border border-border/30 hover:border-gold-400/30 transition-all duration-300">
-                  <Icon className={`w-5 h-5 ${m.color} mb-3`} />
-                  <p className="text-xs text-muted-foreground uppercase">{m.title}</p>
+                <div key={i} className="glass rounded-3xl p-6 border border-white/5 hover:border-gold-400/30 transition-all duration-500 group">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className={`w-10 h-10 rounded-xl bg-white/[0.03] border border-white/10 flex items-center justify-center`}>
+                       <Icon className={`w-5 h-5 ${m.color}`} />
+                    </div>
+                    <span className="text-[9px] font-black text-muted-foreground uppercase tracking-[0.2em]">{m.desc}</span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">{m.title}</p>
                   <p className={`text-2xl font-black mt-1 ${m.color}`}>{m.value}</p>
                 </div>
               )
             })}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="glass rounded-2xl p-6 border border-border/30 hover:border-gold-400/30 transition-all duration-300">
-              <h3 className="font-bold text-foreground mb-4">Action Breakdown</h3>
-              <ResponsiveContainer width="100%" height={280}>
-                <PieChart>
-                  <Pie data={ksei5Data.actionBreakdown} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={3} dataKey="value">
-                    {ksei5Data.actionBreakdown.map((_: any, idx: number) => <Cell key={idx} fill={COLORS[idx % COLORS.length]} opacity={0.9} />)}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-
-            <div className="glass rounded-2xl p-6 border border-border/30 hover:border-gold-400/30 transition-all duration-300">
-              <h3 className="font-bold text-foreground mb-4">Top Konglomerasi</h3>
-              <div className="space-y-3">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Konglomerat Intelligence */}
+            <div className="lg:col-span-7 glass rounded-[2.5rem] p-8 border border-white/10 relative overflow-hidden group/konglo">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-gold-500/5 rounded-full blur-[80px] -mr-20 -mt-20" />
+              <div className="flex items-center justify-between mb-8 relative z-10">
+                <div>
+                   <h3 className="font-black text-xl text-white tracking-tight">Konglomerat Power Map</h3>
+                   <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Strategic Value Concentration</p>
+                </div>
+                <Link href="/flow?tab=konglo" className="text-[10px] font-black text-gold-400 hover:text-white transition-colors uppercase tracking-widest">Full Network Analysis →</Link>
+              </div>
+              
+              <div className="space-y-5 relative z-10">
                 {ksei5Data.topKonglo.map((item: any, i: number) => {
                   const maxVal = ksei5Data.topKonglo[0]?.value || 1
+                  const pct = (item.value / maxVal) * 100
                   return (
-                    <div key={i} className="group">
-                      <div className="flex justify-between items-center mb-1.5">
-                        <span className="text-sm font-medium text-foreground truncate group-hover:text-gold-400 transition-colors">#{i+1} {item.name}</span>
-                        <span className="text-sm font-bold text-gold-400">{fmtRp(item.value)}</span>
+                    <div key={i} className="group/item">
+                      <div className="flex justify-between items-end mb-2">
+                        <div className="flex items-center gap-3">
+                           <span className="text-xs font-black text-white/20 group-hover/item:text-gold-400/40 transition-colors w-4">{i+1}</span>
+                           <span className="text-sm font-black text-slate-200 group-hover/item:text-white transition-colors uppercase tracking-tight">{item.name}</span>
+                        </div>
+                        <span className="text-sm font-black text-gold-400">{fmtRp(item.value)}</span>
                       </div>
-                      <div className="w-full h-2 bg-accent rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-purple-400 to-purple-600 rounded-full transition-all duration-500" style={{ width: `${(item.value/maxVal)*100}%` }} />
+                      <div className="w-full h-2.5 bg-white/[0.03] rounded-full overflow-hidden border border-white/5">
+                        <div className="h-full bg-gradient-to-r from-gold-500 to-yellow-600 rounded-full transition-all duration-1000 shadow-[0_0_10px_rgba(231,183,51,0.2)]" style={{ width: `${pct}%` }} />
                       </div>
                     </div>
                   )
                 })}
               </div>
             </div>
+
+            {/* Action Distribution */}
+            <div className="lg:col-span-5 glass rounded-[2.5rem] p-8 border border-white/10 flex flex-col group/actions">
+               <h3 className="font-black text-xl text-white tracking-tight mb-2">Strategic Action Pulse</h3>
+               <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold mb-8">Whale Sentiment Breakdown</p>
+               
+               <div className="flex-1 min-h-[300px] relative">
+                 <ResponsiveContainer width="100%" height="100%">
+                   <PieChart>
+                     <Pie 
+                       data={ksei5Data.actionBreakdown} 
+                       cx="50%" cy="45%" 
+                       innerRadius={70} 
+                       outerRadius={100} 
+                       paddingAngle={8} 
+                       dataKey="value"
+                       stroke="none"
+                     >
+                       {ksei5Data.actionBreakdown.map((_: any, idx: number) => (
+                         <Cell key={idx} fill={COLORS[idx % COLORS.length]} className="hover:opacity-80 transition-opacity cursor-pointer outline-none" />
+                       ))}
+                     </Pie>
+                     <Tooltip 
+                        contentStyle={{ background: 'rgba(11,15,25,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px' }}
+                        itemStyle={{ color: '#fff', fontSize: '12px', fontWeight: 'bold' }}
+                     />
+                   </PieChart>
+                 </ResponsiveContainer>
+                 
+                 {/* Legend Custom */}
+                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-4">
+                    {ksei5Data.actionBreakdown.map((item: any, idx: number) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
+                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">{item.name}</span>
+                        <span className="text-[10px] font-black text-white ml-auto">{item.value}</span>
+                      </div>
+                    ))}
+                 </div>
+               </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {[
-              { title: '🔥 Top Accumulation', data: ksei5Data.topAcc, color: 'text-green-400' },
-              { title: '❄️ Top Distribution', data: ksei5Data.topDist, color: 'text-red-400' },
+              { title: 'Institutional Accumulation', data: ksei5Data.topAcc, color: 'text-emerald-400', icon: TrendingUp },
+              { title: 'Institutional Reduction', data: ksei5Data.topDist, color: 'text-red-400', icon: TrendingDown },
             ].map((sec, si) => (
-              <div key={si} className="glass rounded-2xl p-6 border border-border/30 hover:border-gold-400/30 transition-all duration-300">
-                <h3 className={`font-bold ${sec.color} mb-4`}>{sec.title}</h3>
-                <div className="space-y-2.5">
+              <div key={si} className="glass rounded-[2.5rem] p-8 border border-white/5 hover:border-white/10 transition-all group/list">
+                <div className="flex items-center gap-3 mb-8">
+                  <div className={`w-10 h-10 rounded-xl bg-white/[0.03] border border-white/10 flex items-center justify-center`}>
+                     <sec.icon className={`w-5 h-5 ${sec.color}`} />
+                  </div>
+                  <h3 className={`font-black text-lg text-white tracking-tight`}>{sec.title}</h3>
+                </div>
+                
+                <div className="space-y-4">
                   {sec.data.map((item: any, i: number) => {
                     const maxVal = sec.data[0]?.value || 1
                     return (
-                      <Link key={i} href={`/stocks?q=${item.stock}`} className="flex justify-between items-center p-2.5 rounded-lg hover:bg-accent/20 transition-colors group">
-                        <span className="font-mono font-bold text-foreground group-hover:text-gold-400">{item.stock}</span>
-                        <div className="flex items-center gap-3">
-                          <div className="w-20 h-1.5 bg-accent rounded-full overflow-hidden hidden md:block">
-                            <div className={`h-full rounded-full ${si === 0 ? 'bg-green-400' : 'bg-red-400'}`} style={{ width: `${(item.value/maxVal)*100}%` }} />
-                          </div>
-                          <span className={`text-sm font-bold ${sec.color}`}>{fmtRp(item.value)}</span>
+                      <Link key={i} href={`/stock/${item.stock}`} className="flex flex-col group/row">
+                        <div className="flex justify-between items-center mb-2 px-1">
+                          <span className="font-mono font-black text-base text-slate-200 group-hover/row:text-gold-400 transition-colors">{item.stock}</span>
+                          <span className={`text-sm font-black ${sec.color}`}>{fmtRp(item.value)}</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-white/[0.03] rounded-full overflow-hidden">
+                          <div className={`h-full transition-all duration-1000 ${si === 0 ? 'bg-emerald-500' : 'bg-red-500'}`} style={{ width: `${(item.value/maxVal)*100}%`, opacity: 0.6 }} />
                         </div>
                       </Link>
                     )
@@ -746,81 +941,111 @@ export default function MarketOverview() {
               </div>
             ))}
           </div>
-
-          <Link href="/radar?tab=ksei5" className="block w-full py-3 text-center text-sm font-bold text-gold-400 hover:text-foreground bg-gold-500/5 hover:bg-gold-500/10 rounded-xl border border-gold-500/20 transition-all">
-            View Full KSEI 5% Analysis →
-          </Link>
         </div>
       )}
 
       {/* ==================== TAB 3: KSEI 1% OWNERSHIP ==================== */}
       {activeTab === 'ksei1' && ksei1Data && (
-        <div className="space-y-6 animate-fade-in">
+        <div className="space-y-8 animate-fade-in">
+          {/* Macro Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { title: 'Total Emiten', value: ksei1Data.totalEmiten, icon: Building2, color: 'text-blue-400' },
-              { title: 'Foreign Ownership', value: `${ksei1Data.foreignPct.toFixed(1)}%`, icon: Globe, color: 'text-cyan-400' },
-              { title: 'Local Ownership', value: `${ksei1Data.localPct.toFixed(1)}%`, icon: ShieldCheck, color: 'text-gold-400' },
-              { title: 'Total Shares', value: fmtNum(ksei1Data.totalShares), color: 'text-purple-400' },
+              { title: 'Coverage Monitor', value: ksei1Data.totalEmiten, icon: Building2, color: 'text-blue-400', desc: 'Strategic Emitens' },
+              { title: 'Foreign Appetite', value: `${ksei1Data.foreignPct.toFixed(1)}%`, icon: Globe, color: 'text-cyan-400', desc: 'Aggregated F-Ownership' },
+              { title: 'Local Dominance', value: `${ksei1Data.localPct.toFixed(1)}%`, icon: ShieldCheck, color: 'text-gold-400', desc: 'Aggregated L-Ownership' },
+              { title: 'Managed Liquidity', value: fmtNum(ksei1Data.totalShares), icon: Activity, color: 'text-purple-400', desc: 'Strategic Share Count' },
             ].map((m, i) => (
-              <div key={i} className="glass rounded-2xl p-5 card-hover border border-border/30 hover:border-gold-400/30 transition-all duration-300">
-                <p className="text-xs text-muted-foreground uppercase">{m.title}</p>
+              <div key={i} className="glass rounded-3xl p-6 border border-white/5 group">
+                <div className="flex items-center justify-between mb-4">
+                    <div className={`w-10 h-10 rounded-xl bg-white/[0.03] border border-white/10 flex items-center justify-center`}>
+                       <m.icon className={`w-5 h-5 ${m.color}`} />
+                    </div>
+                    <span className="text-[9px] font-black text-muted-foreground uppercase tracking-[0.2em]">{m.desc}</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">{m.title}</p>
                 <p className={`text-2xl font-black mt-1 ${m.color}`}>{m.value}</p>
               </div>
             ))}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="glass rounded-2xl p-6 border border-border/30 hover:border-gold-400/30 transition-all duration-300">
-              <h3 className="font-bold text-foreground mb-4">Top 10 Foreign Ownership</h3>
-              <div className="h-[300px]">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Foreign Strongholds */}
+            <div className="glass rounded-[2.5rem] p-8 border border-white/10 hover:border-cyan-500/20 transition-all group/foreign">
+              <div className="flex items-center justify-between mb-8">
+                 <div>
+                    <h3 className="font-black text-xl text-white tracking-tight">Foreign Strongholds</h3>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Highest Foreign Concentration</p>
+                 </div>
+                 <Globe className="w-6 h-6 text-cyan-400 opacity-20 group-hover/foreign:opacity-100 transition-opacity" />
+              </div>
+              <div className="h-[350px] relative z-10">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={ksei1Data.topForeign} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} opacity={0.1} />
+                  <BarChart data={ksei1Data.topForeign} layout="vertical" margin={{ left: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="rgba(255,255,255,0.05)" />
                     <XAxis type="number" hide />
-                    <YAxis dataKey="code" type="category" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 'bold' }} width={55} />
-                    <Tooltip />
-                    <Bar dataKey="foreign" fill="#06b6d4" radius={[0, 4, 4, 0]} barSize={18} />
+                    <YAxis dataKey="code" type="category" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: '900' }} width={60} axisLine={false} tickLine={false} />
+                    <Tooltip cursor={{ fill: 'rgba(255,255,255,0.05)' }} contentStyle={{ background: '#0B0F19', border: '1px solid #1E293B', borderRadius: '12px' }} />
+                    <Bar dataKey="foreign" fill="#06b6d4" radius={[0, 8, 8, 0]} barSize={24} animationDuration={1500} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
-            <div className="glass rounded-2xl p-6 border border-border/30 hover:border-gold-400/30 transition-all duration-300">
-              <h3 className="font-bold text-foreground mb-4">Top 10 Concentration</h3>
-              <div className="h-[300px]">
+            {/* Strategic Concentration */}
+            <div className="glass rounded-[2.5rem] p-8 border border-white/10 hover:border-red-500/20 transition-all group/conc">
+              <div className="flex items-center justify-between mb-8">
+                 <div>
+                    <h3 className="font-black text-xl text-white tracking-tight">Strategic Concentration</h3>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Total Institutional Density</p>
+                 </div>
+                 <Target className="w-6 h-6 text-red-400 opacity-20 group-hover/conc:opacity-100 transition-opacity" />
+              </div>
+              <div className="h-[350px] relative z-10">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={ksei1Data.topConcentration} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} opacity={0.1} />
+                  <BarChart data={ksei1Data.topConcentration} layout="vertical" margin={{ left: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="rgba(255,255,255,0.05)" />
                     <XAxis type="number" hide />
-                    <YAxis dataKey="code" type="category" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 'bold' }} width={55} />
-                    <Tooltip />
-                    <Bar dataKey="total" fill="#ef4444" radius={[0, 4, 4, 0]} barSize={18} />
+                    <YAxis dataKey="code" type="category" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: '900' }} width={60} axisLine={false} tickLine={false} />
+                    <Tooltip cursor={{ fill: 'rgba(255,255,255,0.05)' }} contentStyle={{ background: '#0B0F19', border: '1px solid #1E293B', borderRadius: '12px' }} />
+                    <Bar dataKey="total" fill="#ef4444" radius={[0, 8, 8, 0]} barSize={24} animationDuration={1500} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
           </div>
 
-          <div className="glass rounded-2xl p-6 border border-border/30 hover:border-gold-400/30 transition-all duration-300">
-            <h3 className="font-bold text-foreground mb-4">🏆 Top Institutional Investors</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-              {ksei1Data.topInvestors.slice(0, 5).map((inv: any, i: number) => (
-                <div key={i} className="p-4 rounded-xl bg-accent/20 border border-border/30 hover:border-gold-400/30 transition-all">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gold-400 to-yellow-600 text-navy-900 flex items-center justify-center font-black text-sm mb-3">#{i+1}</div>
-                  <p className="text-sm font-bold text-foreground truncate">{inv.name}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">{inv.type}</p>
-                  <p className="text-lg font-black text-gold-400 mt-2">{inv.emiten} <span className="text-xs text-muted-foreground">emitens</span></p>
+          {/* Top Institutional Investors */}
+          <div className="glass rounded-[2.5rem] p-8 border border-white/10 relative overflow-hidden group/investors">
+             <div className="absolute top-0 right-0 w-96 h-96 bg-purple-500/5 rounded-full blur-[100px] -mr-48 -mt-48" />
+             <div className="flex items-center justify-between mb-8 relative z-10">
+                <div>
+                   <h3 className="font-black text-xl text-white tracking-tight">Institutional Power Players</h3>
+                   <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Investors with widest portfolio coverage</p>
                 </div>
-              ))}
-            </div>
-          </div>
+                <ShieldCheck className="w-6 h-6 text-purple-400 opacity-20 group-hover/investors:opacity-100 transition-opacity" />
+             </div>
 
-          <Link href="/ownership" className="block w-full py-3 text-center text-sm font-bold text-gold-400 hover:text-foreground bg-gold-500/5 hover:bg-gold-500/10 rounded-xl border border-gold-500/20 transition-all">
-            View Full 1% Ownership Analysis →
-          </Link>
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 relative z-10">
+                {ksei1Data.topInvestors.map((inv: any, i: number) => (
+                  <div key={i} className="p-5 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-gold-400/20 transition-all group/inv">
+                    <div className="flex items-start justify-between mb-3">
+                       <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">#{i+1} RANK</span>
+                       <div className="px-2 py-0.5 rounded bg-white/[0.05] text-[8px] font-black text-muted-foreground uppercase">{inv.type}</div>
+                    </div>
+                    <h5 className="font-black text-slate-200 group-hover/inv:text-white transition-colors leading-snug line-clamp-1">{inv.name}</h5>
+                    <div className="mt-4 flex items-center justify-between">
+                       <span className="text-[10px] font-bold text-muted-foreground uppercase">Portfolio Scope</span>
+                       <span className="text-sm font-black text-gold-400">{inv.emiten} Stocks</span>
+                    </div>
+                  </div>
+                ))}
+             </div>
+          </div>
         </div>
       )}
+    </div>
+  )
+}
     </div>
   )
 }
