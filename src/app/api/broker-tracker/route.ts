@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import duckdb from 'duckdb';
+import { Client } from 'pg';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const action = searchParams.get('action'); // 'tracker' atau 'screener'
+  const action = searchParams.get('action'); 
   const code = searchParams.get('code')?.toUpperCase() || '';
   const days = parseInt(searchParams.get('days') || '30');
 
@@ -11,14 +11,23 @@ export async function GET(req: NextRequest) {
     const token = process.env.MOTHERDUCK_TOKEN;
     if (!token) throw new Error("MOTHERDUCK_TOKEN belum diset di .env.local");
 
+    // Koneksi ke MotherDuck menggunakan driver Postgres (Sangat ramah Vercel!)
+    const client = new Client({
+      host: "pg.us-east-1-aws.motherduck.com",
+      port: 5432,
+      user: "postgres",
+      password: token,
+      database: "md:",
+      ssl: { rejectUnauthorized: true },
+    });
+
+    await client.connect();
+
     // Hitung tanggal batas (cutoff)
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
     const cutoffStr = cutoffDate.toISOString().split('T')[0];
 
-    // Buka koneksi MotherDuck
-    const db = new duckdb.Database(`md:?motherduck_token=${token}`);
-    
     let query = '';
 
     if (action === 'tracker') {
@@ -27,10 +36,10 @@ export async function GET(req: NextRequest) {
         SELECT 
           strftime(date, '%Y-%m-%d') as date,
           broker_code,
-          SUM(CASE WHEN side = 'BUY' THEN value ELSE 0 END)::BIGINT AS buy_value,
-          SUM(CASE WHEN side = 'SELL' THEN value ELSE 0 END)::BIGINT AS sell_value,
-          SUM(CASE WHEN side = 'BUY' THEN value ELSE -value END)::BIGINT AS net_value,
-          SUM(CASE WHEN side = 'BUY' THEN lot ELSE -lot END)::BIGINT AS net_lot
+          SUM(CASE WHEN side = 'BUY' THEN value ELSE 0 END)::DOUBLE AS buy_value,
+          SUM(CASE WHEN side = 'SELL' THEN value ELSE 0 END)::DOUBLE AS sell_value,
+          SUM(CASE WHEN side = 'BUY' THEN value ELSE -value END)::DOUBLE AS net_value,
+          SUM(CASE WHEN side = 'BUY' THEN lot ELSE -lot END)::DOUBLE AS net_lot
         FROM my_db.main.broker_activity
         WHERE date >= '${cutoffStr}' 
           AND UPPER(stock_code) = '${code}'
@@ -43,10 +52,10 @@ export async function GET(req: NextRequest) {
           SELECT 
             stock_code,
             broker_code,
-            SUM(CASE WHEN side = 'BUY' THEN value ELSE 0 END)::BIGINT AS buy_value,
-            SUM(CASE WHEN side = 'SELL' THEN value ELSE 0 END)::BIGINT AS sell_value,
-            SUM(CASE WHEN side = 'BUY' THEN value ELSE -value END)::BIGINT AS net_value,
-            SUM(CASE WHEN side = 'BUY' THEN lot ELSE -lot END)::BIGINT AS net_lot
+            SUM(CASE WHEN side = 'BUY' THEN value ELSE 0 END)::DOUBLE AS buy_value,
+            SUM(CASE WHEN side = 'SELL' THEN value ELSE 0 END)::DOUBLE AS sell_value,
+            SUM(CASE WHEN side = 'BUY' THEN value ELSE -value END)::DOUBLE AS net_value,
+            SUM(CASE WHEN side = 'BUY' THEN lot ELSE -lot END)::DOUBLE AS net_lot
           FROM my_db.main.broker_activity
           WHERE date >= '${cutoffStr}'
           GROUP BY stock_code, broker_code
@@ -58,12 +67,12 @@ export async function GET(req: NextRequest) {
             SUM(net_lot) AS total_net_lot,
             SUM(buy_value) AS total_buy_value,
             SUM(sell_value) AS total_sell_value,
-            COUNT(DISTINCT broker_code) AS broker_count,
+            COUNT(DISTINCT broker_code)::DOUBLE AS broker_count,
             FIRST(broker_code ORDER BY net_value DESC) AS top_buyer,
             FIRST(broker_code ORDER BY net_value ASC) AS top_seller,
             CASE 
               WHEN SUM(buy_value + ABS(sell_value)) > 0 
-              THEN ROUND((SUM(net_value)::FLOAT / SUM(buy_value + ABS(sell_value))) * 100, 2)
+              THEN ROUND((SUM(net_value)::FLOAT / SUM(buy_value + ABS(sell_value))) * 100, 2)::DOUBLE
               ELSE 0 
             END AS accumulation_score
           FROM broker_stats
@@ -74,18 +83,16 @@ export async function GET(req: NextRequest) {
         ORDER BY accumulation_score DESC, ABS(total_net_value) DESC
       `;
     } else {
-      throw new Error("Action tidak valid. Gunakan action=tracker atau action=screener");
+      throw new Error("Action tidak valid.");
     }
 
     // Eksekusi Query
-    const data = await new Promise((resolve, reject) => {
-      db.all(query, (err: any, res: any) => {
-        if (err) reject(err);
-        else resolve(res);
-      });
-    });
+    const result = await client.query(query);
+    
+    // Tutup koneksi agar tidak memory leak
+    await client.end(); 
 
-    return NextResponse.json({ data });
+    return NextResponse.json({ data: result.rows });
 
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
