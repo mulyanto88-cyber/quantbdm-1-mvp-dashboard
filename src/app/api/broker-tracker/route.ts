@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
     let query = '';
     
     if (action === 'tracker') {
-      // FIX: Perkalian Lot dengan 100 untuk mendapatkan jumlah lembar saham
+      // Menghitung Net Lot, Buy/Sell Avg Price (dikali 100), dan Lot per Trade
       query = `
         SELECT 
           broker_code,
@@ -46,14 +46,14 @@ export async function GET(req: NextRequest) {
           SUM(CASE WHEN value > 0 THEN lot ELSE -lot END)::DOUBLE AS net_lot,
           (SUM(CASE WHEN value > 0 THEN value ELSE 0 END) / NULLIF(SUM(CASE WHEN value > 0 THEN lot ELSE 0 END) * 100, 0))::DOUBLE AS buy_avg_price,
           (ABS(SUM(CASE WHEN value < 0 THEN value ELSE 0 END)) / NULLIF(SUM(CASE WHEN value < 0 THEN lot ELSE 0 END) * 100, 0))::DOUBLE AS sell_avg_price,
-          (SUM(lot) / NULLIF(SUM(freq), 0))::DOUBLE AS avg_lot_per_trade
+          (SUM(ABS(lot)) / NULLIF(SUM(freq), 0))::DOUBLE AS avg_lot_per_trade
         FROM my_db.main.broker_activity
         WHERE ${dateFilter} AND UPPER(stock_code) = '${code}'
         GROUP BY broker_code
         ORDER BY net_val DESC
       `;
     } else if (action === 'history') {
-      // FIX: Rata-rata harga harian juga dikali 100
+      // Data untuk Double Axis Chart: Net Value dan Avg Price harian
       query = `
         SELECT 
           strftime(date, '%Y-%m-%d') as date,
