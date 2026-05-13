@@ -431,7 +431,7 @@ export default function BandarmologiPage() {
                            tick={{ fill: '#6b7280' }} />
                     {/* Left Y: net val bars */}
                     <YAxis yAxisId="net" stroke="#374151" fontSize={10}
-                           tickFormatter={fmt} width={62} tick={{ fill: '#6b7280' }} />
+                           tickFormatter={(v) => fmt(v)} width={62} tick={{ fill: '#6b7280' }} />
                     {/* Right Y: avg price */}
                     <YAxis yAxisId="price" orientation="right" stroke="#374151" fontSize={10}
                            tickFormatter={v => Math.round(v).toLocaleString()} width={52}
