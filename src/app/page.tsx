@@ -1046,6 +1046,3 @@ export default function MarketOverview() {
     </div>
   )
 }
-    </div>
-  )
-}
