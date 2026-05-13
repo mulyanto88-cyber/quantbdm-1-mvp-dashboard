@@ -581,7 +581,7 @@ export default function StockDetailPage() {
     { id: 'foreign-flow' as DetailTab, label: 'Foreign Flow', icon: Globe, count: 0 },
     { id: 'volume' as DetailTab, label: 'Volume Spike', icon: Zap, count: 0 },
     { id: 'broker' as DetailTab, label: 'Broker Intel', icon: Building2, count: 0 },
-  ]
+  ];
 
   return (
     <div className="space-y-8 animate-fade-in pb-12">
