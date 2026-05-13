@@ -585,7 +585,7 @@ export default function StockDetailPage() {
 
   return (
     <div className="space-y-8 animate-fade-in pb-12">
-      {/* 🚀 PREMIUM INTELLIGENCE HEADER */}
+      {/* PREMIUM INTELLIGENCE HEADER */}
       <div className="relative group">
         <div className="absolute -inset-0.5 bg-gradient-to-r from-gold-500/20 to-emerald-500/20 rounded-[2.5rem] blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
         <div className="glass rounded-[2.5rem] p-8 border border-white/[0.08] shadow-2xl relative overflow-hidden">
