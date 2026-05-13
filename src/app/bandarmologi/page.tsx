@@ -245,11 +245,14 @@ async function queryAccumulationScreener(
 }
 
 // ── Formatter ─────────────────────────────────────────────────────────────────
-function fmt(v: number) {
+function fmt(v: number): string {
+  if (v == null || isNaN(v)) return '0';
   const a = Math.abs(v);
-  if (a >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
-  if (a >= 1e6) return `${(v / 1e6).toFixed(0)}M`;
-  return v.toLocaleString('id-ID');
+  if (a >= 1e11) return `${(v / 1e12).toFixed(2)}T`; // Triliun
+  if (a >= 1e9)  return `${(v / 1e9).toFixed(2)}B`;  // Miliar
+  if (a >= 1e6)  return `${(v / 1e6).toFixed(0)}M`;  // Juta
+  if (a >= 1e3)  return `${(v / 1e3).toFixed(0)}K`;  // Ribu
+  return v.toFixed(0);
 }
 
 const BROKER_COLORS = [
@@ -261,12 +264,12 @@ const PAGE_SIZE = 50;
 
 // ── SCREENER PERIODS ──────────────────────────────────────────────────────────
 const PERIODS = [
-  { label: '7 Hari', value: '7', color: 'text-blue-400' },
-  { label: '15 Hari', value: '15', color: 'text-cyan-400' },
-  { label: '1 Bulan', value: '30', color: 'text-emerald-400' },
-  { label: '3 Bulan', value: '90', color: 'text-yellow-400' },
-  { label: '6 Bulan', value: '180', color: 'text-orange-400' },
-  { label: 'Terakhir', value: 'last', color: 'text-purple-400' },
+  { label: '7 Hari', value: '7', days: 7, color: 'text-blue-400' },
+  { label: '15 Hari', value: '15', days: 15, color: 'text-cyan-400' },
+  { label: '1 Bulan', value: '30', days: 30, color: 'text-emerald-400' },
+  { label: '3 Bulan', value: '90', days: 90, color: 'text-yellow-400' },
+  { label: '6 Bulan', value: '180', days: 180, color: 'text-orange-400' },
+  { label: 'Terakhir', value: 'last', days: 7, color: 'text-purple-400' },
 ];
 
 // ── KOMPONEN UTAMA ────────────────────────────────────────────────────────────
@@ -981,12 +984,12 @@ export default function BandarmologiPage() {
                 <div className="glass rounded-xl p-4 border border-yellow-400/20">
                   <p className="text-[10px] text-muted-foreground uppercase mb-1">Rata2 Score</p>
                   <p className="text-2xl font-black text-yellow-400">
-                    {(screenerData.reduce((s, r) => s + r.accumulation_score, 0) / screenerData.length).toFixed(1)}
+                    {(screenerData.reduce((s, r) => s + r.accumulation_score, 0) / screenerData.length).toFixed(1)}%
                   </p>
                 </div>
               </div>
 
-              {/* Screener Table */}
+              {/* Screener Table with SORTABLE HEADERS */}
               <div className="glass rounded-2xl overflow-hidden border border-border/30">
                 <div className="p-4 border-b border-white/[0.05]">
                   <h2 className="font-bold text-foreground text-lg">
@@ -1002,12 +1005,42 @@ export default function BandarmologiPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-white/[0.02] border-b border-white/[0.05] text-[10px] text-muted-foreground uppercase tracking-wider">
-                        <th className="p-3 text-left">Kode</th>
-                        <th className="p-3 text-right">Net Value</th>
+                        {/* Kode */}
+                        <th 
+                          className="p-3 text-left cursor-pointer hover:text-foreground transition-colors"
+                          onClick={() => {
+                            if (screenerSort === 'code_asc') setScreenerSort('code_desc' as any);
+                            else setScreenerSort('code_asc' as any);
+                          }}
+                        >
+                          Kode {screenerSort === 'code_asc' ? '↑' : screenerSort === 'code_desc' ? '↓' : ''}
+                        </th>
+                        {/* Net Value */}
+                        <th 
+                          className="p-3 text-right cursor-pointer hover:text-foreground transition-colors"
+                          onClick={() => {
+                            if (screenerSort === 'value') setScreenerSort('value_desc' as any);
+                            else setScreenerSort('value' as any);
+                          }}
+                        >
+                          Net Value {screenerSort === 'value' ? '↑' : screenerSort === 'value_desc' ? '↓' : ''}
+                        </th>
+                        {/* Net Lot */}
                         <th className="p-3 text-right">Net Lot</th>
+                        {/* Buy Value */}
                         <th className="p-3 text-right">Buy Value</th>
+                        {/* Sell Value */}
                         <th className="p-3 text-right">Sell Value</th>
-                        <th className="p-3 text-center">Score</th>
+                        {/* Score */}
+                        <th 
+                          className="p-3 text-center cursor-pointer hover:text-foreground transition-colors"
+                          onClick={() => {
+                            if (screenerSort === 'score') setScreenerSort('score_desc' as any);
+                            else setScreenerSort('score' as any);
+                          }}
+                        >
+                          Score {screenerSort === 'score' ? '↑' : screenerSort === 'score_desc' ? '↓' : ''}
+                        </th>
                         <th className="p-3 text-left">Top Buyer</th>
                         <th className="p-3 text-left">Top Seller</th>
                         <th className="p-3 text-center">#Broker</th>
@@ -1018,23 +1051,25 @@ export default function BandarmologiPage() {
                         <tr key={i} className="tr-hover border-b border-white/[0.02] cursor-pointer hover:bg-white/[0.02]"
                           onClick={() => {
                             setCode(r.stock_code);
-                            setDays(screenerPeriod === 'last' ? '7' : screenerPeriod);
+                            const daysMap: Record<string, string> = {
+                              '7': '7', '15': '15', '30': '30', '90': '90', '180': '180', 'last': '7'
+                            };
+                            setDays(daysMap[screenerPeriod] || '30');
                             setActiveTab('tracker');
-                            // Auto-load
                             setTimeout(() => loadData(), 100);
                           }}
                         >
                           <td className="p-3 font-mono font-bold text-foreground">
                             {r.stock_code}
                           </td>
-                          <td className={`p-3 text-right font-bold ${r.total_net_value >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          <td className={`p-3 text-right font-bold font-mono ${r.total_net_value >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                             {r.total_net_value >= 0 ? '+' : ''}{fmt(r.total_net_value)}
                           </td>
-                          <td className={`p-3 text-right ${r.total_net_lot >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {r.total_net_lot.toLocaleString('id-ID')}
+                          <td className={`p-3 text-right font-mono text-xs ${r.total_net_lot >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {r.total_net_lot >= 0 ? '+' : ''}{r.total_net_lot.toLocaleString('id-ID')}
                           </td>
-                          <td className="p-3 text-right text-emerald-400/80">{fmt(r.buy_value)}</td>
-                          <td className="p-3 text-right text-red-400/80">{fmt(r.sell_value)}</td>
+                          <td className="p-3 text-right text-emerald-400/80 font-mono text-xs">{fmt(r.buy_value)}</td>
+                          <td className="p-3 text-right text-red-400/80 font-mono text-xs">{fmt(r.sell_value)}</td>
                           <td className="p-3 text-center">
                             <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${
                               r.accumulation_score > 20
@@ -1043,7 +1078,7 @@ export default function BandarmologiPage() {
                                 ? 'bg-red-400/20 text-red-400'
                                 : 'bg-gray-400/20 text-gray-400'
                             }`}>
-                              {r.accumulation_score > 0 ? '+' : ''}{r.accumulation_score}%
+                              {r.accumulation_score > 0 ? '+' : ''}{r.accumulation_score.toFixed(1)}%
                             </span>
                           </td>
                           <td className="p-3 text-xs text-muted-foreground">{r.top_buyer}</td>
@@ -1081,8 +1116,6 @@ export default function BandarmologiPage() {
               </div>
             </>
           )}
-        </>
-      )}
 
       {/* Footer info */}
       <div className="text-center text-[10px] text-muted-foreground pt-4">
