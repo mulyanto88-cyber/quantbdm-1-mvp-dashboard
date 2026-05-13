@@ -48,20 +48,40 @@ export async function GET(req: NextRequest) {
       const previousPercentage = prev ? parseFloat(prev.percentage || '0') : 0;
       const changePct = latestPercentage - previousPercentage;
 
-      // Whale DNA Categorization
+      // Whale DNA Categorization - REFINED
       let dna = 'HNW';
       const type = w.investor_type?.toLowerCase() || '';
-      if (type.includes('corporate') || latestPercentage >= 5) {
-        dna = 'Strategic';
-      } else if (
+      const name = w.investor_name?.toLowerCase() || '';
+
+      // 1. STRATEGIC: Locked shares (Owner/Founder/Sovereign)
+      if (
+        type.includes('corporate') || 
+        type.includes('sovereign') || 
+        type.includes('government') ||
+        (type.includes('individual') && latestPercentage >= 5)
+      ) {
+        // Exception: Corporate that are actually Funds/Asset Managers
+        if (name.includes('asset management') || name.includes('reksadana') || name.includes('sekuritas') || name.includes('fund')) {
+          dna = 'Institutional';
+        } else {
+          dna = 'Strategic';
+        }
+      } 
+      // 2. INSTITUTIONAL (Smart Money): Active money managers
+      else if (
         type.includes('insurance') || 
         type.includes('pension') || 
         type.includes('mutual') || 
         type.includes('financial') || 
-        type.includes('sovereign') ||
-        type.includes('bank')
+        type.includes('securities') ||
+        name.includes('fund') ||
+        name.includes('am ')
       ) {
         dna = 'Institutional';
+      }
+      // 3. CUSTODY (Opaque): Often nominees
+      else if (type.includes('bank')) {
+        dna = 'Custody';
       }
 
       return {
@@ -77,7 +97,7 @@ export async function GET(req: NextRequest) {
     });
 
     // Real Free Float Calculation
-    // Total % owned by Strategic holders
+    // Total % owned by Strategic holders (The 'Locked' shares)
     const strategicTotal = processedWhales
       .filter(w => w.dna === 'Strategic')
       .reduce((sum, w) => sum + w.latest_percentage, 0);
@@ -91,6 +111,7 @@ export async function GET(req: NextRequest) {
     const holderAnalytics = {
       strategicPct: strategicTotal,
       institutionalPct: processedWhales.filter(w => w.dna === 'Institutional').reduce((sum, w) => sum + w.latest_percentage, 0),
+      custodyPct: processedWhales.filter(w => w.dna === 'Custody').reduce((sum, w) => sum + w.latest_percentage, 0),
       hnwPct: processedWhales.filter(w => w.dna === 'HNW').reduce((sum, w) => sum + w.latest_percentage, 0),
       localPct: localWhales.reduce((sum, w) => sum + w.latest_percentage, 0),
       foreignPct: foreignWhales.reduce((sum, w) => sum + w.latest_percentage, 0),
@@ -100,6 +121,7 @@ export async function GET(req: NextRequest) {
         .slice(0, 5)
         .reduce((sum, w) => sum + w.latest_percentage, 0),
       isCorneringRisk: realFreeFloat < 15,
+      verdict: realFreeFloat < 20 ? 'TIGHT_LIQUIDITY' : realFreeFloat > 50 ? 'HIGH_LIQUIDITY' : 'NORMAL'
     };
 
     return NextResponse.json({ 
