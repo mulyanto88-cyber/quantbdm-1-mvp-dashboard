@@ -63,9 +63,9 @@ export async function GET(req: NextRequest) {
 
         -- Avg prices (weighted): use ABS so denominator is always positive
         (SUM(CASE WHEN value > 0 THEN value ELSE 0 END) /
-          NULLIF(SUM(CASE WHEN value > 0 THEN lot ELSE 0 END), 0))::DOUBLE           AS buy_avg_price,
+          NULLIF(SUM(CASE WHEN value > 0 THEN lot ELSE 0 END) * 100.0, 0))::DOUBLE       AS buy_avg_price,
         (ABS(SUM(CASE WHEN value < 0 THEN value ELSE 0 END)) /
-          NULLIF(ABS(SUM(CASE WHEN value < 0 THEN lot ELSE 0 END)), 0))::DOUBLE      AS sell_avg_price
+          NULLIF(ABS(SUM(CASE WHEN value < 0 THEN lot ELSE 0 END)) * 100.0, 0))::DOUBLE  AS sell_avg_price
 
       FROM my_db.main.broker_activity
       WHERE ${dateFilter}
@@ -83,7 +83,7 @@ export async function GET(req: NextRequest) {
         SUM(CASE WHEN value > 0 THEN value ELSE 0 END)::DOUBLE            AS daily_buy_val,
         ABS(SUM(CASE WHEN value < 0 THEN value ELSE 0 END))::DOUBLE       AS daily_sell_val,
         (SUM(CASE WHEN value > 0 THEN value ELSE 0 END) /
-          NULLIF(SUM(CASE WHEN value > 0 THEN lot ELSE 0 END), 0))::DOUBLE AS daily_avg_price
+          NULLIF(SUM(CASE WHEN value > 0 THEN lot ELSE 0 END) * 100.0, 0))::DOUBLE AS daily_avg_price
       FROM my_db.main.broker_activity
       WHERE ${dateFilter}
         AND stock_code = '${code}'
