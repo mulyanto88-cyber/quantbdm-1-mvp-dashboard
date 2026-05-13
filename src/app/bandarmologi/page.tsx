@@ -299,7 +299,7 @@ export default function BandarmologiPage() {
   const [screenerLoading, setScreenerLoading] = useState(false);
   const [screenerMsg, setScreenerMsg] = useState('');
   const [screenerError, setScreenerError] = useState('');
-  const [screenerSort, setScreenerSort] = useState<'score' | 'value'>('score');
+    const [screenerSort, setScreenerSort] = useState<string>('score');
   const [screenerFilter, setScreenerFilter] = useState<'all' | 'accumulation' | 'distribution'>('all');
   const [screenerPage, setScreenerPage] = useState(0);
 
@@ -461,7 +461,7 @@ export default function BandarmologiPage() {
     return sorted;
   }, [data, selected, topBrokers, chartMode]);
 
-  // ── Screener Filtered & Sorted ────────────────────────────────────────────
+  // ── Screener Filtered & Sorted (UPDATE) ───────────────────────────────────
   const screenerFiltered = useMemo(() => {
     let filtered = [...screenerData];
     
@@ -472,20 +472,33 @@ export default function BandarmologiPage() {
       filtered = filtered.filter(r => r.accumulation_score < -10);
     }
     
-    // Sort
-    if (screenerSort === 'score') {
-      filtered.sort((a, b) => b.accumulation_score - a.accumulation_score);
-    } else {
-      filtered.sort((a, b) => Math.abs(b.total_net_value) - Math.abs(a.total_net_value));
+    // Sort (UPDATED)
+    switch (screenerSort) {
+      case 'code_asc':
+        filtered.sort((a, b) => a.stock_code.localeCompare(b.stock_code));
+        break;
+      case 'code_desc':
+        filtered.sort((a, b) => b.stock_code.localeCompare(a.stock_code));
+        break;
+      case 'value_desc':
+        filtered.sort((a, b) => b.total_net_value - a.total_net_value);
+        break;
+      case 'score_desc':
+        filtered.sort((a, b) => b.accumulation_score - a.accumulation_score);
+        break;
+      // default 'score' (ascending by score)
+      case 'score':
+      default:
+        filtered.sort((a, b) => a.accumulation_score - b.accumulation_score);
+        break;
+      // default 'value' (ascending by value)
+      case 'value':
+        filtered.sort((a, b) => a.total_net_value - b.total_net_value);
+        break;
     }
     
     return filtered;
   }, [screenerData, screenerFilter, screenerSort]);
-
-  const totalPages = Math.ceil(data.length / PAGE_SIZE);
-  const pageData = data.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  const screenerPages = Math.ceil(screenerFiltered.length / PAGE_SIZE);
-  const screenerPageData = screenerFiltered.slice(screenerPage * PAGE_SIZE, (screenerPage + 1) * PAGE_SIZE);
 
   // ── RENDER ─────────────────────────────────────────────────────────────────
   return (
