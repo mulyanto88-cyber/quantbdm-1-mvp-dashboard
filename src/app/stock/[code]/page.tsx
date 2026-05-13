@@ -1413,6 +1413,7 @@ export default function StockDetailPage() {
 
               {/* Specific Whale Table (Consolidated) */}
               {whaleData.length > 0 && (
+                <>
                 <div className="glass rounded-2xl overflow-hidden border border-border/30">
                   <div className="p-4 border-b border-white/[0.05] flex items-center justify-between bg-white/[0.01]">
                     <h3 className="font-bold text-foreground text-sm">Whale List & DNA Analysis</h3>
@@ -1554,6 +1555,7 @@ export default function StockDetailPage() {
                     </div>
                   </div>
                 )}
+                </>
               )}
             </>
           ) : (
