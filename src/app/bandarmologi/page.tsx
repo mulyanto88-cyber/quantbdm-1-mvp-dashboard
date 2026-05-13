@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import {
   BarChart3, Loader2, ArrowRightLeft, Search, Activity,
-  TrendingUp, TrendingDown, Minus, RefreshCw, AlertCircle,
+  TrendingUp, TrendingDown, RefreshCw, AlertCircle,
   ChevronDown, ChevronUp, Users,
 } from 'lucide-react';
 
@@ -92,21 +92,71 @@ const FlowBar = ({ buy, sell }: { buy: number; sell: number }) => {
   );
 };
 
-// ─── Stat card ───────────────────────────────────────────────────────────────
-const StatCard = ({
-  label, value, sub, color, icon: Icon,
-}: { label: string; value: string; sub?: string; color: string; icon: any }) => (
-  <div className="bg-[#151C2C] rounded-xl border border-white/5 p-4 flex items-center gap-3">
-    <div className={`p-2 rounded-lg ${color}/10`}>
-      <Icon className={`w-4 h-4 ${color}`} />
+// ─── Top-3 broker mini card row ──────────────────────────────────────────────
+const TopBrokerCards = ({
+  rows, side, totalBrokers,
+}: { rows: TrackerRow[]; side: 'buy' | 'sell'; totalBrokers: number }) => {
+  const isBuy  = side === 'buy';
+  const top3   = rows.slice(0, 3);
+  const accent = isBuy ? 'emerald' : 'red';
+  const total  = rows.reduce((s, r) => s + Math.abs(r.net_val), 0);
+
+  return (
+    <div className={`bg-[#151C2C] rounded-2xl border border-${accent}-500/20 p-4 space-y-3`}>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {isBuy
+            ? <TrendingUp  className="w-3.5 h-3.5 text-emerald-400" />
+            : <TrendingDown className="w-3.5 h-3.5 text-red-400"    />}
+          <span className={`text-[10px] uppercase tracking-widest font-black text-${accent}-400`}>
+            Top 3 Net {isBuy ? 'Buyers' : 'Sellers'}
+          </span>
+        </div>
+        <span className="text-[10px] text-gray-500">{totalBrokers} brokers · {fmt(total)} total</span>
+      </div>
+
+      {/* 3 broker rows */}
+      <div className="space-y-2">
+        {top3.map((r, i) => {
+          const netAbs  = Math.abs(r.net_val);
+          const barPct  = total > 0 ? (netAbs / total) * 100 : 0;
+          const avgPx   = isBuy ? r.buy_avg_price : r.sell_avg_price;
+          return (
+            <div key={r.broker_code} className="flex items-center gap-3">
+              {/* Rank */}
+              <span className={`text-[10px] font-black w-4 text-center ${
+                i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-400' : 'text-amber-700'
+              }`}>{i + 1}</span>
+
+              {/* Code + name */}
+              <div className="min-w-0 w-20">
+                <p className="text-xs font-black text-white leading-tight">{r.broker_code}</p>
+                <p className="text-[9px] text-gray-500 truncate leading-tight">{r.broker_name || '—'}</p>
+              </div>
+
+              {/* Bar */}
+              <div className="flex-1 h-1.5 bg-[#0B0F19] rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${isBuy ? 'bg-emerald-500' : 'bg-red-500'}`}
+                  style={{ width: `${barPct}%` }}
+                />
+              </div>
+
+              {/* Value + avg price */}
+              <div className="text-right shrink-0">
+                <p className={`text-xs font-black ${isBuy ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {fmt(netAbs)}
+                </p>
+                <p className="text-[9px] text-gray-500 font-mono">{fmtPrice(avgPx)}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
-    <div>
-      <p className="text-[10px] uppercase tracking-widest font-bold text-gray-500">{label}</p>
-      <p className={`text-base font-black ${color}`}>{value}</p>
-      {sub && <p className="text-[10px] text-gray-500 mt-0.5">{sub}</p>}
-    </div>
-  </div>
-);
+  );
+};
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function BandarmologiPage() {
@@ -173,14 +223,6 @@ export default function BandarmologiPage() {
 
   const buyers  = useMemo(() => sortedTracker.filter(r => r.net_val > 0), [sortedTracker]);
   const sellers = useMemo(() => sortedTracker.filter(r => r.net_val < 0), [sortedTracker]);
-
-  // ─── Summary stats ───────────────────────────────────────────────────────
-  const summary = useMemo(() => {
-    const totalBuy  = trackerData.reduce((s, r) => s + (r.buy_val  || 0), 0);
-    const totalSell = trackerData.reduce((s, r) => s + (r.sell_val || 0), 0);
-    const netFlow   = totalBuy - totalSell;
-    return { totalBuy, totalSell, netFlow };
-  }, [trackerData]);
 
   // ─── History chart data with cumulative ────────────────────────────────
   const chartData = useMemo(() => {
@@ -384,29 +426,11 @@ export default function BandarmologiPage() {
       {activeTab === 'tracker' && trackerData.length > 0 && (
         <div className="space-y-5">
 
-          {/* Summary stats */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            <StatCard
-              label="Net Inflow"
-              value={fmt(summary.netFlow)}
-              sub={summary.netFlow >= 0 ? 'Akumulasi' : 'Distribusi'}
-              color={summary.netFlow >= 0 ? 'text-emerald-400' : 'text-red-400'}
-              icon={summary.netFlow >= 0 ? TrendingUp : TrendingDown}
-            />
-            <StatCard
-              label="Total Buy"
-              value={fmt(summary.totalBuy)}
-              sub={`${buyers.length} brokers`}
-              color="text-emerald-400"
-              icon={TrendingUp}
-            />
-            <StatCard
-              label="Total Sell"
-              value={fmt(summary.totalSell)}
-              sub={`${sellers.length} brokers`}
-              color="text-red-400"
-              icon={TrendingDown}
-            />
+
+          {/* Top 3 broker summary cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <TopBrokerCards rows={buyers}  side="buy"  totalBrokers={buyers.length}  />
+            <TopBrokerCards rows={sellers} side="sell" totalBrokers={sellers.length} />
           </div>
 
           {/* Buyer / Seller tables */}
