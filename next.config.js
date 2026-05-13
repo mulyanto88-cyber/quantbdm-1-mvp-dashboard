@@ -1,7 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  serverExternalPackages: ['@duckdb/duckdb-wasm'],
-  
   async headers() {
     return [
       {
