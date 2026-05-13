@@ -144,7 +144,8 @@ export default function BandarmologiPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
                     <XAxis dataKey="date" stroke="#6b7280" fontSize={10} />
                     <YAxis yAxisId="left" stroke="#10b981" fontSize={10} tickFormatter={fmt} />
-                    <YAxis yAxisId="right" orientation="right" stroke="#facc15" fontSize={10} tickFormatter={v => Math.round(v)} />
+                    {/* Perbaikan error TypeScript ada di baris ini: penambahan .toString() */}
+                    <YAxis yAxisId="right" orientation="right" stroke="#facc15" fontSize={10} tickFormatter={v => Math.round(v).toString()} />
                     <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: 'none', borderRadius: '12px' }} />
                     <Legend />
                     <Line yAxisId="left" type="monotone" name="Net Value" dataKey="daily_net_val" stroke="#10b981" strokeWidth={3} dot={{ r: 4 }} />
