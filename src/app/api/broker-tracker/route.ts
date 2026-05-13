@@ -19,10 +19,8 @@ export async function GET(req: NextRequest) {
       database: "md:",
       ssl: { rejectUnauthorized: true },
     });
-
     await client.connect();
 
-    // Logika penentuan range tanggal
     let dateFilter = "";
     if (startDate && endDate) {
       dateFilter = `date BETWEEN '${startDate}' AND '${endDate}'`;
@@ -34,18 +32,18 @@ export async function GET(req: NextRequest) {
     }
 
     let query = '';
-
     if (action === 'tracker') {
-      // 1. Ambil Summary (Untuk Tabel Broksum)
-      // Note: Menggunakan SUM(value) langsung karena SELL sudah negatif di DB
       query = `
         SELECT 
           broker_code,
           SUM(CASE WHEN value > 0 THEN value ELSE 0 END)::DOUBLE AS buy_val,
           SUM(CASE WHEN value < 0 THEN value ELSE 0 END)::DOUBLE AS sell_val,
+          SUM(CASE WHEN value > 0 THEN lot ELSE 0 END)::DOUBLE AS buy_lot,
+          SUM(CASE WHEN value < 0 THEN lot ELSE 0 END)::DOUBLE AS sell_lot,
           SUM(value)::DOUBLE AS net_val,
           SUM(lot)::DOUBLE AS net_lot,
-          (SUM(value) / NULLIF(SUM(lot), 0))::DOUBLE AS avg_price,
+          (SUM(CASE WHEN value > 0 THEN value ELSE 0 END) / NULLIF(SUM(CASE WHEN value > 0 THEN lot ELSE 0 END), 0))::DOUBLE AS buy_avg_price,
+          (SUM(CASE WHEN value < 0 THEN value ELSE 0 END) / NULLIF(SUM(CASE WHEN value < 0 THEN lot ELSE 0 END), 0))::DOUBLE AS sell_avg_price,
           (SUM(ABS(lot)) / NULLIF(SUM(freq), 0))::DOUBLE AS avg_lot_per_trade
         FROM my_db.main.broker_activity
         WHERE ${dateFilter} AND UPPER(stock_code) = '${code}'
@@ -53,15 +51,14 @@ export async function GET(req: NextRequest) {
         ORDER BY net_val DESC
       `;
     } else if (action === 'history') {
-      // 2. Ambil Historis (Untuk Chart)
       query = `
         SELECT 
           strftime(date, '%Y-%m-%d') as date,
-          broker_code,
-          SUM(value)::DOUBLE AS net_val
+          (SUM(value) / NULLIF(SUM(lot), 0))::DOUBLE AS daily_avg_price,
+          SUM(value)::DOUBLE AS daily_net_val
         FROM my_db.main.broker_activity
         WHERE ${dateFilter} AND UPPER(stock_code) = '${code}'
-        GROUP BY date, broker_code
+        GROUP BY date
         ORDER BY date ASC
       `;
     } else if (action === 'screener') {
