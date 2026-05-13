@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { formatRupiah, formatPercent, formatNumber, formatShares } from '@/lib/utils'
@@ -574,7 +574,7 @@ export default function StockDetailPage() {
 
   if (!stockData) return null
 
-  const tabs = [
+  const tabs: { id: DetailTab; label: string; icon: React.ElementType; count: number }[] = [
     { id: 'technical', label: 'Chart', icon: Activity, count: 0 },
     { id: 'smart-money', label: 'Smart Money', icon: Radar, count: 0 },
     { id: 'ownership', label: 'Holder Intel', icon: PieChart, count: 0 },
