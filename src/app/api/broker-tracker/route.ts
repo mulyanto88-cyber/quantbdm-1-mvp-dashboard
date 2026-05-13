@@ -32,7 +32,9 @@ export async function GET(req: NextRequest) {
     }
 
     let query = '';
+    
     if (action === 'tracker') {
+      // FIX: Perkalian Lot dengan 100 untuk mendapatkan jumlah lembar saham
       query = `
         SELECT 
           broker_code,
@@ -41,20 +43,21 @@ export async function GET(req: NextRequest) {
           SUM(CASE WHEN value > 0 THEN lot ELSE 0 END)::DOUBLE AS buy_lot,
           SUM(CASE WHEN value < 0 THEN lot ELSE 0 END)::DOUBLE AS sell_lot,
           SUM(value)::DOUBLE AS net_val,
-          SUM(lot)::DOUBLE AS net_lot,
-          (SUM(CASE WHEN value > 0 THEN value ELSE 0 END) / NULLIF(SUM(CASE WHEN value > 0 THEN lot ELSE 0 END), 0))::DOUBLE AS buy_avg_price,
-          (SUM(CASE WHEN value < 0 THEN value ELSE 0 END) / NULLIF(SUM(CASE WHEN value < 0 THEN lot ELSE 0 END), 0))::DOUBLE AS sell_avg_price,
-          (SUM(ABS(lot)) / NULLIF(SUM(freq), 0))::DOUBLE AS avg_lot_per_trade
+          SUM(CASE WHEN value > 0 THEN lot ELSE -lot END)::DOUBLE AS net_lot,
+          (SUM(CASE WHEN value > 0 THEN value ELSE 0 END) / NULLIF(SUM(CASE WHEN value > 0 THEN lot ELSE 0 END) * 100, 0))::DOUBLE AS buy_avg_price,
+          (ABS(SUM(CASE WHEN value < 0 THEN value ELSE 0 END)) / NULLIF(SUM(CASE WHEN value < 0 THEN lot ELSE 0 END) * 100, 0))::DOUBLE AS sell_avg_price,
+          (SUM(lot) / NULLIF(SUM(freq), 0))::DOUBLE AS avg_lot_per_trade
         FROM my_db.main.broker_activity
         WHERE ${dateFilter} AND UPPER(stock_code) = '${code}'
         GROUP BY broker_code
         ORDER BY net_val DESC
       `;
     } else if (action === 'history') {
+      // FIX: Rata-rata harga harian juga dikali 100
       query = `
         SELECT 
           strftime(date, '%Y-%m-%d') as date,
-          (SUM(value) / NULLIF(SUM(lot), 0))::DOUBLE AS daily_avg_price,
+          (ABS(SUM(value)) / NULLIF(SUM(ABS(lot)) * 100, 0))::DOUBLE AS daily_avg_price,
           SUM(value)::DOUBLE AS daily_net_val
         FROM my_db.main.broker_activity
         WHERE ${dateFilter} AND UPPER(stock_code) = '${code}'
