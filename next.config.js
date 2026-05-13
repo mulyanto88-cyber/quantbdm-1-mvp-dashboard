@@ -1,7 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Jangan bundle DuckDB di server-side (hanya dipakai di browser via 'use client')
-  serverExternalPackages: ['@duckdb/duckdb-wasm'],
+  experimental: {
+    serverExternalPackages: ['@duckdb/duckdb-wasm'],
+  },
 
   async headers() {
     return [
