@@ -461,6 +461,10 @@ export default function BandarmologiPage() {
     return sorted;
   }, [data, selected, topBrokers, chartMode]);
 
+  // ── Pagination for Detail Table ───────────────────────────────────────────
+  const totalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE));
+  const pageData = data.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
   // ── Screener Filtered & Sorted (UPDATE) ───────────────────────────────────
   const screenerFiltered = useMemo(() => {
     let filtered = [...screenerData];
