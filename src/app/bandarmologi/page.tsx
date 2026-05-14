@@ -1,16 +1,16 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine, Cell,
-  LineChart, Line, ComposedChart, Area,
+  LineChart, Line, ComposedChart, Area, Legend,
 } from 'recharts';
 import {
   BarChart3, Loader2, Search, Activity,
   TrendingUp, TrendingDown, RefreshCw, AlertCircle,
-  ChevronDown, ChevronUp, Users, Calendar, TrendingUpIcon,
-  BarChart2, LineChart as LineChartIcon, Layers,
+  ChevronDown, ChevronUp, Users, Calendar,
+  BarChart2, LineChart as LineChartIcon, Layers, TrendingUpIcon,
 } from 'lucide-react';
 
 // ─── Type Guards & Interfaces ─────────────────────────────────────────────────
@@ -54,9 +54,24 @@ interface HistoryRow {
   daily_avg_price: number;
 }
 
-type TimeSeriesView = 'net' | 'stacked' | 'cumulative';
+interface MultiBrokerRow {
+  date: string;
+  broker_code: string;
+  net_val: number;
+  net_lot: number;
+}
 
-// ─── Dynamic CSS Mapping (Fix Tailwind JIT issue) ─────────────────────────────
+type TimeSeriesView = 'net' | 'stacked' | 'cumulative';
+type TimeSeriesMode = 'market' | 'brokers';
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+const CHART_COLORS = [
+  '#10b981', '#34d399', '#6ee7b7', '#a7f3d0', '#059669', // Greens
+  '#ef4444', '#f87171', '#fca5a5', '#fecaca', '#dc2626', // Reds
+  '#f59e0b', '#fbbf24', '#fcd34d', '#fde68a', '#d97706', // Ambers
+  '#3b82f6', '#60a5fa', '#93bbfd', '#a5b4fc', '#2563eb', // Blues
+];
+
 const COLOR_MAP = {
   emerald: {
     border: 'border-emerald-500/20',
@@ -111,9 +126,6 @@ const BrokerChartTooltip = ({ active, payload, label }: any) => {
       <p className={`font-mono font-bold ${isBuy ? 'text-emerald-400' : 'text-red-400'}`}>
         {isBuy ? '+' : ''}{fmt(val)}
       </p>
-      <p className={`text-[9px] mt-0.5 ${isBuy ? 'text-emerald-600' : 'text-red-600'}`}>
-        {isBuy ? '▲ Net Buyer' : '▼ Net Seller'}
-      </p>
     </div>
   );
 };
@@ -121,13 +133,22 @@ const BrokerChartTooltip = ({ active, payload, label }: any) => {
 const TimeSeriesTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-[#111827] border border-white/10 rounded-xl p-3 text-[11px] shadow-2xl min-w-[160px]">
-      <p className="text-white font-black mb-1">{label}</p>
-      {payload.map((entry: any, idx: number) => (
-        <p key={idx} className="font-mono font-bold" style={{ color: entry.color }}>
-          {entry.name}: {fmt(entry.value)}
-        </p>
-      ))}
+    <div className="bg-[#111827] border border-white/10 rounded-xl p-3 text-[11px] shadow-2xl min-w-[180px] max-h-[300px] overflow-y-auto">
+      <p className="text-white font-black mb-2 text-xs">{label}</p>
+      {payload
+        .filter((entry: any) => entry.value !== undefined && entry.value !== 0)
+        .sort((a: any, b: any) => Math.abs(b.value) - Math.abs(a.value))
+        .map((entry: any, idx: number) => (
+          <div key={idx} className="flex items-center justify-between gap-4 py-0.5">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
+              <span className="text-[10px] text-gray-400">{entry.name}</span>
+            </div>
+            <span className="font-mono font-bold text-[10px]" style={{ color: entry.color }}>
+              {fmt(entry.value)}
+            </span>
+          </div>
+        ))}
     </div>
   );
 };
@@ -179,18 +200,15 @@ const TopBrokerCards = ({
               <span className={`text-xs font-black w-4 text-center ${
                 i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-300' : 'text-amber-700'
               }`}>{i + 1}</span>
-
               <span className="text-sm font-black text-white w-14 shrink-0 tracking-wide">
                 {r.broker_code}
               </span>
-
               <div className="flex-1 h-2 bg-[#0B0F19] rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full"
                   style={{ width: `${barPct}%`, backgroundColor: colors.fill }}
                 />
               </div>
-
               <span className={`text-[10px] font-bold shrink-0 ${colors.textBright}`}>
                 {Math.round(barPct)}%
               </span>
@@ -209,7 +227,9 @@ export default function BandarmologiPage() {
   const [trackerData, setTrackerData]   = useState<TrackerRow[]>([]);
   const [screenerData, setScreenerData] = useState<ScreenerRow[]>([]);
   const [historyData, setHistoryData]   = useState<HistoryRow[]>([]);
+  const [multiBrokerData, setMultiBrokerData] = useState<MultiBrokerRow[]>([]);
   const [timeSeriesView, setTimeSeriesView] = useState<TimeSeriesView>('net');
+  const [timeSeriesMode, setTimeSeriesMode] = useState<TimeSeriesMode>('brokers');
   const [loading, setLoading]           = useState(false);
   const [error, setError]               = useState<string | null>(null);
   const [sortCol, setSortCol]           = useState<keyof TrackerRow>('net_val');
@@ -240,13 +260,12 @@ export default function BandarmologiPage() {
     setActivePreset(id);
   };
 
-  // ── Validate stock code ────────────────────────────────────────────────────
   const validateCode = (input: string): string => {
     return input.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
   };
 
   // ── Load data ──────────────────────────────────────────────────────────────
-  const loadData = async (overrideCode?: string, overrideTab?: 'tracker' | 'screener') => {
+  const loadData = useCallback(async (overrideCode?: string, overrideTab?: 'tracker' | 'screener') => {
     const tab  = overrideTab ?? activeTab;
     const tick = validateCode(overrideCode ?? code);
     
@@ -280,9 +299,27 @@ export default function BandarmologiPage() {
         if (trackJson.error) throw new Error(trackJson.error);
         if (histJson.error) throw new Error(histJson.error);
         
-        setTrackerData(trackJson.data || []);
+        const trackData: TrackerRow[] = trackJson.data || [];
+        setTrackerData(trackData);
         setHistoryData(histJson.data || []);
         setScreenerData([]);
+
+        // Fetch multi-broker history for top 10B + 10S
+        const topBuyers = trackData.filter(r => r.net_val > 0).slice(0, 10);
+        const topSellers = trackData.filter(r => r.net_val < 0).slice(0, 10);
+        const topBrokerCodes = [...topBuyers, ...topSellers].map(r => r.broker_code);
+        
+        if (topBrokerCodes.length > 0) {
+          const multiRes = await fetch(
+            `/api/broker-tracker?action=multi_broker_history&code=${tick}&broker_codes=${topBrokerCodes.join(',')}&${params}`
+          );
+          const multiJson = await multiRes.json();
+          if (!multiJson.error) {
+            setMultiBrokerData(multiJson.data || []);
+          }
+        } else {
+          setMultiBrokerData([]);
+        }
       } else {
         const res = await fetch(`/api/broker-tracker?action=screener&${params}`);
         const json = await res.json();
@@ -290,12 +327,13 @@ export default function BandarmologiPage() {
         setScreenerData(json.data || []);
         setTrackerData([]);
         setHistoryData([]);
+        setMultiBrokerData([]);
       }
     } catch (e: any) {
       setError(e.message ?? 'Terjadi kesalahan.');
     }
     setLoading(false);
-  };
+  }, [activeTab, code, startDate, endDate]);
 
   // ── Sort functions ─────────────────────────────────────────────────────────
   const buyers = useMemo(() =>
@@ -341,6 +379,42 @@ export default function BandarmologiPage() {
       return { ...row, cumulative_net: cum };
     });
   }, [historyData]);
+
+  // ── Multi-broker timeseries pivoted ─────────────────────────────────────────
+  const brokerTimeseriesData = useMemo(() => {
+    // Pivot: { date, [broker_code]: net_val, ... }
+    const dateMap = new Map<string, Record<string, number>>();
+    
+    multiBrokerData.forEach(row => {
+      if (!dateMap.has(row.date)) {
+        dateMap.set(row.date, {});
+      }
+      const entry = dateMap.get(row.date)!;
+      entry[row.broker_code] = row.net_val;
+    });
+
+    return Array.from(dateMap.entries())
+      .map(([date, brokers]) => ({ date, ...brokers }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [multiBrokerData]);
+
+  // ── Get top broker codes for line chart ────────────────────────────────────
+  const topBrokerCodes = useMemo(() => {
+    const topBuyers = buyers.slice(0, 10).map(r => r.broker_code);
+    const topSellers = sellers.slice(0, 10).map(r => r.broker_code);
+    return [...topBuyers, ...topSellers];
+  }, [buyers, sellers]);
+
+  // ── Determine broker color ─────────────────────────────────────────────────
+  const getBrokerColor = useCallback((brokerCode: string, idx: number) => {
+    const isBuyer = buyers.slice(0, 10).some(b => b.broker_code === brokerCode);
+    if (isBuyer) {
+      const buyIdx = buyers.slice(0, 10).findIndex(b => b.broker_code === brokerCode);
+      return CHART_COLORS[buyIdx % 5]; // Greens
+    }
+    const sellIdx = sellers.slice(0, 10).findIndex(s => s.broker_code === brokerCode);
+    return CHART_COLORS[5 + (sellIdx % 5)]; // Reds
+  }, [buyers, sellers]);
 
   // ── Sort toggle ────────────────────────────────────────────────────────────
   const toggleSort = (col: keyof TrackerRow) => {
@@ -507,7 +581,6 @@ export default function BandarmologiPage() {
                   </button>
                 ))}
               </div>
-
               <div className="flex items-center gap-2">
                 <input
                   type="date"
@@ -565,19 +638,19 @@ export default function BandarmologiPage() {
             <TopBrokerCards rows={sellers} side="sell" totalBrokers={sellers.length} />
           </div>
 
-          {/* Buyer / Seller tables (moved above chart) */}
+          {/* Buyer / Seller tables */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <TrackerTable rows={buyers} side="buy" />
             <TrackerTable rows={sellers} side="sell" />
           </div>
 
-          {/* ── Per-Broker Net Flow Chart (top 10 each) ── */}
+          {/* ── Per-Broker Net Flow Chart ── */}
           <div className="bg-[#151C2C] p-5 rounded-2xl border border-white/5 shadow-xl">
             <div className="flex items-center gap-2 mb-1">
               <BarChart2 className="w-4 h-4 text-yellow-400" />
               <h3 className="text-sm font-black text-white">Broker Net Flow (Top 20)</h3>
               <span className="ml-auto text-[10px] text-gray-500">
-                {code} · {trackerData.length} brokers · {startDate} → {endDate}
+                {code} · {startDate} → {endDate}
               </span>
             </div>
             <p className="text-[10px] text-gray-600 mb-5">
@@ -594,32 +667,14 @@ export default function BandarmologiPage() {
                   barCategoryGap="18%"
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} />
-                  <XAxis
-                    dataKey="broker"
-                    stroke="#374151"
-                    fontSize={9}
-                    tick={{ fill: '#6b7280' }}
-                    interval={0}
-                    angle={-45}
-                    textAnchor="end"
-                    height={46}
-                  />
-                  <YAxis
-                    stroke="#374151"
-                    fontSize={10}
-                    tickFormatter={v => fmt(v)}
-                    width={64}
-                    tick={{ fill: '#6b7280' }}
-                  />
+                  <XAxis dataKey="broker" stroke="#374151" fontSize={9} tick={{ fill: '#6b7280' }}
+                    interval={0} angle={-45} textAnchor="end" height={46} />
+                  <YAxis stroke="#374151" fontSize={10} tickFormatter={v => fmt(v)} width={64} tick={{ fill: '#6b7280' }} />
                   <Tooltip content={<BrokerChartTooltip />} cursor={{ fill: '#ffffff06' }} />
                   <ReferenceLine y={0} stroke="#ffffff25" strokeWidth={1} />
                   <Bar dataKey="net_val" maxBarSize={30} radius={[2, 2, 0, 0]}>
                     {brokerChartData.map((entry, i) => (
-                      <Cell
-                        key={i}
-                        fill={entry.net_val >= 0 ? COLOR_MAP.emerald.fill : COLOR_MAP.red.fill}
-                        opacity={0.82}
-                      />
+                      <Cell key={i} fill={entry.net_val >= 0 ? COLOR_MAP.emerald.fill : COLOR_MAP.red.fill} opacity={0.82} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -627,91 +682,143 @@ export default function BandarmologiPage() {
             </div>
           </div>
 
-          {/* ── Time Series Chart (3 toggle views) ── */}
-          {historyData.length > 0 && (
-            <div className="bg-[#151C2C] p-5 rounded-2xl border border-white/5 shadow-xl">
-              <div className="flex items-center gap-2 mb-4 flex-wrap">
-                <LineChartIcon className="w-4 h-4 text-yellow-400" />
-                <h3 className="text-sm font-black text-white">Daily Flow Timeline</h3>
+          {/* ── Time Series Chart ── */}
+          <div className="bg-[#151C2C] p-5 rounded-2xl border border-white/5 shadow-xl">
+            <div className="flex items-center gap-2 mb-4 flex-wrap">
+              <LineChartIcon className="w-4 h-4 text-yellow-400" />
+              <h3 className="text-sm font-black text-white">Daily Flow Timeline</h3>
+              
+              <div className="flex gap-1 bg-[#0B0F19] rounded-lg p-1 ml-auto flex-wrap">
+                {/* Mode toggle */}
+                <button
+                  onClick={() => setTimeSeriesMode('market')}
+                  className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 ${
+                    timeSeriesMode === 'market' ? 'bg-blue-500 text-white' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <Users className="w-3 h-3" /> Market
+                </button>
+                <button
+                  onClick={() => setTimeSeriesMode('brokers')}
+                  className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 ${
+                    timeSeriesMode === 'brokers' ? 'bg-purple-500 text-white' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <TrendingUpIcon className="w-3 h-3" /> Top Brokers
+                </button>
                 
-                {/* Toggle buttons */}
-                <div className="flex gap-1 bg-[#0B0F19] rounded-lg p-1 ml-auto">
-                  <button
-                    onClick={() => setTimeSeriesView('net')}
-                    className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 ${
-                      timeSeriesView === 'net' ? 'bg-yellow-400 text-black' : 'text-gray-400 hover:text-white'
-                    }`}
-                  >
-                    <BarChart2 className="w-3 h-3" /> Net
-                  </button>
-                  <button
-                    onClick={() => setTimeSeriesView('stacked')}
-                    className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 ${
-                      timeSeriesView === 'stacked' ? 'bg-yellow-400 text-black' : 'text-gray-400 hover:text-white'
-                    }`}
-                  >
-                    <Layers className="w-3 h-3" /> Buy/Sell
-                  </button>
-                  <button
-                    onClick={() => setTimeSeriesView('cumulative')}
-                    className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 ${
-                      timeSeriesView === 'cumulative' ? 'bg-yellow-400 text-black' : 'text-gray-400 hover:text-white'
-                    }`}
-                  >
-                    <TrendingUpIcon className="w-3 h-3" /> Cumulative
-                  </button>
-                </div>
-              </div>
-
-              <div className="h-[300px] w-full">
-                <ResponsiveContainer>
-                  {timeSeriesView === 'net' ? (
-                    /* Daily Net Flow Bar Chart */
-                    <BarChart data={historyData} margin={{ left: 0, right: 8, bottom: 24, top: 4 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} />
-                      <XAxis dataKey="date" stroke="#374151" fontSize={10} tick={{ fill: '#6b7280' }} />
-                      <YAxis stroke="#374151" fontSize={10} tickFormatter={v => fmt(v)} width={64} tick={{ fill: '#6b7280' }} />
-                      <Tooltip content={<TimeSeriesTooltip />} cursor={{ fill: '#ffffff06' }} />
-                      <ReferenceLine y={0} stroke="#ffffff25" />
-                      <Bar dataKey="daily_net_val" name="Net Flow" maxBarSize={25} radius={[2, 2, 0, 0]}>
-                        {historyData.map((entry, i) => (
-                          <Cell key={i} fill={entry.daily_net_val >= 0 ? COLOR_MAP.emerald.fill : COLOR_MAP.red.fill} opacity={0.85} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  ) : timeSeriesView === 'stacked' ? (
-                    /* Buy vs Sell Stacked Bar */
-                    <BarChart data={historyData} margin={{ left: 0, right: 8, bottom: 24, top: 4 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} />
-                      <XAxis dataKey="date" stroke="#374151" fontSize={10} tick={{ fill: '#6b7280' }} />
-                      <YAxis stroke="#374151" fontSize={10} tickFormatter={v => fmt(v)} width={64} tick={{ fill: '#6b7280' }} />
-                      <Tooltip content={<TimeSeriesTooltip />} cursor={{ fill: '#ffffff06' }} />
-                      <Bar dataKey="daily_buy_val" name="Buy" stackId="flow" fill={COLOR_MAP.emerald.fill} opacity={0.8} radius={[2, 2, 0, 0]} />
-                      <Bar dataKey="daily_sell_val" name="Sell" stackId="flow" fill={COLOR_MAP.red.fill} opacity={0.8} radius={[0, 0, 0, 0]} />
-                    </BarChart>
-                  ) : (
-                    /* Cumulative Net Line Chart */
-                    <ComposedChart data={cumulativeData} margin={{ left: 0, right: 8, bottom: 24, top: 4 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} />
-                      <XAxis dataKey="date" stroke="#374151" fontSize={10} tick={{ fill: '#6b7280' }} />
-                      <YAxis stroke="#374151" fontSize={10} tickFormatter={v => fmt(v)} width={64} tick={{ fill: '#6b7280' }} />
-                      <Tooltip content={<TimeSeriesTooltip />} cursor={{ fill: '#ffffff06' }} />
-                      <ReferenceLine y={0} stroke="#ffffff25" />
-                      <Area
-                        type="monotone"
-                        dataKey="cumulative_net"
-                        name="Cumulative Net"
-                        fill={COLOR_MAP.yellow.fill}
-                        fillOpacity={0.15}
-                        stroke={COLOR_MAP.yellow.fill}
-                        strokeWidth={2}
-                      />
-                    </ComposedChart>
-                  )}
-                </ResponsiveContainer>
+                <span className="w-px bg-white/10 mx-1" />
+                
+                {/* View toggle (only for market mode) */}
+                {timeSeriesMode === 'market' && (
+                  <>
+                    <button
+                      onClick={() => setTimeSeriesView('net')}
+                      className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 ${
+                        timeSeriesView === 'net' ? 'bg-yellow-400 text-black' : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      <BarChart2 className="w-3 h-3" /> Net
+                    </button>
+                    <button
+                      onClick={() => setTimeSeriesView('stacked')}
+                      className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 ${
+                        timeSeriesView === 'stacked' ? 'bg-yellow-400 text-black' : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      <Layers className="w-3 h-3" /> Buy/Sell
+                    </button>
+                    <button
+                      onClick={() => setTimeSeriesView('cumulative')}
+                      className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 ${
+                        timeSeriesView === 'cumulative' ? 'bg-yellow-400 text-black' : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      <TrendingUpIcon className="w-3 h-3" /> Cumulative
+                    </button>
+                  </>
+                )}
               </div>
             </div>
-          )}
+
+            <div className="h-[400px] w-full">
+              <ResponsiveContainer>
+                {timeSeriesMode === 'market' ? (
+                  <>
+                    {timeSeriesView === 'net' && (
+                      <BarChart data={historyData} margin={{ left: 0, right: 8, bottom: 24, top: 4 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} />
+                        <XAxis dataKey="date" stroke="#374151" fontSize={10} tick={{ fill: '#6b7280' }} />
+                        <YAxis stroke="#374151" fontSize={10} tickFormatter={v => fmt(v)} width={64} tick={{ fill: '#6b7280' }} />
+                        <Tooltip content={<TimeSeriesTooltip />} cursor={{ fill: '#ffffff06' }} />
+                        <ReferenceLine y={0} stroke="#ffffff25" />
+                        <Bar dataKey="daily_net_val" name="Net Flow" maxBarSize={25} radius={[2, 2, 0, 0]}>
+                          {historyData.map((entry, i) => (
+                            <Cell key={i} fill={entry.daily_net_val >= 0 ? COLOR_MAP.emerald.fill : COLOR_MAP.red.fill} opacity={0.85} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    )}
+                    {timeSeriesView === 'stacked' && (
+                      <BarChart data={historyData} margin={{ left: 0, right: 8, bottom: 24, top: 4 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} />
+                        <XAxis dataKey="date" stroke="#374151" fontSize={10} tick={{ fill: '#6b7280' }} />
+                        <YAxis stroke="#374151" fontSize={10} tickFormatter={v => fmt(v)} width={64} tick={{ fill: '#6b7280' }} />
+                        <Tooltip content={<TimeSeriesTooltip />} cursor={{ fill: '#ffffff06' }} />
+                        <Bar dataKey="daily_buy_val" name="Buy" stackId="flow" fill={COLOR_MAP.emerald.fill} opacity={0.8} radius={[2, 2, 0, 0]} />
+                        <Bar dataKey="daily_sell_val" name="Sell" stackId="flow" fill={COLOR_MAP.red.fill} opacity={0.8} radius={[0, 0, 0, 0]} />
+                      </BarChart>
+                    )}
+                    {timeSeriesView === 'cumulative' && (
+                      <ComposedChart data={cumulativeData} margin={{ left: 0, right: 8, bottom: 24, top: 4 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} />
+                        <XAxis dataKey="date" stroke="#374151" fontSize={10} tick={{ fill: '#6b7280' }} />
+                        <YAxis stroke="#374151" fontSize={10} tickFormatter={v => fmt(v)} width={64} tick={{ fill: '#6b7280' }} />
+                        <Tooltip content={<TimeSeriesTooltip />} cursor={{ fill: '#ffffff06' }} />
+                        <ReferenceLine y={0} stroke="#ffffff25" />
+                        <Area type="monotone" dataKey="cumulative_net" name="Cumulative Net"
+                          fill={COLOR_MAP.yellow.fill} fillOpacity={0.15}
+                          stroke={COLOR_MAP.yellow.fill} strokeWidth={2} />
+                      </ComposedChart>
+                    )}
+                  </>
+                ) : (
+                  /* Top Brokers Multi-Line Chart */
+                  <LineChart data={brokerTimeseriesData} margin={{ left: 0, right: 8, bottom: 24, top: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} />
+                    <XAxis dataKey="date" stroke="#374151" fontSize={10} tick={{ fill: '#6b7280' }} />
+                    <YAxis stroke="#374151" fontSize={10} tickFormatter={v => fmt(v)} width={64} tick={{ fill: '#6b7280' }} />
+                    <Tooltip content={<TimeSeriesTooltip />} cursor={{ fill: '#ffffff06' }} />
+                    <ReferenceLine y={0} stroke="#ffffff25" />
+                    <Legend 
+                      wrapperStyle={{ fontSize: '9px', color: '#6b7280' }}
+                      iconType="circle"
+                      iconSize={6}
+                    />
+                    {topBrokerCodes.map((bc, idx) => (
+                      <Line
+                        key={bc}
+                        type="monotone"
+                        dataKey={bc}
+                        name={bc}
+                        stroke={getBrokerColor(bc, idx)}
+                        strokeWidth={1.5}
+                        dot={false}
+                        activeDot={{ r: 3 }}
+                        connectNulls
+                      />
+                    ))}
+                  </LineChart>
+                )}
+              </ResponsiveContainer>
+            </div>
+            
+            {timeSeriesMode === 'brokers' && multiBrokerData.length === 0 && (
+              <p className="text-[10px] text-gray-600 text-center mt-2">
+                Data timeseries broker tidak tersedia untuk rentang ini
+              </p>
+            )}
+          </div>
         </div>
       )}
 
@@ -775,7 +882,7 @@ export default function BandarmologiPage() {
                         </span>
                       </td>
                       <td className="px-5 py-3 text-right">
-                        <span className={`font-black ${r.power_score >= 0 ? 'text-yellow-400' : 'text-red-400'}`}>
+                        <span className="font-black text-yellow-400">
                           {r.power_score.toFixed(1)}
                         </span>
                       </td>
