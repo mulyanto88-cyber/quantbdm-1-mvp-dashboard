@@ -1,14 +1,14 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import {
-  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Legend, ReferenceLine,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, ReferenceLine, Cell,
 } from 'recharts';
 import {
-  BarChart3, Loader2, ArrowRightLeft, Search, Activity,
+  BarChart3, Loader2, Search, Activity,
   TrendingUp, TrendingDown, RefreshCw, AlertCircle,
-  ChevronDown, ChevronUp, Users,
+  ChevronDown, ChevronUp, Users, Calendar,
 } from 'lucide-react';
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
@@ -19,6 +19,7 @@ const fmt = (v: number, short = true) => {
     if (a >= 1e12) return `${(v / 1e12).toFixed(2)}T`;
     if (a >= 1e9)  return `${(v / 1e9).toFixed(2)}B`;
     if (a >= 1e6)  return `${(v / 1e6).toFixed(1)}M`;
+    if (a >= 1e3)  return `${(v / 1e3).toFixed(0)}K`;
   }
   return v.toLocaleString('id-ID');
 };
@@ -43,14 +44,6 @@ interface TrackerRow {
   sell_avg_price: number;
 }
 
-interface HistoryRow {
-  date: string;
-  daily_net_val: number;
-  daily_buy_val: number;
-  daily_sell_val: number;
-  daily_avg_price: number;
-}
-
 interface ScreenerRow {
   stock_code: string;
   total_buy: number;
@@ -62,20 +55,20 @@ interface ScreenerRow {
   power_score: number;
 }
 
-// ─── Custom tooltip ──────────────────────────────────────────────────────────
-const ChartTooltip = ({ active, payload, label }: any) => {
+// ─── Broker Chart Tooltip ────────────────────────────────────────────────────
+const BrokerChartTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
+  const val = payload[0]?.value ?? 0;
+  const isBuy = val >= 0;
   return (
-    <div className="bg-[#111827] border border-white/10 rounded-xl p-3 text-[11px] shadow-2xl min-w-[180px]">
-      <p className="text-gray-400 mb-2 font-bold">{label}</p>
-      {payload.map((p: any, i: number) => (
-        <div key={i} className="flex justify-between gap-4 items-center mb-1">
-          <span style={{ color: p.color }}>{p.name}</span>
-          <span className="font-mono font-bold" style={{ color: p.color }}>
-            {p.name === 'Avg Price' ? fmtPrice(p.value) : fmt(p.value)}
-          </span>
-        </div>
-      ))}
+    <div className="bg-[#111827] border border-white/10 rounded-xl p-3 text-[11px] shadow-2xl min-w-[140px]">
+      <p className="text-white font-black mb-1">{label}</p>
+      <p className={`font-mono font-bold ${isBuy ? 'text-emerald-400' : 'text-red-400'}`}>
+        {isBuy ? '+' : ''}{fmt(val)}
+      </p>
+      <p className={`text-[9px] mt-0.5 ${isBuy ? 'text-emerald-600' : 'text-red-600'}`}>
+        {isBuy ? '▲ Net Buyer' : '▼ Net Seller'}
+      </p>
     </div>
   );
 };
@@ -92,7 +85,7 @@ const FlowBar = ({ buy, sell }: { buy: number; sell: number }) => {
   );
 };
 
-// ─── Top-3 broker mini card row ──────────────────────────────────────────────
+// ─── Top-3 broker summary — simplified, code only ────────────────────────────
 const TopBrokerCards = ({
   rows, side, totalBrokers,
 }: { rows: TrackerRow[]; side: 'buy' | 'sell'; totalBrokers: number }) => {
@@ -102,9 +95,8 @@ const TopBrokerCards = ({
   const total  = rows.reduce((s, r) => s + Math.abs(r.net_val), 0);
 
   return (
-    <div className={`bg-[#151C2C] rounded-2xl border border-${accent}-500/20 p-4 space-y-3`}>
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className={`bg-[#151C2C] rounded-2xl border border-${accent}-500/20 p-4`}>
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           {isBuy
             ? <TrendingUp  className="w-3.5 h-3.5 text-emerald-400" />
@@ -113,43 +105,36 @@ const TopBrokerCards = ({
             Top 3 Net {isBuy ? 'Buyers' : 'Sellers'}
           </span>
         </div>
-        <span className="text-[10px] text-gray-500">{totalBrokers} brokers · {fmt(total)} total</span>
+        <span className="text-[10px] text-gray-500">{totalBrokers} brokers</span>
       </div>
 
-      {/* 3 broker rows */}
-      <div className="space-y-2">
+      <div className="space-y-3">
+        {top3.length === 0 && (
+          <p className="text-[10px] text-gray-600 text-center py-2">No data</p>
+        )}
         {top3.map((r, i) => {
-          const netAbs  = Math.abs(r.net_val);
-          const barPct  = total > 0 ? (netAbs / total) * 100 : 0;
-          const avgPx   = isBuy ? r.buy_avg_price : r.sell_avg_price;
+          const netAbs = Math.abs(r.net_val);
+          const barPct = total > 0 ? (netAbs / total) * 100 : 0;
           return (
             <div key={r.broker_code} className="flex items-center gap-3">
-              {/* Rank */}
-              <span className={`text-[10px] font-black w-4 text-center ${
-                i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-400' : 'text-amber-700'
+              <span className={`text-xs font-black w-4 text-center ${
+                i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-300' : 'text-amber-700'
               }`}>{i + 1}</span>
 
-              {/* Code + name */}
-              <div className="min-w-0 w-20">
-                <p className="text-xs font-black text-white leading-tight">{r.broker_code}</p>
-                <p className="text-[9px] text-gray-500 truncate leading-tight">{r.broker_name || '—'}</p>
-              </div>
+              <span className="text-sm font-black text-white w-14 shrink-0 tracking-wide">
+                {r.broker_code}
+              </span>
 
-              {/* Bar */}
-              <div className="flex-1 h-1.5 bg-[#0B0F19] rounded-full overflow-hidden">
+              <div className="flex-1 h-2 bg-[#0B0F19] rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full ${isBuy ? 'bg-emerald-500' : 'bg-red-500'}`}
                   style={{ width: `${barPct}%` }}
                 />
               </div>
 
-              {/* Value + avg price */}
-              <div className="text-right shrink-0">
-                <p className={`text-xs font-black ${isBuy ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {fmt(netAbs)}
-                </p>
-                <p className="text-[9px] text-gray-500 font-mono">{fmtPrice(avgPx)}</p>
-              </div>
+              <span className={`text-[10px] font-bold shrink-0 ${isBuy ? 'text-emerald-500' : 'text-red-500'}`}>
+                {Math.round(barPct)}%
+              </span>
             </div>
           );
         })}
@@ -160,43 +145,53 @@ const TopBrokerCards = ({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function BandarmologiPage() {
-  const [activeTab, setActiveTab]     = useState<'tracker' | 'screener'>('tracker');
-  const [code, setCode]               = useState('BBCA');
-  const [rangeType, setRangeType]     = useState('5');
-  const [startDate, setStartDate]     = useState('');
-  const [endDate, setEndDate]         = useState('');
-  const [trackerData, setTrackerData] = useState<TrackerRow[]>([]);
-  const [historyData, setHistoryData] = useState<HistoryRow[]>([]);
+  const [activeTab, setActiveTab]       = useState<'tracker' | 'screener'>('tracker');
+  const [code, setCode]                 = useState('BBCA');
+  const [trackerData, setTrackerData]   = useState<TrackerRow[]>([]);
   const [screenerData, setScreenerData] = useState<ScreenerRow[]>([]);
-  const [loading, setLoading]         = useState(false);
-  const [error, setError]             = useState<string | null>(null);
-  const [sortCol, setSortCol]         = useState<keyof TrackerRow>('net_val');
-  const [sortDir, setSortDir]         = useState<'asc' | 'desc'>('desc');
+  const [loading, setLoading]           = useState(false);
+  const [error, setError]               = useState<string | null>(null);
+  const [sortCol, setSortCol]           = useState<keyof TrackerRow>('net_val');
+  const [sortDir, setSortDir]           = useState<'asc' | 'desc'>('desc');
 
-  const urlParams = useCallback(() =>
-    rangeType === 'custom'
-      ? `startDate=${startDate}&endDate=${endDate}`
-      : `days=${rangeType}`,
-  [rangeType, startDate, endDate]);
+  // ── Date range — always explicit dates ────────────────────────────────────
+  const [startDate, setStartDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 5);
+    return d.toISOString().split('T')[0];
+  });
+  const [endDate, setEndDate]         = useState<string>(new Date().toISOString().split('T')[0]);
+  const [activePreset, setActivePreset] = useState<string>('5d');
 
+  const presets = [
+    { label: 'Hari Ini', days: 0,  id: '1d'  },
+    { label: '1 Minggu', days: 5,  id: '5d'  },
+    { label: '1 Bulan',  days: 20, id: '20d' },
+    { label: '3 Bulan',  days: 60, id: '60d' },
+  ];
+
+  const applyPreset = (days: number, id: string) => {
+    const end   = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - days);
+    setEndDate(end.toISOString().split('T')[0]);
+    setStartDate(start.toISOString().split('T')[0]);
+    setActivePreset(id);
+  };
+
+  // ── Load data ──────────────────────────────────────────────────────────────
   const loadData = async (overrideCode?: string, overrideTab?: 'tracker' | 'screener') => {
-    const tab  = overrideTab  ?? activeTab;
+    const tab  = overrideTab ?? activeTab;
     const tick = (overrideCode ?? code).trim().toUpperCase();
-
     setLoading(true);
     setError(null);
+    const params = `startDate=${startDate}&endDate=${endDate}`;
     try {
-      const params = urlParams();
-
       if (tab === 'tracker') {
-        const [resT, resH] = await Promise.all([
-          fetch(`/api/broker-tracker?action=tracker&code=${tick}&${params}`),
-          fetch(`/api/broker-tracker?action=history&code=${tick}&${params}`),
-        ]);
-        const [jsonT, jsonH] = await Promise.all([resT.json(), resH.json()]);
-        if (jsonT.error) throw new Error(jsonT.error);
-        setTrackerData(jsonT.data || []);
-        setHistoryData(jsonH.data || []);
+        const res  = await fetch(`/api/broker-tracker?action=tracker&code=${tick}&${params}`);
+        const json = await res.json();
+        if (json.error) throw new Error(json.error);
+        setTrackerData(json.data || []);
         setScreenerData([]);
       } else {
         const res  = await fetch(`/api/broker-tracker?action=screener&${params}`);
@@ -204,7 +199,6 @@ export default function BandarmologiPage() {
         if (json.error) throw new Error(json.error);
         setScreenerData(json.data || []);
         setTrackerData([]);
-        setHistoryData([]);
       }
     } catch (e: any) {
       setError(e.message ?? 'Terjadi kesalahan.');
@@ -212,26 +206,42 @@ export default function BandarmologiPage() {
     setLoading(false);
   };
 
-  // ─── Sort tracker data ───────────────────────────────────────────────────
-  const sortedTracker = useMemo(() => {
-    return [...trackerData].sort((a, b) => {
-      const va = a[sortCol] as number;
-      const vb = b[sortCol] as number;
-      return sortDir === 'desc' ? vb - va : va - vb;
-    });
-  }, [trackerData, sortCol, sortDir]);
+  // ── Sort: buyers by net_val DESC, sellers by net_val ASC (most negative = biggest seller first) ──
+  const buyers = useMemo(() =>
+    [...trackerData]
+      .filter(r => r.net_val > 0)
+      .sort((a, b) => {
+        if (sortCol === 'net_val')
+          return sortDir === 'desc' ? b.net_val - a.net_val : a.net_val - b.net_val;
+        const va = a[sortCol] as number;
+        const vb = b[sortCol] as number;
+        return sortDir === 'desc' ? vb - va : va - vb;
+      }),
+    [trackerData, sortCol, sortDir],
+  );
 
-  const buyers  = useMemo(() => sortedTracker.filter(r => r.net_val > 0), [sortedTracker]);
-  const sellers = useMemo(() => sortedTracker.filter(r => r.net_val < 0), [sortedTracker]);
+  const sellers = useMemo(() =>
+    [...trackerData]
+      .filter(r => r.net_val < 0)
+      .sort((a, b) => {
+        if (sortCol === 'net_val')
+          // DESC = most negative first (a.net_val - b.net_val puts most negative first)
+          return sortDir === 'desc' ? a.net_val - b.net_val : b.net_val - a.net_val;
+        // Other cols: sort by absolute magnitude
+        const va = Math.abs(a[sortCol] as number);
+        const vb = Math.abs(b[sortCol] as number);
+        return sortDir === 'desc' ? vb - va : va - vb;
+      }),
+    [trackerData, sortCol, sortDir],
+  );
 
-  // ─── History chart data with cumulative ────────────────────────────────
-  const chartData = useMemo(() => {
-    let cumulative = 0;
-    return historyData.map(d => {
-      cumulative += d.daily_net_val;
-      return { ...d, cumulative_net: cumulative };
-    });
-  }, [historyData]);
+  // ── Per-broker net flow chart data ─────────────────────────────────────────
+  const brokerChartData = useMemo(() =>
+    [...trackerData]
+      .sort((a, b) => b.net_val - a.net_val)
+      .map(r => ({ broker: r.broker_code, net_val: r.net_val })),
+    [trackerData],
+  );
 
   const toggleSort = (col: keyof TrackerRow) => {
     if (sortCol === col) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
@@ -244,21 +254,21 @@ export default function BandarmologiPage() {
       : <ChevronUp   className="w-3 h-3 text-yellow-400" />;
   };
 
-  // ─── Tracker table (buyers or sellers) ──────────────────────────────────
+  // ─── Tracker table ─────────────────────────────────────────────────────────
   const TrackerTable = ({
     rows, side,
   }: { rows: TrackerRow[]; side: 'buy' | 'sell' }) => {
-    const isBuy   = side === 'buy';
-    const accent  = isBuy ? 'emerald' : 'red';
-    const label   = isBuy ? 'Top Buyers' : 'Top Sellers';
-    const slice   = rows.slice(0, 15);
+    const isBuy  = side === 'buy';
+    const accent = isBuy ? 'emerald' : 'red';
+    const label  = isBuy ? 'Top Buyers' : 'Top Sellers';
+    const slice  = rows.slice(0, 15);
 
     return (
       <div className={`bg-[#151C2C] rounded-2xl border border-${accent}-500/20 overflow-hidden shadow-xl`}>
         <div className={`px-4 py-3 bg-${accent}-500/10 border-b border-${accent}-500/20 flex items-center gap-2`}>
           {isBuy
             ? <TrendingUp  className="w-3.5 h-3.5 text-emerald-400" />
-            : <TrendingDown className="w-3.5 h-3.5 text-red-400"     />}
+            : <TrendingDown className="w-3.5 h-3.5 text-red-400"    />}
           <span className={`text-[10px] uppercase tracking-widest font-black text-${accent}-400`}>{label}</span>
           <span className="ml-auto text-[10px] text-gray-500 font-mono">{slice.length} brokers</span>
         </div>
@@ -357,59 +367,87 @@ export default function BandarmologiPage() {
       </div>
 
       {/* ── Control Panel ── */}
-      <div className="bg-[#151C2C] p-4 rounded-2xl border border-white/5 flex flex-wrap gap-3 items-end shadow-lg">
-        {activeTab === 'tracker' && (
-          <div className="space-y-1">
-            <label className="text-[10px] uppercase font-bold text-gray-500 ml-1">Stock Ticker</label>
-            <div className="relative">
-              <Search className="w-3 h-3 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-              <input
-                value={code}
-                onChange={e => setCode(e.target.value.toUpperCase())}
-                onKeyDown={e => e.key === 'Enter' && loadData()}
-                className="w-28 bg-[#0B0F19] border border-white/5 rounded-lg pl-8 pr-3 py-2
-                           text-sm font-black text-yellow-400 focus:ring-1 focus:ring-yellow-400
-                           outline-none placeholder:text-gray-600"
-                placeholder="BBCA"
-              />
+      <div className="bg-[#151C2C] p-4 rounded-2xl border border-white/5 shadow-lg">
+        <div className="flex flex-wrap gap-4 items-end">
+          {/* Stock Ticker */}
+          {activeTab === 'tracker' && (
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold text-gray-500 ml-1">Stock Ticker</label>
+              <div className="relative">
+                <Search className="w-3 h-3 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                <input
+                  value={code}
+                  onChange={e => setCode(e.target.value.toUpperCase())}
+                  onKeyDown={e => e.key === 'Enter' && loadData()}
+                  className="w-28 bg-[#0B0F19] border border-white/5 rounded-lg pl-8 pr-3 py-2
+                             text-sm font-black text-yellow-400 focus:ring-1 focus:ring-yellow-400
+                             outline-none placeholder:text-gray-600"
+                  placeholder="BBCA"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Time Horizon — preset buttons + always-visible date pickers */}
+          <div className="space-y-1.5 flex-1 min-w-0">
+            <label className="text-[10px] uppercase font-bold text-gray-500 ml-1 flex items-center gap-1.5">
+              <Calendar className="w-3 h-3" /> Time Horizon
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Quick presets */}
+              <div className="flex gap-1 bg-[#0B0F19] rounded-lg p-1 shrink-0">
+                {presets.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => applyPreset(p.days, p.id)}
+                    className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all whitespace-nowrap ${
+                      activePreset === p.id
+                        ? 'bg-yellow-400 text-black shadow'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Date pickers — always visible, editable */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={e => { setStartDate(e.target.value); setActivePreset('custom'); }}
+                  className="bg-[#0B0F19] border border-white/10 rounded-lg px-3 py-1.5
+                             text-[11px] text-gray-300 outline-none cursor-pointer
+                             focus:border-yellow-400/40 focus:ring-1 focus:ring-yellow-400/20 transition-all"
+                />
+                <span className="text-gray-600 text-xs select-none">→</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={e => { setEndDate(e.target.value); setActivePreset('custom'); }}
+                  className="bg-[#0B0F19] border border-white/10 rounded-lg px-3 py-1.5
+                             text-[11px] text-gray-300 outline-none cursor-pointer
+                             focus:border-yellow-400/40 focus:ring-1 focus:ring-yellow-400/20 transition-all"
+                />
+              </div>
             </div>
           </div>
-        )}
-        <div className="space-y-1">
-          <label className="text-[10px] uppercase font-bold text-gray-500 ml-1">Time Horizon</label>
-          <select
-            value={rangeType}
-            onChange={e => setRangeType(e.target.value)}
-            className="bg-[#0B0F19] border border-white/5 rounded-lg px-4 py-2 text-xs font-bold text-white outline-none"
+
+          {/* Run button */}
+          <button
+            onClick={() => loadData()}
+            disabled={loading}
+            className="bg-yellow-400 text-black px-7 py-2 rounded-lg font-black text-xs
+                       hover:bg-yellow-300 active:scale-95 transition-all flex items-center gap-2
+                       disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-yellow-400/20"
           >
-            <option value="1">Hari Ini</option>
-            <option value="5">1 Minggu</option>
-            <option value="20">1 Bulan</option>
-            <option value="60">3 Bulan</option>
-            <option value="custom">Custom Date</option>
-          </select>
+            {loading
+              ? <Loader2 className="animate-spin w-3.5 h-3.5" />
+              : <RefreshCw className="w-3.5 h-3.5" />}
+            {activeTab === 'tracker' ? 'RUN TRACKER' : 'SCAN ACCUM'}
+          </button>
         </div>
-        {rangeType === 'custom' && (
-          <div className="flex gap-2 items-center">
-            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-              className="bg-[#0B0F19] border border-white/5 rounded-lg px-3 py-2 text-xs text-gray-300 outline-none" />
-            <span className="text-gray-600 text-xs">→</span>
-            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-              className="bg-[#0B0F19] border border-white/5 rounded-lg px-3 py-2 text-xs text-gray-300 outline-none" />
-          </div>
-        )}
-        <button
-          onClick={() => loadData()}
-          disabled={loading}
-          className="bg-yellow-400 text-black px-7 py-2 rounded-lg font-black text-xs
-                     hover:bg-yellow-300 active:scale-95 transition-all flex items-center gap-2
-                     disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-yellow-400/20"
-        >
-          {loading
-            ? <Loader2 className="animate-spin w-3.5 h-3.5" />
-            : <RefreshCw className="w-3.5 h-3.5" />}
-          {activeTab === 'tracker' ? 'RUN TRACKER' : 'SCAN ACCUM'}
-        </button>
       </div>
 
       {/* ── Error ── */}
@@ -426,11 +464,66 @@ export default function BandarmologiPage() {
       {activeTab === 'tracker' && trackerData.length > 0 && (
         <div className="space-y-5">
 
-
-          {/* Top 3 broker summary cards */}
+          {/* Top 3 summary cards — broker code only */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <TopBrokerCards rows={buyers}  side="buy"  totalBrokers={buyers.length}  />
             <TopBrokerCards rows={sellers} side="sell" totalBrokers={sellers.length} />
+          </div>
+
+          {/* ── Per-Broker Net Flow Chart ── */}
+          <div className="bg-[#151C2C] p-5 rounded-2xl border border-white/5 shadow-xl">
+            <div className="flex items-center gap-2 mb-1">
+              <BarChart3 className="w-4 h-4 text-yellow-400" />
+              <h3 className="text-sm font-black text-white">Broker Net Flow</h3>
+              <span className="ml-auto text-[10px] text-gray-500">
+                {code} · {trackerData.length} brokers · {startDate} → {endDate}
+              </span>
+            </div>
+            <p className="text-[10px] text-gray-600 mb-5">
+              <span className="text-emerald-600">■</span> Net Buyer &nbsp;·&nbsp;
+              <span className="text-red-600">■</span> Net Seller &nbsp;·&nbsp;
+              Diurutkan dari net buy terbesar → net sell terbesar
+            </p>
+
+            <div className="h-[300px] w-full">
+              <ResponsiveContainer>
+                <BarChart
+                  data={brokerChartData}
+                  margin={{ left: 0, right: 8, bottom: brokerChartData.length > 20 ? 36 : 24, top: 4 }}
+                  barCategoryGap={brokerChartData.length > 30 ? '8%' : '18%'}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} />
+                  <XAxis
+                    dataKey="broker"
+                    stroke="#374151"
+                    fontSize={9}
+                    tick={{ fill: '#6b7280' }}
+                    interval={0}
+                    angle={-45}
+                    textAnchor="end"
+                    height={brokerChartData.length > 20 ? 46 : 32}
+                  />
+                  <YAxis
+                    stroke="#374151"
+                    fontSize={10}
+                    tickFormatter={v => fmt(v)}
+                    width={64}
+                    tick={{ fill: '#6b7280' }}
+                  />
+                  <Tooltip content={<BrokerChartTooltip />} cursor={{ fill: '#ffffff06' }} />
+                  <ReferenceLine y={0} stroke="#ffffff25" strokeWidth={1} />
+                  <Bar dataKey="net_val" maxBarSize={30} radius={[2, 2, 0, 0]}>
+                    {brokerChartData.map((entry, i) => (
+                      <Cell
+                        key={i}
+                        fill={entry.net_val >= 0 ? '#10b981' : '#ef4444'}
+                        opacity={0.82}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
 
           {/* Buyer / Seller tables */}
@@ -438,47 +531,6 @@ export default function BandarmologiPage() {
             <TrackerTable rows={buyers}  side="buy"  />
             <TrackerTable rows={sellers} side="sell" />
           </div>
-
-          {/* History chart */}
-          {chartData.length > 0 && (
-            <div className="bg-[#151C2C] p-5 rounded-2xl border border-white/5 shadow-xl">
-              <div className="flex items-center gap-2 mb-6">
-                <ArrowRightLeft className="w-4 h-4 text-yellow-400" />
-                <h3 className="text-sm font-black text-white">Daily Net Flow & Avg Price</h3>
-                <span className="ml-auto text-[10px] text-gray-500">{code} · {chartData.length} trading days</span>
-              </div>
-              <div className="h-[360px] w-full">
-                <ResponsiveContainer>
-                  <ComposedChart data={chartData} margin={{ left: 0, right: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} />
-                    <XAxis dataKey="date" stroke="#374151" fontSize={10} tickMargin={8}
-                           tick={{ fill: '#6b7280' }} />
-                    {/* Left Y: net val bars */}
-                    <YAxis yAxisId="net" stroke="#374151" fontSize={10}
-                           tickFormatter={(v) => fmt(v)} width={62} tick={{ fill: '#6b7280' }} />
-                    {/* Right Y: avg price */}
-                    <YAxis yAxisId="price" orientation="right" stroke="#374151" fontSize={10}
-                           tickFormatter={v => Math.round(v).toLocaleString()} width={52}
-                           tick={{ fill: '#6b7280' }} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Legend wrapperStyle={{ paddingTop: '16px', fontSize: '11px' }} />
-                    <ReferenceLine yAxisId="net" y={0} stroke="#ffffff15" />
-                    {/* Buy/Sell bars stacked-style */}
-                    <Bar yAxisId="net" dataKey="daily_net_val" name="Net Flow"
-                         fill="#10b981" opacity={0.8} radius={[2, 2, 0, 0]}
-                         label={false}
-                         // Dynamic color per bar
-                         isAnimationActive={true}
-                    />
-                    {/* Avg price line */}
-                    <Line yAxisId="price" type="monotone" dataKey="daily_avg_price"
-                          name="Avg Price" stroke="#facc15" strokeWidth={2}
-                          strokeDasharray="5 5" dot={false} />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
@@ -529,7 +581,6 @@ export default function BandarmologiPage() {
                       onClick={() => {
                         setCode(r.stock_code);
                         setActiveTab('tracker');
-                        // loadData will pick up the new code via overrideCode
                         setTimeout(() => loadData(r.stock_code, 'tracker'), 0);
                       }}
                     >
