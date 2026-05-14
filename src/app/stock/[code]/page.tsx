@@ -650,11 +650,13 @@ export default function StockDetailPage() {
                   <Globe className="w-4 h-4 text-emerald-400" />
                   <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Real Float</span>
                 </div>
-                <p className="text-4xl font-black text-white mb-1 tracking-tighter">{holderAnalytics?.realFreeFloat?.toFixed(1) || '--'}%</p>
+                <p className="text-4xl font-black text-white mb-1 tracking-tighter">
+                  {holderAnalytics?.realFreeFloat?.toFixed(1) ?? stockData?.free_float?.toFixed(1) ?? '--'}%
+                </p>
                 <span className={`text-[10px] font-black px-2.5 py-1 rounded-xl ${
                   (holderAnalytics?.realFreeFloat || 0) < 20 ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                 }`}>
-                  {(holderAnalytics?.realFreeFloat || 0) < 20 ? '🔥 TIGHT' : '💎 LIKUID'}
+                  {((holderAnalytics?.realFreeFloat ?? stockData?.free_float) || 0) < 20 ? '🔥 TIGHT' : '💎 LIKUID'}
                 </span>
               </div>
 
