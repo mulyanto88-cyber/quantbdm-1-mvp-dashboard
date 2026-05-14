@@ -21,7 +21,6 @@ function buildDateFilter(
   endDate: string | null
 ): { clause: string; params: (string | number)[] } {
   if (startDate && endDate) {
-    // Validate date format
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) {
       throw new Error('Format tanggal tidak valid. Gunakan YYYY-MM-DD');
@@ -61,7 +60,8 @@ export async function GET(req: NextRequest) {
   const startDate = searchParams.get('startDate');
   const endDate = searchParams.get('endDate');
   const brokerCode = searchParams.get('broker_code') || '';
-  const minTotalValue = searchParams.get('min_total_value') || '1000000000'; // Default 1B
+  const brokerCodes = searchParams.get('broker_codes') || ''; // comma-separated for multi
+  const minTotalValue = searchParams.get('min_total_value') || '1000000000';
   const minBrokerCount = searchParams.get('min_broker_count') || '3';
   const minBuyBrokerCount = searchParams.get('min_buy_broker_count') || '2';
 
@@ -74,44 +74,36 @@ export async function GET(req: NextRequest) {
 
   let query = '';
   let queryParams: any[] = [...dateFilter.params];
-  let paramIndex = dateFilter.params.length + 1;
+  let paramIdx = dateFilter.params.length;
 
   try {
     // ── 1. TRACKER ────────────────────────────────────────────────────────────
     if (action === 'tracker') {
       const cleanCode = validateStockCode(code);
+      paramIdx++;
       queryParams.push(cleanCode);
       
       query = `
         SELECT
           broker_code,
           MAX(broker_name)                                                              AS broker_name,
-
-          -- Buy side
           SUM(CASE WHEN value > 0 THEN value ELSE 0 END)::DOUBLE                       AS buy_val,
           SUM(CASE WHEN value > 0 THEN lot   ELSE 0 END)::DOUBLE                       AS buy_lot,
           SUM(CASE WHEN value > 0 THEN freq  ELSE 0 END)::BIGINT                       AS buy_freq,
-
-          -- Sell side (lot stored as negative in DB for SELL rows → use ABS)
           ABS(SUM(CASE WHEN value < 0 THEN value ELSE 0 END))::DOUBLE                  AS sell_val,
           ABS(SUM(CASE WHEN value < 0 THEN lot   ELSE 0 END))::DOUBLE                  AS sell_lot,
           SUM(CASE WHEN value < 0 THEN freq  ELSE 0 END)::BIGINT                       AS sell_freq,
-
-          -- Net
           SUM(value)::DOUBLE                                                            AS net_val,
           SUM(lot)::DOUBLE                                                              AS net_lot,
           (SUM(CASE WHEN value > 0 THEN freq ELSE 0 END) +
            SUM(CASE WHEN value < 0 THEN freq ELSE 0 END))::BIGINT                      AS total_freq,
-
-          -- Avg prices (weighted): use ABS so denominator is always positive
           (SUM(CASE WHEN value > 0 THEN value ELSE 0 END) /
             NULLIF(SUM(CASE WHEN value > 0 THEN lot ELSE 0 END) * 100.0, 0))::DOUBLE       AS buy_avg_price,
           (ABS(SUM(CASE WHEN value < 0 THEN value ELSE 0 END)) /
             NULLIF(ABS(SUM(CASE WHEN value < 0 THEN lot ELSE 0 END)) * 100.0, 0))::DOUBLE  AS sell_avg_price
-
         FROM my_db.main.broker_activity
         WHERE ${dateFilter.clause}
-          AND LEFT(stock_code, 4) = $${paramIndex}
+          AND LEFT(stock_code, 4) = $${paramIdx}
         GROUP BY broker_code
         ORDER BY net_val DESC
       `;
@@ -119,6 +111,7 @@ export async function GET(req: NextRequest) {
     // ── 2. HISTORY (market-wide for a stock) ──────────────────────────────────
     } else if (action === 'history') {
       const cleanCode = validateStockCode(code);
+      paramIdx++;
       queryParams.push(cleanCode);
 
       query = `
@@ -134,15 +127,16 @@ export async function GET(req: NextRequest) {
             NULLIF(SUM(CASE WHEN value > 0 THEN lot ELSE 0 END) * 100.0, 0))::DOUBLE AS daily_avg_price
         FROM my_db.main.broker_activity
         WHERE ${dateFilter.clause}
-          AND LEFT(stock_code, 4) = $${paramIndex}
+          AND LEFT(stock_code, 4) = $${paramIdx}
         GROUP BY date
         ORDER BY date ASC
       `;
 
-    // ── 3. BROKER HISTORY (single broker flow over time) ──────────────────────
+    // ── 3. BROKER HISTORY (single broker) ────────────────────────────────────
     } else if (action === 'broker_history') {
       const cleanCode = validateStockCode(code);
       const cleanBroker = brokerCode.trim().toUpperCase();
+      paramIdx += 2;
       queryParams.push(cleanCode, cleanBroker);
 
       query = `
@@ -152,13 +146,44 @@ export async function GET(req: NextRequest) {
           SUM(lot)::DOUBLE      AS net_lot
         FROM my_db.main.broker_activity
         WHERE ${dateFilter.clause}
-          AND LEFT(stock_code, 4) = $${paramIndex}
-          AND broker_code = $${paramIndex + 1}
+          AND LEFT(stock_code, 4) = $${paramIdx - 1}
+          AND broker_code = $${paramIdx}
         GROUP BY date
         ORDER BY date ASC
       `;
 
-    // ── 4. SCREENER (IMPROVED) ────────────────────────────────────────────────
+    // ── 4. MULTI BROKER HISTORY (multiple brokers for timeseries) ────────────
+    } else if (action === 'multi_broker_history') {
+      const cleanCode = validateStockCode(code);
+      const brokers = brokerCodes.split(',').map(b => b.trim().toUpperCase()).filter(b => b.length > 0);
+      
+      if (brokers.length === 0) {
+        return NextResponse.json({ error: 'broker_codes diperlukan' }, { status: 400 });
+      }
+      if (brokers.length > 20) {
+        return NextResponse.json({ error: 'Maksimum 20 broker' }, { status: 400 });
+      }
+
+      // Build IN clause with parameters
+      const placeholders = brokers.map((_, i) => `$${paramIdx + 2 + i}`).join(', ');
+      paramIdx++;
+      queryParams.push(cleanCode, ...brokers);
+
+      query = `
+        SELECT
+          CAST(date AS VARCHAR)   AS date,
+          broker_code,
+          SUM(value)::DOUBLE      AS net_val,
+          SUM(lot)::DOUBLE        AS net_lot
+        FROM my_db.main.broker_activity
+        WHERE ${dateFilter.clause}
+          AND LEFT(stock_code, 4) = $${paramIdx}
+          AND broker_code IN (${placeholders})
+        GROUP BY date, broker_code
+        ORDER BY date ASC, broker_code ASC
+      `;
+
+    // ── 5. SCREENER (FIXED) ──────────────────────────────────────────────────
     } else if (action === 'screener') {
       const minVal = parseFloat(minTotalValue);
       const minBrk = parseInt(minBrokerCount);
@@ -174,6 +199,7 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: 'min_buy_broker_count tidak valid' }, { status: 400 });
       }
 
+      paramIdx += 3;
       queryParams.push(minVal, minBrk, minBuyBrk);
 
       query = `
@@ -186,42 +212,45 @@ export async function GET(req: NextRequest) {
             SUM(ABS(value))::DOUBLE                                        AS total_value,
             COUNT(DISTINCT broker_code)                                    AS broker_count,
             COUNT(DISTINCT CASE WHEN value > 0 THEN broker_code END)      AS buy_broker_count,
-            COUNT(DISTINCT CASE WHEN value < 0 THEN broker_code END)      AS sell_broker_count,
-            -- Top broker concentration
-            MAX(
-              SUM(CASE WHEN value > 0 THEN value ELSE 0 END) 
-              OVER (PARTITION BY broker_code)
-            )::DOUBLE / NULLIF(SUM(CASE WHEN value > 0 THEN value ELSE 0 END), 0) 
-              AS top_buyer_concentration
+            COUNT(DISTINCT CASE WHEN value < 0 THEN broker_code END)      AS sell_broker_count
           FROM my_db.main.broker_activity
           WHERE ${dateFilter.clause}
-            AND LENGTH(REGEXP_REPLACE(stock_code, '[^A-Z0-9]', '', 'g')) >= 3
           GROUP BY LEFT(stock_code, 4)
+        ),
+        top_buyer AS (
+          SELECT
+            LEFT(stock_code, 4) AS clean_code,
+            broker_code,
+            SUM(CASE WHEN value > 0 THEN value ELSE 0 END)::DOUBLE AS buy_val,
+            ROW_NUMBER() OVER (PARTITION BY LEFT(stock_code, 4) ORDER BY SUM(CASE WHEN value > 0 THEN value ELSE 0 END) DESC) AS rn
+          FROM my_db.main.broker_activity
+          WHERE ${dateFilter.clause}
+          GROUP BY LEFT(stock_code, 4), broker_code
         )
         SELECT
-          clean_code                                                       AS stock_code,
-          total_buy,
-          total_sell,
-          net_accumulation,
-          total_value,
-          broker_count,
-          buy_broker_count,
-          sell_broker_count,
-          -- NEW Power Score:
-          -- (Net / Total) × LN(1 + Broker Count) × SIGN(Net)
-          -- Range: -1 to 1, higher = stronger accumulation with broker diversity
+          sa.clean_code                                                     AS stock_code,
+          sa.total_buy,
+          sa.total_sell,
+          sa.net_accumulation,
+          sa.total_value,
+          sa.broker_count,
+          sa.buy_broker_count,
+          sa.sell_broker_count,
           ROUND(
-            (net_accumulation / NULLIF(total_value, 0)) 
-            * LN(1 + broker_count)
-            * CASE WHEN net_accumulation >= 0 THEN 1 ELSE -1 END
+            (sa.net_accumulation / NULLIF(sa.total_value, 0)) 
+            * LN(1 + sa.broker_count)
+            * CASE WHEN sa.net_accumulation >= 0 THEN 1 ELSE -1 END
             * 100, 2
-          )::DOUBLE                                                        AS power_score,
-          ROUND(top_buyer_concentration * 100, 1)::DOUBLE                 AS top_buyer_pct
-        FROM stock_agg
-        WHERE net_accumulation > 0
-          AND total_value >= $${paramIndex}
-          AND broker_count >= $${paramIndex + 1}
-          AND buy_broker_count >= $${paramIndex + 2}
+          )::DOUBLE                                                         AS power_score,
+          ROUND(
+            COALESCE(tb.buy_val, 0) / NULLIF(sa.total_buy, 0) * 100, 1
+          )::DOUBLE                                                         AS top_buyer_pct
+        FROM stock_agg sa
+        LEFT JOIN top_buyer tb ON sa.clean_code = tb.clean_code AND tb.rn = 1
+        WHERE sa.net_accumulation > 0
+          AND sa.total_value >= $${paramIdx - 2}
+          AND sa.broker_count >= $${paramIdx - 1}
+          AND sa.buy_broker_count >= $${paramIdx}
         ORDER BY power_score DESC
         LIMIT 50
       `;
@@ -237,10 +266,9 @@ export async function GET(req: NextRequest) {
     console.error('[broker-tracker]', {
       action,
       message: error.message,
-      stack: error.stack?.split('\n').slice(0, 3).join('\n'),
+      query: query.substring(0, 300),
     });
     
-    // Safe error message
     return NextResponse.json(
       { error: 'Gagal mengambil data. Silakan coba lagi atau hubungi admin.' },
       { status: 500 }
