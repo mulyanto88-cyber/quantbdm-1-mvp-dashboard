@@ -172,7 +172,7 @@ export default function StockDetailPage() {
           .single(),
         supabase
           .from('daily_transactions')
-          .select('trading_date,open_price,high,low,close,volume,net_foreign_value,vwma_20d,aov_ratio_ma20,whale_signal,big_player_anomaly')
+          .select('trading_date,open_price,high,low,close,volume,net_foreign_value,vwma_20d,aov_ratio_ma20,whale_signal,big_player_anomaly,previous')
           .eq('stock_code', code)
           .order('trading_date', { ascending: false })
           .limit(periodFilter),
@@ -200,7 +200,7 @@ export default function StockDetailPage() {
       if (!historyResult.error && historyResult.data) {
         setHistoryData(historyResult.data.reverse().map((d: any) => ({
           time: d.trading_date,
-          open: Number(d.open_price) || Number(d.close) || 0,
+          open: Number(d.open_price) || Number(d.previous) || Number(d.close) || 0,
           high: Number(d.high) || Number(d.close) || 0,
           low: Number(d.low) || Number(d.close) || 0,
           close: Number(d.close) || 0,
