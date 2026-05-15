@@ -92,22 +92,39 @@ const icons = {
   ),
 }
 
-// ======================== NAV ITEMS ========================
-const navItems = [
-  { href: '/',          label: 'Market Overview',    icon: icons.dashboard },
-  { href: '/stocks',    label: 'Stock Intelligence', icon: icons.search },
-  { href: '/screener',  label: 'Screener Pro',       icon: icons.crosshair,  badge: 'PRO' },
-  { href: '/radar',     label: 'Smart Money Radar',  icon: icons.radar,      badge: 'NEW' },
-  { href: '/insider',   label: 'Insider Alerts',     icon: icons.eye },
-  { href: '/sector',    label: 'Sector Heatmap',     icon: icons.sector },
-  { href: '/bandarmologi', label: 'Broker Tracker', icon: icons.flow, badge: 'NEW' },
-  { href: '/players',   label: 'Big Player Radar',   icon: icons.users,      badge: 'HOT' },
-  { href: '/konlo',     label: 'Konglomerasi',       icon: icons.target },
-  { href: '/flow',      label: '5% Flow',            icon: icons.flow,       badge: '5%' },
-  { href: '/ksei1',     label: '1% Tracker',         icon: icons.building,   badge: '1%' },
-  { href: '/ownership', label: 'Whale Portfolio',    icon: icons.building },
-  { href: '/backtest',  label: 'Backtest Lab',       icon: icons.lab,        badge: 'NEW' },
-  { href: '/pricing',   label: 'Pricing',            icon: icons.crown },
+// ======================== NAV GROUPS ========================
+const navGroups = [
+  {
+    title: 'Market Intelligence',
+    items: [
+      { href: '/',          label: 'Market Overview',    icon: icons.dashboard },
+      { href: '/stocks',    label: 'Stock Terminal',     icon: icons.search },
+      { href: '/sector',    label: 'Sector Heatmap',     icon: icons.sector },
+    ]
+  },
+  {
+    title: 'Signals & Screeners',
+    items: [
+      { href: '/screener',  label: 'Screener Pro',       icon: icons.crosshair,  badge: 'PRO' },
+      { href: '/radar',     label: 'Smart Money Radar',  icon: icons.radar,      badge: 'NEW' },
+      { href: '/insider',   label: 'Insider Alerts',     icon: icons.eye },
+    ]
+  },
+  {
+    title: 'Flow & Institutional',
+    items: [
+      { href: '/bandarmologi', label: 'Broker Summary',  icon: icons.flow, badge: 'NEW' },
+      { href: '/flow',         label: 'Whale & KSEI',    icon: icons.building, badge: 'PRO' },
+      { href: '/konlo',        label: 'Konglomerasi',    icon: icons.target },
+    ]
+  },
+  {
+    title: 'Tools & Settings',
+    items: [
+      { href: '/backtest',  label: 'Backtest Lab',       icon: icons.lab,        badge: 'NEW' },
+      { href: '/pricing',   label: 'Pricing',            icon: icons.crown },
+    ]
+  }
 ]
 // ======================== COMPONENT ========================
 export default function Sidebar() {
@@ -140,7 +157,7 @@ export default function Sidebar() {
   return (
     <>
       <button onClick={() => setMobileOpen(!mobileOpen)}
-        className="fixed top-3 left-3 z-50 p-2 rounded-lg bg-navy-800 border border-navy-700 md:hidden">
+        className="fixed top-3 right-3 z-50 p-2 rounded-lg bg-navy-800 border border-navy-700 md:hidden">
         {mobileOpen ? <X size={20} className="text-white" /> : <Menu size={20} className="text-white" />}
       </button>
 
@@ -148,8 +165,8 @@ export default function Sidebar() {
 
       <aside
         onMouseEnter={() => setExpanded(true)} onMouseLeave={() => setExpanded(false)}
-        className={`fixed top-0 left-0 z-40 h-full flex flex-col transition-all duration-200 border-r bg-background
-          ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 ${expanded ? 'w-52' : 'w-[56px]'}`}>
+        className={`fixed top-0 right-0 z-40 h-full flex flex-col transition-all duration-200 border-l bg-background
+          ${mobileOpen ? 'translate-x-0' : 'translate-x-full'} md:translate-x-0 ${expanded ? 'w-52' : 'w-[56px]'}`}>
         
         {/* Logo */}
         <div className="flex items-center h-[52px] px-3.5 border-b border-border flex-shrink-0">
@@ -165,26 +182,32 @@ export default function Sidebar() {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-3 overflow-x-hidden">
-          {(expanded || mobileOpen) && (
-            <p className="px-3.5 py-1.5 text-[10px] uppercase tracking-widest text-muted-foreground animate-fade-in">Menu</p>
-          )}
-          {navItems.map((item) => {
-            const active = isActive(item.href)
-            return (
-              <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)}
-                title={!expanded && !mobileOpen ? item.label : undefined}
-                className={`flex items-center gap-2.5 mx-1.5 my-0.5 rounded-lg transition-all duration-150 relative
-                  ${active ? 'text-gold-400 bg-gold-400/10 border border-gold-400/20' : 'text-muted-foreground hover:text-foreground hover:bg-accent/50 border border-transparent'}`}
-                style={{ padding: (expanded || mobileOpen) ? '8px 12px' : '10px 12px' }}>
-                <span style={{ opacity: active ? 1 : 0.65 }}>{item.icon}</span>
-                {(expanded || mobileOpen) && <span className="animate-fade-in flex-1 whitespace-nowrap text-[13px] font-medium">{item.label}</span>}
-                {(expanded || mobileOpen) && item.badge && (
-                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-gold-400/10 text-gold-400 animate-fade-in">{item.badge}</span>
-                )}
-                {!expanded && !mobileOpen && active && <span className="absolute right-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-l bg-gold-400" />}
-              </Link>
-            )
-          })}
+          {navGroups.map((group, groupIdx) => (
+            <div key={groupIdx} className="mb-3">
+              {(expanded || mobileOpen) && (
+                <p className="px-3.5 py-1.5 mb-0.5 text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/50 animate-fade-in">
+                  {group.title}
+                </p>
+              )}
+              {group.items.map((item) => {
+                const active = isActive(item.href)
+                return (
+                  <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)}
+                    title={!expanded && !mobileOpen ? item.label : undefined}
+                    className={`flex items-center gap-2.5 mx-1.5 my-0.5 rounded-lg transition-all duration-150 relative group/nav
+                      ${active ? 'text-gold-400 bg-gold-400/10 border border-gold-400/20 shadow-sm shadow-gold-400/5' : 'text-muted-foreground hover:text-white hover:bg-white/5 border border-transparent'}`}
+                    style={{ padding: (expanded || mobileOpen) ? '8px 12px' : '10px 12px' }}>
+                    <span className={`${active ? 'text-gold-400' : 'text-muted-foreground group-hover/nav:text-white transition-colors'}`} style={{ opacity: active ? 1 : 0.8 }}>{item.icon}</span>
+                    {(expanded || mobileOpen) && <span className="animate-fade-in flex-1 whitespace-nowrap text-[13px] font-medium">{item.label}</span>}
+                    {(expanded || mobileOpen) && item.badge && (
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-gold-400/10 text-gold-400 border border-gold-400/20 animate-fade-in">{item.badge}</span>
+                    )}
+                    {!expanded && !mobileOpen && active && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r bg-gold-400 shadow-[0_0_10px_rgba(231,183,51,0.5)]" />}
+                  </Link>
+                )
+              })}
+            </div>
+          ))}
         </nav>
 
         {/* Footer */}
