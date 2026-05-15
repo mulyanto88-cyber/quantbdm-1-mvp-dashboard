@@ -112,81 +112,77 @@ export default async function MarketOverview() {
   const { date, totalForeign, totalValue, up, down, gainers, losers, foreignBuy, foreignSell, topVolume, topValue, spikes, sectorHeatmap, allStocks } = marketData
 
   return (
-    <div className="space-y-10 pb-12 animate-fade-in">
+    <div className="space-y-6 pb-12 animate-fade-in">
       {/* ── PREMIUM INTELLIGENCE HERO ── */}
       <div className="relative group">
-        <div className="absolute -inset-1 bg-gradient-to-r from-gold-500/20 via-emerald-500/10 to-blue-500/20 rounded-[2.5rem] blur-2xl opacity-30"></div>
-        <div className="glass rounded-[2.5rem] p-8 md:p-10 border border-white/[0.08] shadow-2xl relative overflow-hidden">
-          {/* Animated Background Elements */}
-          <div className="absolute top-0 right-0 w-96 h-96 bg-gold-500/5 rounded-full blur-[100px] -mr-32 -mt-32 animate-pulse" />
-          <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-500/5 rounded-full blur-[80px] -ml-20 -mb-20" />
+        <div className="absolute -inset-1 bg-gradient-to-r from-gold-500/20 via-emerald-500/10 to-blue-500/20 rounded-2xl blur-2xl opacity-25"></div>
+        <div className="glass rounded-2xl p-5 md:p-6 border border-white/[0.08] shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-72 h-72 bg-gold-500/5 rounded-full blur-[80px] -mr-24 -mt-24 animate-pulse" />
+          <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-500/5 rounded-full blur-[60px] -ml-16 -mb-16" />
           
-          <div className="relative z-10 flex flex-col lg:flex-row gap-12 items-center">
-            {/* 1. Market Verdict Gauge */}
-            <div className="flex flex-col items-center justify-center p-8 rounded-[2.5rem] bg-white/[0.02] border border-white/5 relative group/score w-full lg:w-72 shrink-0">
-              <div className="flex items-center gap-2 mb-6">
-                <ShieldCheck className="w-4 h-4 text-gold-400" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Market Sentiment</span>
+          <div className="relative z-10 flex flex-col lg:flex-row gap-6 items-stretch">
+            {/* 1. Market Verdict Gauge — compact */}
+            <div className="flex flex-col items-center justify-center py-4 px-5 rounded-2xl bg-white/[0.02] border border-white/5 shrink-0 lg:w-48">
+              <div className="flex items-center gap-1.5 mb-3">
+                <ShieldCheck className="w-3 h-3 text-gold-400" />
+                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Sentiment</span>
               </div>
               <div className="relative">
-                <svg className="w-44 h-44 transform -rotate-90">
-                  <circle cx="88" cy="88" r="78" stroke="currentColor" strokeWidth="12" fill="transparent" className="text-white/5" />
-                  <circle cx="88" cy="88" r="78" stroke="currentColor" strokeWidth="12" fill="transparent" 
-                    strokeDasharray={490} 
-                    strokeDashoffset={490 - (490 * (totalForeign > 0 ? 75 : 45)) / 100}
+                <svg className="w-28 h-28 transform -rotate-90">
+                  <circle cx="56" cy="56" r="46" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-white/5" />
+                  <circle cx="56" cy="56" r="46" stroke="currentColor" strokeWidth="8" fill="transparent"
+                    strokeDasharray={289}
+                    strokeDashoffset={289 - (289 * (totalForeign > 0 ? 75 : 45)) / 100}
                     strokeLinecap="round"
-                    className={`${totalForeign > 0 ? 'text-emerald-400' : 'text-gold-400'} transition-all duration-1000 shadow-[0_0_15px_rgba(34,197,94,0.3)]`} 
+                    className={`${totalForeign > 0 ? 'text-emerald-400' : 'text-gold-400'} transition-all duration-1000`}
                   />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-5xl font-black text-white tracking-tighter">
+                  <span className="text-2xl font-black text-white tracking-tighter leading-none">
                     {totalForeign > 0 ? 'BULL' : 'NEUT'}
                   </span>
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">Verdict</span>
+                  <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">Verdict</span>
                 </div>
               </div>
-              <div className="mt-6 flex flex-col items-center gap-1">
-                 <span className={`text-xs font-black ${totalForeign > 0 ? 'text-emerald-400' : 'text-gold-400'}`}>
-                   {totalForeign > 0 ? 'Institutional Accumulation' : 'Wait & See Mode'}
-                 </span>
-                 <span className="text-[9px] text-muted-foreground">Based on aggregate flow DNA</span>
-              </div>
+              <span className={`text-[10px] font-black mt-3 ${totalForeign > 0 ? 'text-emerald-400' : 'text-gold-400'}`}>
+                {totalForeign > 0 ? '▲ Accumulation' : '⏸ Wait & See'}
+              </span>
             </div>
 
-            {/* 2. Main Title & Quick Stats */}
-            <div className="flex-1 space-y-8">
+            {/* 2. Title + 4 Stats in one column */}
+            <div className="flex-1 flex flex-col justify-between gap-4 min-w-0">
               <div>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="px-3 py-1 rounded-full bg-gold-400/10 border border-gold-400/20 text-[10px] font-black text-gold-400 uppercase tracking-widest">
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-gold-400/10 border border-gold-400/20 text-[9px] font-black text-gold-400 uppercase tracking-widest">
                     Institutional Terminal v2.0
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Live Flow Sync</span>
-                  </div>
+                  </span>
+                  <span className="flex items-center gap-1.5 text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Live · {date}
+                  </span>
                 </div>
-                <h1 className="text-5xl md:text-7xl font-black text-white tracking-tighter leading-none">
-                  Market <span className="text-transparent bg-clip-text bg-gradient-to-r from-gold-200 via-yellow-500 to-gold-500 drop-shadow-2xl">Intelligence</span>
+                <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight leading-none">
+                  Market <span className="text-transparent bg-clip-text bg-gradient-to-r from-gold-200 via-yellow-500 to-gold-500">Intelligence</span>
                 </h1>
-                <p className="text-slate-400 mt-4 text-lg font-medium tracking-wide max-w-2xl leading-relaxed">
-                  Real-time cross-analysis of daily transactions, institutional ownership patterns, and strategic Whale movements.
+                <p className="text-muted-foreground mt-1.5 text-xs leading-relaxed max-w-xl">
+                  Real-time cross-analysis of transactions, institutional ownership &amp; Whale movements.
                 </p>
               </div>
 
-              {/* Market Pulse Mini Cards */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {/* 4 Metric Stats */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {[
-                  { label: 'Turnover', value: formatRupiah(totalValue), icon: DollarSign, color: 'text-gold-400' },
-                  { label: 'Foreign Net', value: formatRupiah(totalForeign), icon: Globe, color: totalForeign >= 0 ? 'text-emerald-400' : 'text-red-400' },
-                  { label: 'Market Breadth', value: `${up}↑ / ${down}↓`, icon: Activity, color: 'text-blue-400' },
-                  { label: 'Whale Alerts', value: spikes?.length || 0, icon: Zap, color: 'text-purple-400' },
+                  { label: 'Turnover',       value: formatRupiah(totalValue),   icon: DollarSign, color: 'text-gold-400' },
+                  { label: 'Foreign Net',    value: formatRupiah(totalForeign), icon: Globe,      color: totalForeign >= 0 ? 'text-emerald-400' : 'text-red-400' },
+                  { label: 'Breadth',        value: `${up}↑ / ${down}↓`,       icon: Activity,   color: 'text-blue-400' },
+                  { label: 'Whale Signals',  value: spikes?.length || 0,        icon: Zap,        color: 'text-purple-400' },
                 ].map((stat, i) => (
-                  <div key={i} className="p-4 rounded-2xl bg-white/[0.03] border border-white/5 hover:border-white/10 transition-all group/stat">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <stat.icon className={`w-3.5 h-3.5 ${stat.color} opacity-60 group-hover/stat:opacity-100 transition-opacity`} />
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{stat.label}</span>
+                  <div key={i} className="p-3 rounded-xl bg-white/[0.03] border border-white/5 hover:border-white/10 transition-all group/stat">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <stat.icon className={`w-3 h-3 ${stat.color} opacity-60 group-hover/stat:opacity-100 transition-opacity`} />
+                      <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest truncate">{stat.label}</span>
                     </div>
-                    <p className={`text-lg font-black text-white truncate`}>{stat.value}</p>
+                    <p className={`text-base font-black ${stat.color} truncate`}>{stat.value}</p>
                   </div>
                 ))}
               </div>
@@ -195,54 +191,10 @@ export default async function MarketOverview() {
         </div>
       </div>
 
-      {/* Date Indicator & Verdict Flash */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-2">
-        <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">
-          <div className="flex items-center gap-2">
-            <Clock className="w-3 h-3" />
-            <span>Last Sync: {date}</span>
-          </div>
-          <div className="w-1 h-1 rounded-full bg-white/20" />
-          <div className="flex items-center gap-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            <span>System Status: Optimal</span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/5">
-            <Target className="w-3.5 h-3.5 text-gold-400" />
-            <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest leading-none">
-              Market Verdict: <span className="text-emerald-400">Institutional Accumulation Mode</span>
-            </span>
-        </div>
-      </div>
-
-      {/* ==================== MARKET PULSE ==================== */}
+      {/* ==================== MARKET DATA GRIDS ==================== */}
       <div className="space-y-4 animate-fade-in">
 
-        {/* ── Row 1: Metric Cards ── */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[
-            { title: 'Market Breadth', value: `${up}↑ ${down}↓`, icon: BarChart3, color: 'text-blue-400', sub: 'Advancers vs Decliners' },
-            { title: 'Total Turnover',  value: formatRupiah(totalValue),   icon: DollarSign, color: 'text-gold-400',  sub: 'Daily value traded' },
-            { title: 'Net Foreign',     value: formatRupiah(totalForeign), icon: Globe,      color: totalForeign >= 0 ? 'text-emerald-400' : 'text-red-400', sub: totalForeign >= 0 ? '▲ Inflow' : '▼ Outflow' },
-            { title: 'AOV Spikes',      value: spikes.length,       icon: Zap,        color: 'text-purple-400', sub: 'Whale signals today' },
-          ].map((m, i) => {
-            const Icon = m.icon
-            return (
-              <div key={i} className="glass rounded-xl p-4 border border-border/30 hover:border-gold-400/30 transition-all duration-300">
-                <div className="flex items-center justify-between mb-2">
-                  <Icon className={`w-4 h-4 ${m.color}`} />
-                  <span className="text-[9px] text-muted-foreground uppercase font-bold tracking-wide">{m.sub}</span>
-                </div>
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{m.title}</p>
-                <p className={`text-xl font-black mt-0.5 ${m.color}`}>{m.value}</p>
-              </div>
-            )
-          })}
-        </div>
-
-        {/* ── Row 2: Gainers | Losers | Net Foreign — 3 kolom sejajar ── */}
+        {/* ── Row 1: Gainers | Losers | Net Foreign — 3 kolom sejajar ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           {/* Gainers */}
           <div className="glass rounded-xl overflow-hidden border border-green-500/20 hover:border-green-400/40 transition-all">
