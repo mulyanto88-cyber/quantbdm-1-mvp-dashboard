@@ -1,48 +1,55 @@
+import React from 'react'
+
 export default function Loading() {
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Page title skeleton */}
-      <div className="flex flex-col md:flex-row justify-between items-start gap-4">
-        <div className="space-y-2">
-          <div className="shimmer h-9 w-64 rounded-xl" />
-          <div className="shimmer h-4 w-40 rounded-lg" />
-        </div>
-        <div className="flex gap-3">
-          <div className="shimmer h-10 w-32 rounded-xl" />
-          <div className="shimmer h-10 w-24 rounded-xl" />
-        </div>
-      </div>
-
-      {/* Stats row skeleton */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="glass rounded-2xl p-5 border border-border/30">
-            <div className="shimmer h-4 w-4 rounded mb-3" />
-            <div className="shimmer h-3 w-20 rounded mb-2" />
-            <div className="shimmer h-8 w-16 rounded" />
-          </div>
-        ))}
-      </div>
-
-      {/* Main content skeleton */}
-      <div className="glass rounded-2xl border border-border/30 overflow-hidden">
-        <div className="p-4 border-b border-white/[0.05]">
-          <div className="shimmer h-5 w-40 rounded" />
-        </div>
-        <div className="divide-y divide-white/[0.03]">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-4 p-4"
-              style={{ opacity: 1 - i * 0.09 }}>
-              <div className="shimmer h-4 w-4 rounded flex-shrink-0" />
-              <div className="shimmer h-5 w-16 rounded font-mono" />
-              <div className="shimmer h-4 w-24 rounded flex-1" />
-              <div className="shimmer h-4 w-16 rounded ml-auto" />
-              <div className="shimmer h-4 w-14 rounded" />
-              <div className="shimmer h-6 w-20 rounded-full" />
+    <div className="space-y-10 pb-12 animate-fade-in w-full">
+      {/* Skeleton Hero */}
+      <div className="glass rounded-[2.5rem] p-8 md:p-10 border border-white/[0.08] shadow-2xl relative overflow-hidden">
+        <div className="flex flex-col lg:flex-row gap-12 items-center">
+          <div className="shimmer w-full lg:w-72 h-72 rounded-[2.5rem] shrink-0" />
+          <div className="flex-1 space-y-6 w-full">
+            <div className="shimmer w-32 h-6 rounded-full" />
+            <div className="shimmer w-3/4 h-16 rounded-xl" />
+            <div className="shimmer w-1/2 h-6 rounded-md" />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
+              <div className="shimmer h-24 rounded-2xl" />
+              <div className="shimmer h-24 rounded-2xl" />
+              <div className="shimmer h-24 rounded-2xl" />
+              <div className="shimmer h-24 rounded-2xl" />
             </div>
-          ))}
+          </div>
         </div>
       </div>
+
+      {/* Skeleton Indicator */}
+      <div className="flex justify-between items-center px-2">
+        <div className="shimmer w-48 h-4 rounded-md" />
+        <div className="shimmer w-64 h-10 rounded-xl" />
+      </div>
+
+      {/* Skeleton Metric Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="shimmer h-28 rounded-xl" />
+        <div className="shimmer h-28 rounded-xl" />
+        <div className="shimmer h-28 rounded-xl" />
+        <div className="shimmer h-28 rounded-xl" />
+      </div>
+
+      {/* Skeleton Tables */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <div className="shimmer h-80 rounded-xl" />
+        <div className="shimmer h-80 rounded-xl" />
+        <div className="shimmer h-80 rounded-xl" />
+      </div>
+      
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <div className="shimmer h-80 rounded-xl" />
+        <div className="shimmer h-80 rounded-xl" />
+        <div className="shimmer h-80 rounded-xl" />
+      </div>
+
+      {/* Skeleton Heatmap */}
+      <div className="shimmer h-96 rounded-3xl" />
     </div>
   )
 }
