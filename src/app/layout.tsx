@@ -37,8 +37,8 @@ export default function RootLayout({
         {/* ── Sidebar ── */}
         <Sidebar />
 
-        {/* ── Main area: offset by sidebar (68px collapsed) ── */}
-        <div className="md:pl-[68px] flex flex-col min-h-screen transition-all duration-300">
+        {/* ── Main area: offset by sidebar (68px collapsed) on the RIGHT ── */}
+        <div className="md:pr-[68px] flex flex-col min-h-screen transition-all duration-300">
 
           {/* ── Top Bar ── */}
           <header className="app-header sticky top-0 z-30 h-16 flex items-center px-6 gap-4 shadow-sm">
