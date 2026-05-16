@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatRupiah, formatNumber } from '@/lib/utils'
-import { Search, RefreshCw, TrendingUp, X, AlertTriangle, SlidersHorizontal, Radar, Download, Share2, ChevronLeft, ChevronRight, Maximize2, EyeOff, Zap, Star, Filter, Clock, ChevronDown } from 'lucide-react'
+import { Search, RefreshCw, TrendingUp, X, AlertTriangle, SlidersHorizontal, Radar, Download, Share2, ChevronLeft, ChevronRight, Maximize2, EyeOff, Zap, Star, Filter, Clock } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 
@@ -14,21 +14,17 @@ interface StockRow {
   close: number
   change_percent: number
   smart_score: number
-  conviction_score: number
-  institutional_flow: number
-  net_foreign_30d: number
+  net_foreign_period: number  // Agregat net foreign dalam periode
   aov_max: number
-  spike_count: number          // Frekuensi AOV spike dalam periode
-  whale_signal_days: number    // Berapa hari muncul whale signal
-  foreign_buy_days: number     // Berapa hari foreign net buy
-  avg_daily_value: number
+  spike_count: number         // Frekuensi AOV ≥1.5x dalam periode
+  anomaly_count: number       // max_anomaly dari summary
   is_stealth: boolean
   whale_signal: boolean
   big_player_anomaly: boolean
   signal: string
 }
 
-type SortField = 'smart_score' | 'change_percent' | 'institutional_flow' | 'net_foreign_30d' | 'aov_max' | 'spike_count' | 'whale_signal_days' | 'foreign_buy_days' | 'avg_daily_value' | 'stock_code'
+type SortField = 'smart_score' | 'change_percent' | 'net_foreign_period' | 'aov_max' | 'spike_count' | 'anomaly_count' | 'close' | 'stock_code'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const PERIOD_OPTIONS = [
@@ -93,7 +89,7 @@ export default function ScreenerPage() {
   const [sortBy, setSortBy] = useState<SortField>('smart_score')
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc')
   const [page, setPage] = useState(1)
-  const pageSize = 20 // Default 20 saham
+  const pageSize = 20
 
   // ─── Fetch Data ─────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
@@ -119,8 +115,8 @@ export default function ScreenerPage() {
       const startStr = formatDate(startDate)
       const endStr = formatDate(endDate)
 
-      // 2. Panggil dua RPC paralel
-      const [radarRes, summaryRes] = await Promise.all([
+      // 2. Panggil RPC + daily_transactions paralel
+      const [radarRes, summaryRes, foreignRes, closeRes] = await Promise.all([
         supabase.rpc('scan_smart_money_universe', {
           p_min_score: 0,
           p_min_flow: 0,
@@ -131,6 +127,17 @@ export default function ScreenerPage() {
           p_start_date: startStr,
           p_end_date: endStr,
         }),
+        // Agregat net foreign dalam periode
+        supabase
+          .from('daily_transactions')
+          .select('stock_code, net_foreign_value')
+          .gte('trading_date', startStr)
+          .lte('trading_date', endStr),
+        // Close price tanggal terakhir
+        supabase
+          .from('daily_transactions')
+          .select('stock_code, close')
+          .eq('trading_date', latestDate),
       ])
 
       if (radarRes.error) throw radarRes.error
@@ -138,6 +145,23 @@ export default function ScreenerPage() {
 
       const radarData = radarRes.data || []
       const summaryData = summaryRes.data || []
+
+      // Agregat foreign per saham
+      const foreignMap = new Map<string, number>()
+      if (foreignRes.data) {
+        foreignRes.data.forEach((d: any) => {
+          const prev = foreignMap.get(d.stock_code) || 0
+          foreignMap.set(d.stock_code, prev + Number(d.net_foreign_value || 0))
+        })
+      }
+
+      // Close price map
+      const closeMap = new Map<string, number>()
+      if (closeRes.data) {
+        closeRes.data.forEach((d: any) => {
+          closeMap.set(d.stock_code, Number(d.close || 0))
+        })
+      }
 
       // 3. Gabungkan data
       const summaryMap = new Map<string, any>()
@@ -150,17 +174,13 @@ export default function ScreenerPage() {
         return {
           stock_code: r.stock_code,
           sector: summary.sector || r.sector || '—',
-          close: Number(summary.close || r.current_price || 0),
+          close: closeMap.get(r.stock_code) || Number(summary.close || r.current_price || 0),
           change_percent: Number(r.price_chg_pct || summary.change_percent || 0),
-          smart_score: Number(r.smart_money_score || r.conviction_score || 0),
-          conviction_score: Number(r.conviction_score || 0),
-          institutional_flow: Number(r.institutional_flow || 0),
-          net_foreign_30d: Number(summary.net_foreign || r.net_foreign_30d || 0),
+          smart_score: Number(r.smart_money_score || 0),
+          net_foreign_period: foreignMap.get(r.stock_code) || Number(summary.net_foreign || 0),
           aov_max: Math.max(0, ...aovHistory.map((v: any) => Number(v) || 0)),
           spike_count: computeSpikeCount(aovHistory),
-          whale_signal_days: summary.whale_count || 0,
-          foreign_buy_days: summary.foreign_buy_days || 0,
-          avg_daily_value: Number(summary.avg_daily_value || 0),
+          anomaly_count: Number(summary.max_anomaly || 0),
           is_stealth: r.is_stealth || false,
           whale_signal: r.whale_signal || false,
           big_player_anomaly: r.big_player_anomaly || false,
@@ -197,7 +217,7 @@ export default function ScreenerPage() {
       if (filterSector !== 'ALL' && r.sector !== filterSector) return false
       if (filterFlag === 'WHALE' && !r.whale_signal) return false
       if (filterFlag === 'BIG_PLAYER' && !r.big_player_anomaly) return false
-      if (filterFlag === 'FOREIGN_BUY' && r.net_foreign_30d <= 0) return false
+      if (filterFlag === 'FOREIGN_BUY' && r.net_foreign_period <= 0) return false
       if (filterFlag === 'STEALTH' && !r.is_stealth) return false
       if (r.smart_score < minScore) return false
       return true
@@ -244,12 +264,11 @@ export default function ScreenerPage() {
   }
 
   const exportToCSV = () => {
-    const headers = ['Kode', 'Sektor', 'Harga', 'Chg%', 'Score', 'Inst Flow', 'Foreign', 'AOV Max', 'Spikes', 'Whale Days', 'Foreign Days', 'Avg Value', 'Signal']
+    const headers = ['Kode', 'Sektor', 'Close', 'Chg%', 'Score', 'Foreign (Agr)', 'AOV Max', 'Spikes', 'Anomaly', 'Signal']
     const rows = filtered.map(r => [
       r.stock_code, r.sector, r.close, `${r.change_percent.toFixed(2)}%`,
-      r.smart_score, `${r.institutional_flow.toFixed(1)}`, formatRupiah(r.net_foreign_30d),
-      `${r.aov_max.toFixed(2)}x`, r.spike_count, r.whale_signal_days, r.foreign_buy_days,
-      formatRupiah(r.avg_daily_value), r.signal
+      r.smart_score, formatRupiah(r.net_foreign_period), `${r.aov_max.toFixed(2)}x`,
+      r.spike_count, r.anomaly_count, r.signal
     ])
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
@@ -437,7 +456,7 @@ export default function ScreenerPage() {
       )}
 
       {/* ════════════════════════════════════════════════════════════
-          TABLE — 11 KOLOM DEFAULT
+          TABLE — 12 KOLOM FINAL
       ════════════════════════════════════════════════════════════ */}
       {loading ? (
         <div className="space-y-2">{Array.from({length:8}).map((_,i) => <div key={i} className="shimmer h-12 rounded-xl" />)}</div>
@@ -465,14 +484,13 @@ export default function ScreenerPage() {
                     <th className="p-2 text-left w-6">#</th>
                     <th className="p-2 text-left sticky left-0 bg-[#0B0F19]/95 backdrop-blur-sm z-10 cursor-pointer hover:text-foreground" onClick={() => toggleSort('stock_code')}>Kode<SortArrow col="stock_code" /></th>
                     <th className="p-2 text-left hidden md:table-cell">Sektor</th>
+                    <th className="p-2 text-right cursor-pointer hover:text-foreground" onClick={() => toggleSort('close')}>Close<SortArrow col="close" /></th>
                     <th className="p-2 text-right cursor-pointer hover:text-foreground" onClick={() => toggleSort('change_percent')}>Chg%<SortArrow col="change_percent" /></th>
                     <th className="p-2 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('smart_score')}>Score<SortArrow col="smart_score" /></th>
-                    <th className="p-2 text-center cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('institutional_flow')}>Inst Flow<SortArrow col="institutional_flow" /></th>
-                    <th className="p-2 text-right cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('net_foreign_30d')}>Foreign<SortArrow col="net_foreign_30d" /></th>
+                    <th className="p-2 text-right cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('net_foreign_period')}>Foreign<SortArrow col="net_foreign_period" /></th>
                     <th className="p-2 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('aov_max')}>AOV Max<SortArrow col="aov_max" /></th>
                     <th className="p-2 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('spike_count')}>Spikes<SortArrow col="spike_count" /></th>
-                    <th className="p-2 text-center cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('whale_signal_days')}>🐋 Days<SortArrow col="whale_signal_days" /></th>
-                    <th className="p-2 text-center cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('foreign_buy_days')}>🌏 Days<SortArrow col="foreign_buy_days" /></th>
+                    <th className="p-2 text-center cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('anomaly_count')}>Anomaly<SortArrow col="anomaly_count" /></th>
                     <th className="p-2 text-center">Flags</th>
                     <th className="p-2 text-center">Signal</th>
                   </tr>
@@ -487,6 +505,7 @@ export default function ScreenerPage() {
                         </Link>
                       </td>
                       <td className="p-2 hidden md:table-cell text-[10px] text-muted-foreground truncate max-w-[100px]">{r.sector || '—'}</td>
+                      <td className="p-2 text-right font-semibold text-foreground">{formatNumber(r.close)}</td>
                       <td className={`p-2 text-right font-bold ${r.change_percent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {r.change_percent >= 0 ? '+' : ''}{r.change_percent.toFixed(2)}%
                       </td>
@@ -495,13 +514,8 @@ export default function ScreenerPage() {
                           {Math.round(r.smart_score)}
                         </span>
                       </td>
-                      <td className="p-2 text-center hidden lg:table-cell">
-                        <span className={`font-bold ${r.institutional_flow >= 10 ? 'text-emerald-400' : r.institutional_flow >= 0 ? 'text-amber-400' : 'text-red-400'}`}>
-                          {r.institutional_flow.toFixed(1)}
-                        </span>
-                      </td>
-                      <td className={`p-2 text-right hidden lg:table-cell font-semibold ${r.net_foreign_30d >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {formatRupiah(r.net_foreign_30d)}
+                      <td className={`p-2 text-right hidden lg:table-cell font-semibold ${r.net_foreign_period >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {formatRupiah(r.net_foreign_period)}
                       </td>
                       <td className="p-2 text-center">
                         {r.aov_max > 0 ? (
@@ -516,13 +530,8 @@ export default function ScreenerPage() {
                         </span>
                       </td>
                       <td className="p-2 text-center hidden lg:table-cell">
-                        <span className={`font-bold ${r.whale_signal_days >= 2 ? 'text-emerald-400' : r.whale_signal_days >= 1 ? 'text-amber-400' : 'text-muted-foreground'}`}>
-                          {r.whale_signal_days}
-                        </span>
-                      </td>
-                      <td className="p-2 text-center hidden lg:table-cell">
-                        <span className={`font-bold ${r.foreign_buy_days >= Math.max(3, period*0.5) ? 'text-emerald-400' : r.foreign_buy_days >= 1 ? 'text-amber-400' : 'text-red-400'}`}>
-                          {r.foreign_buy_days}
+                        <span className={`font-bold ${r.anomaly_count >= 5 ? 'text-purple-400' : r.anomaly_count >= 2 ? 'text-amber-400' : r.anomaly_count > 0 ? 'text-blue-400' : 'text-muted-foreground'}`}>
+                          {r.anomaly_count}
                         </span>
                       </td>
                       <td className="p-2 text-center">
@@ -530,8 +539,8 @@ export default function ScreenerPage() {
                           {r.whale_signal && <span title="Whale">🐋</span>}
                           {r.big_player_anomaly && <span title="Big Player">⚡</span>}
                           {r.is_stealth && <span title="Stealth">🕵️</span>}
-                          {r.net_foreign_30d > 0 && <span title="Foreign Buy">🌏</span>}
-                          {!r.whale_signal && !r.big_player_anomaly && !r.is_stealth && r.net_foreign_30d <= 0 && (
+                          {r.net_foreign_period > 0 && <span title="Foreign Buy">🌏</span>}
+                          {!r.whale_signal && !r.big_player_anomaly && !r.is_stealth && r.net_foreign_period <= 0 && (
                             <span className="text-muted-foreground/30">—</span>
                           )}
                         </div>
