@@ -316,6 +316,10 @@ export default function StockDetailPage() {
         },
         crosshair: { mode: 1 },
         rightPriceScale: { borderColor: 'rgba(51,65,85,0.5)' },
+        leftPriceScale: {
+          visible: true,
+          borderColor: 'rgba(51,65,85,0.5)',
+        },
         timeScale: { 
           borderColor: 'rgba(51,65,85,0.5)',
           timeVisible: true,
@@ -324,7 +328,7 @@ export default function StockDetailPage() {
       })
 
       // === CANDLE SERIES ===
-      chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.05, bottom: 0.60 } })
+      chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.05, bottom: 0.45 } })
       const candleSeries = chart.addCandlestickSeries({
         upColor: '#22c55e',
         downColor: '#ef4444',
@@ -372,8 +376,8 @@ export default function StockDetailPage() {
       vwmaSeries.setData(historyData.filter(d => d.time && d.vwma > 0).map(d => ({ time: d.time, value: d.vwma })))
 
       // === AOV RATIO LINE ===
-      const aovSeries = chart.addLineSeries({ color: '#8b5cf6', lineWidth: 2, priceScaleId: 'aov' })
-      chart.priceScale('aov').applyOptions({ scaleMargins: { top: 0.45, bottom: 0.40 } })
+      const aovSeries = chart.addLineSeries({ color: '#8b5cf6', lineWidth: 2, priceScaleId: 'left' })
+      chart.priceScale('left').applyOptions({ scaleMargins: { top: 0.60, bottom: 0.20 } })
       aovSeries.setData(historyData.filter(d => d.time).map(d => ({ time: d.time, value: d.aov_ratio })))
       aovSeries.createPriceLine({ price: 1.5, color: '#22c55e', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '🐋 1.5x' })
       aovSeries.createPriceLine({ price: 0.6, color: '#ef4444', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '🩸 0.6x' })
@@ -383,7 +387,7 @@ export default function StockDetailPage() {
         priceScaleId: 'vol',
         priceFormat: { type: 'volume' },
       })
-      chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.65, bottom: 0.20 } })
+      chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.60, bottom: 0.20 } })
       volSeries.setData(historyData.filter(d => d.time && d.volume).map(d => ({
         time: d.time,
         value: d.volume,
