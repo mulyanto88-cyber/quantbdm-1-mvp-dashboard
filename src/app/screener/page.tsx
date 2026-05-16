@@ -79,7 +79,6 @@ export default function ScreenerPage() {
 
   // Filter states
   const [period, setPeriod] = useState(7)
-  const [search, setSearch] = useState('')
   const [filterSignal, setFilterSignal] = useState('ALL')
   const [filterFlag, setFilterFlag] = useState('ALL')
   const [filterSector, setFilterSector] = useState('ALL')
@@ -212,7 +211,6 @@ export default function ScreenerPage() {
 
   const filtered = useMemo(() => results
     .filter(r => {
-      if (search && !r.stock_code.includes(search.toUpperCase()) && !r.sector?.toLowerCase().includes(search.toLowerCase())) return false
       if (filterSignal !== 'ALL' && r.signal !== filterSignal) return false
       if (filterSector !== 'ALL' && r.sector !== filterSector) return false
       if (filterFlag === 'WHALE' && !r.whale_signal) return false
@@ -237,7 +235,7 @@ export default function ScreenerPage() {
   const totalPages = Math.ceil(filtered.length / pageSize)
   const paginatedData = filtered.slice((page - 1) * pageSize, page * pageSize)
 
-  useEffect(() => { setPage(1) }, [search, filterSignal, filterSector, filterFlag, minScore, period])
+  useEffect(() => { setPage(1) }, [filterSignal, filterSector, filterFlag, minScore, period])
 
   // ─── Handlers ────────────────────────────────────────────────────────────────
   const toggleSort = (col: SortField) => {
@@ -428,22 +426,7 @@ export default function ScreenerPage() {
         </div>
       )}
 
-      {/* ════════════════════════════════════════════════════════════
-          SEARCH BAR
-      ════════════════════════════════════════════════════════════ */}
-      <div className="glass rounded-xl p-3 border border-border/30 flex items-center gap-3 focus-within:border-gold-400/30 transition-all">
-        <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-        <input type="text" placeholder="Cari kode saham atau sektor..." value={search}
-          onChange={e => setSearch(e.target.value.toUpperCase())}
-          className="flex-1 bg-transparent text-sm focus:outline-none" />
-        {search && (
-          <button onClick={() => setSearch('')} className="p-1 hover:bg-white/[0.05] rounded-lg">
-            <X className="w-4 h-4 text-muted-foreground" />
-          </button>
-        )}
-        <span className="text-xs text-muted-foreground px-2 py-1 bg-white/[0.05] rounded-lg">{filtered.length} hasil</span>
-      </div>
-
+      
       {/* ════════════════════════════════════════════════════════════
           ERROR
       ════════════════════════════════════════════════════════════ */}
