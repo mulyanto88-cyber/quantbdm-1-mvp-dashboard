@@ -2,145 +2,315 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { formatShares } from '@/lib/utils'
+import { formatNumber, formatShares } from '@/lib/utils'
 import { 
-  Eye, AlertTriangle, ArrowUp, ArrowDown,
-  Building2, TrendingUp, TrendingDown, Clock,
-  Shield, X, RefreshCw
+  Eye, AlertTriangle, Search, Building2, TrendingUp, TrendingDown, 
+  PieChart as PieChartIcon, Activity, Shield, Users, Globe,
+  ChevronDown, X, RefreshCw, ArrowUp, ArrowDown
 } from 'lucide-react'
 import Link from 'next/link'
+import {
+  ResponsiveContainer, PieChart, Pie, Cell, Tooltip,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Legend
+} from 'recharts'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface InsiderAlert {
-  report_date: string
-  share_code: string
+interface InvestorPosition {
   investor_name: string
   investor_type: string
-  nationality: string
+  local_foreign: string
+  percentage: number
+  total_shares: number
+  date: string
+}
+
+interface OwnershipChange {
+  investor_name: string
+  investor_type: string
+  local_foreign: string
   prev_percentage: number
   curr_percentage: number
-  pct_point_change: number
+  pct_change: number
   share_change: number
   action: string
   alert_level: string
 }
 
+interface SignalDetection {
+  label: string
+  type: 'bullish' | 'bearish' | 'neutral'
+  detail: string
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 const PERIOD_OPTIONS = [
-  { label: '1D',  days: 1 },
-  { label: '7D',  days: 7 },
-  { label: '14D', days: 14 },
-  { label: '1M',  days: 30 },
-  { label: '3M',  days: 90 },
+  { label: '1M', months: 1 },
+  { label: '2M', months: 2 },
+  { label: '3M', months: 3 },
+]
+
+const INVESTOR_TYPE_COLORS: Record<string, string> = {
+  'Corporate': '#10b981',
+  'Individual': '#3b82f6',
+  'Fund Manager': '#f59e0b',
+  'Financial Institutional': '#8b5cf6',
+  'Insurance': '#ec4899',
+  'Pension Fund': '#06b6d4',
+  'Securities': '#f97316',
+  'Others': '#6b7280',
+}
+
+const LINE_COLORS = [
+  '#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899',
+  '#06b6d4', '#f97316', '#ef4444', '#84cc16', '#6366f1',
 ]
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export default function InsiderAlertsPage() {
-  const [insiders, setInsiders] = useState<InsiderAlert[]>([])
+export default function InsiderOwnershipPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [alertFilter, setAlertFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM' | 'LOW'>('ALL')
-  const [actionFilter, setActionFilter] = useState<'ALL' | 'BUYING' | 'SELLING'>('ALL')
-  const [period, setPeriod] = useState(7)
-  const [page, setPage] = useState(1)
-  const pageSize = 25
+  const [period, setPeriod] = useState(1)
+  const [selectedStock, setSelectedStock] = useState<string | null>(null)
+  const [stockList, setStockList] = useState<string[]>([])
+  const [searchStock, setSearchStock] = useState('')
+  const [showStockDropdown, setShowStockDropdown] = useState(false)
+  const [showChangeTable, setShowChangeTable] = useState(false)
+
+  // Data states
+  const [allData, setAllData] = useState<any[]>([])
+  const [currentMonthData, setCurrentMonthData] = useState<InvestorPosition[]>([])
+  const [previousMonthData, setPreviousMonthData] = useState<InvestorPosition[]>([])
+  const [historyData, setHistoryData] = useState<any[]>([])
+  const [changes, setChanges] = useState<OwnershipChange[]>([])
+  const [signals, setSignals] = useState<SignalDetection[]>([])
+  const [topStocks, setTopStocks] = useState<any[]>([])
 
   // ─── Fetch Data ──────────────────────────────────────────────────────────────
-  const fetchInsiders = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true)
     setError(null)
+
     try {
-      const months = period <= 14 ? 1 : period <= 30 ? 3 : 6
-      
-      const { data, error: rpcError } = await supabase.rpc('get_insider_alert', {
-        p_stock_code: null,
-        p_months: months,
-        p_min_pct_chg: 0.3,
-      })
-      if (rpcError) throw rpcError
-      
-      const now = new Date()
-      const cutoff = new Date()
-      cutoff.setDate(now.getDate() - period)
-      cutoff.setHours(0, 0, 0, 0)
-      
-      const filtered = (data || []).filter((item: any) => {
-        const itemDate = new Date(item.report_date)
-        return itemDate >= cutoff
-      })
-      
-      setInsiders(filtered)
+      // Fetch semua data dari ksei_data1persen_mutasi
+      const { data, error: fetchError } = await supabase
+        .from('ksei_data1persen_mutasi')
+        .select('date, share_code, investor_name, investor_type, local_foreign, percentage, total_holding_shares')
+        .order('date', { ascending: false })
+        .limit(50000)
+
+      if (fetchError) throw fetchError
+      if (!data || data.length === 0) {
+        setAllData([])
+        setLoading(false)
+        return
+      }
+
+      setAllData(data)
+
+      // Extract unique stock codes
+      const stocks = Array.from(new Set(data.map((d: any) => d.share_code))).sort()
+      setStockList(stocks)
+
+      // Hitung top stocks with signals (untuk default view)
+      computeTopStocks(data)
     } catch (err) {
       console.error(err)
-      setError(err instanceof Error ? err.message : 'Failed to fetch insider data')
+      setError(err instanceof Error ? err.message : 'Failed to fetch')
     } finally {
       setLoading(false)
     }
-  }, [period])
+  }, [])
 
+  useEffect(() => { fetchData() }, [fetchData])
+
+  // ─── Compute Top Stocks (Default View) ──────────────────────────────────────
+  const computeTopStocks = (data: any[]) => {
+    const dates = Array.from(new Set(data.map((d: any) => d.date))).sort().reverse()
+    if (dates.length < 2) return
+
+    const latest = dates[0]
+    const prev = dates[1]
+
+    const stockSignals: any[] = []
+
+    const stocks = Array.from(new Set(data.map((d: any) => d.share_code)))
+    stocks.forEach(code => {
+      const currData = data.filter((d: any) => d.share_code === code && d.date === latest)
+      const prevData = data.filter((d: any) => d.share_code === code && d.date === prev)
+
+      if (currData.length === 0) return
+
+      let corpCurr = 0, corpPrev = 0, foreignCurr = 0, foreignPrev = 0, indCurr = 0, indPrev = 0
+      
+      currData.forEach((d: any) => {
+        if (d.investor_type === 'Corporate') corpCurr += Number(d.percentage)
+        if (d.local_foreign === 'F') foreignCurr += Number(d.percentage)
+        if (d.investor_type === 'Individual') indCurr += Number(d.percentage)
+      })
+      prevData.forEach((d: any) => {
+        if (d.investor_type === 'Corporate') corpPrev += Number(d.percentage)
+        if (d.local_foreign === 'F') foreignPrev += Number(d.percentage)
+        if (d.investor_type === 'Individual') indPrev += Number(d.percentage)
+      })
+
+      const signals: string[] = []
+      let score = 0
+
+      if (corpCurr - corpPrev > 1 && indCurr - indPrev < -0.5) { signals.push('🟢 Corp Acc'); score += 3 }
+      if (foreignCurr - foreignPrev > 1) { signals.push('🟢 Foreign In'); score += 2 }
+      if (corpCurr + foreignCurr > 50) { signals.push('💎 Inst Dom'); score += 1 }
+      if (corpCurr - corpPrev < -1) { signals.push('🔴 Corp Dist'); score -= 2 }
+      if (foreignCurr - foreignPrev < -1) { signals.push('🔴 Foreign Out'); score -= 2 }
+      if (indCurr - indPrev > 1) { signals.push('🟡 Insider Buy'); score += 1 }
+
+      if (signals.length > 0) {
+        stockSignals.push({ code, signals, score, change: corpCurr - corpPrev })
+      }
+    })
+
+    setTopStocks(stockSignals.sort((a, b) => b.score - a.score).slice(0, 15))
+  }
+
+  // ─── Compute Stock Detail ────────────────────────────────────────────────────
   useEffect(() => {
-    fetchInsiders()
-  }, [fetchInsiders])
+    if (!selectedStock || allData.length === 0) return
 
-  // ─── Filter, Sort & Paginate ─────────────────────────────────────────────────
-  const filteredInsiders = useMemo(() => insiders
-    .filter(item => {
-      if (alertFilter !== 'ALL' && item.alert_level !== alertFilter) return false
-      if (actionFilter !== 'ALL' && item.action !== actionFilter) return false
-      return true
+    const stockData = allData.filter((d: any) => d.share_code === selectedStock)
+    const dates = Array.from(new Set(stockData.map((d: any) => d.date))).sort().reverse()
+
+    if (dates.length === 0) return
+
+    // Current month (latest)
+    const latestDate = dates[0]
+    const currData = stockData.filter((d: any) => d.date === latestDate)
+    setCurrentMonthData(currData.map((d: any) => ({
+      investor_name: d.investor_name,
+      investor_type: d.investor_type,
+      local_foreign: d.local_foreign,
+      percentage: Number(d.percentage),
+      total_shares: Number(d.total_holding_shares),
+      date: d.date,
+    })))
+
+    // Previous month
+    if (dates.length >= 2) {
+      const prevDate = dates[1]
+      const prevData = stockData.filter((d: any) => d.date === prevDate)
+      setPreviousMonthData(prevData.map((d: any) => ({
+        investor_name: d.investor_name,
+        investor_type: d.investor_type,
+        local_foreign: d.local_foreign,
+        percentage: Number(d.percentage),
+        total_shares: Number(d.total_holding_shares),
+        date: d.date,
+      })))
+
+      // Compute changes
+      const changeList: OwnershipChange[] = []
+      currData.forEach((curr: any) => {
+        const prev = prevData.find((p: any) => p.investor_name === curr.investor_name)
+        const currPct = Number(curr.percentage)
+        const prevPct = prev ? Number(prev.percentage) : 0
+        const currShares = Number(curr.total_holding_shares)
+        const prevShares = prev ? Number(prev.total_holding_shares) : 0
+        const pctChange = currPct - prevPct
+        const shareChange = currShares - prevShares
+
+        if (Math.abs(pctChange) < 0.1) return
+
+        const action = pctChange > 0.3 ? 'BUYING' : pctChange < -0.3 ? 'SELLING' : 'HOLDING'
+        const alertLevel = Math.abs(pctChange) >= 2 ? 'HIGH' : Math.abs(pctChange) >= 1 ? 'MEDIUM' : 'LOW'
+
+        changeList.push({
+          investor_name: curr.investor_name,
+          investor_type: curr.investor_type,
+          local_foreign: curr.local_foreign,
+          prev_percentage: prevPct,
+          curr_percentage: currPct,
+          pct_change: pctChange,
+          share_change: shareChange,
+          action,
+          alert_level: alertLevel,
+        })
+      })
+      setChanges(changeList.sort((a, b) => Math.abs(b.pct_change) - Math.abs(a.pct_change)))
+    }
+
+    // History for line chart (3-6 bulan)
+    const historyDates = dates.slice(0, 6).reverse()
+    const historyMap: Record<string, any[]> = {}
+    historyDates.forEach(date => {
+      stockData.filter((d: any) => d.date === date).forEach((d: any) => {
+        if (!historyMap[d.investor_name]) historyMap[d.investor_name] = []
+        historyMap[d.investor_name].push({ date, shares: Number(d.total_holding_shares) })
+      })
     })
-    .sort((a, b) => {
-      // Sort by date descending (terbaru dulu)
-      const dateCompare = new Date(b.report_date).getTime() - new Date(a.report_date).getTime()
-      if (dateCompare !== 0) return dateCompare
-      // Jika tanggal sama, sort by %change absolute descending
-      return Math.abs(b.pct_point_change) - Math.abs(a.pct_point_change)
-    }), [insiders, alertFilter, actionFilter])
+    setHistoryData(historyDates.map(date => {
+      const point: any = { date }
+      Object.entries(historyMap).forEach(([name, entries]) => {
+        const entry = entries.find((e: any) => e.date === date)
+        point[name] = entry ? entry.shares : 0
+      })
+      return point
+    }))
 
-  const totalPages = Math.ceil(filteredInsiders.length / pageSize)
-  const paginatedData = filteredInsiders.slice((page - 1) * pageSize, page * pageSize)
+    // Compute signals
+    computeSignals(currData, dates.length >= 2 ? stockData.filter((d: any) => d.date === dates[1]) : [])
+  }, [selectedStock, allData])
 
-  useEffect(() => { setPage(1) }, [period, alertFilter, actionFilter])
+  // ─── Compute Signals ─────────────────────────────────────────────────────────
+  const computeSignals = (currData: any[], prevData: any[]) => {
+    const sigs: SignalDetection[] = []
 
-  // ─── Top 5 Stocks ────────────────────────────────────────────────────────────
-  const topBuyStocks = useMemo(() => {
-    const buying = filteredInsiders.filter(i => i.action === 'BUYING')
-    const grouped: Record<string, { count: number; totalChange: number; totalShares: number }> = {}
-    buying.forEach(i => {
-      if (!grouped[i.share_code]) grouped[i.share_code] = { count: 0, totalChange: 0, totalShares: 0 }
-      grouped[i.share_code].count++
-      grouped[i.share_code].totalChange += i.pct_point_change
-      grouped[i.share_code].totalShares += Math.abs(i.share_change)
+    let corpCurr = 0, corpPrev = 0, foreignCurr = 0, foreignPrev = 0
+    let indCurr = 0, indPrev = 0, fundCurr = 0, finCurr = 0
+
+    currData.forEach((d: any) => {
+      if (d.investor_type === 'Corporate') corpCurr += Number(d.percentage)
+      if (d.local_foreign === 'F') foreignCurr += Number(d.percentage)
+      if (d.investor_type === 'Individual') indCurr += Number(d.percentage)
+      if (d.investor_type === 'Fund Manager') fundCurr += Number(d.percentage)
+      if (d.investor_type === 'Financial Institutional') finCurr += Number(d.percentage)
     })
-    return Object.entries(grouped)
-      .sort((a, b) => b[1].totalChange - a[1].totalChange)
-      .slice(0, 5)
-      .map(([code, data]) => ({ code, ...data }))
-  }, [filteredInsiders])
-
-  const topSellStocks = useMemo(() => {
-    const selling = filteredInsiders.filter(i => i.action === 'SELLING')
-    const grouped: Record<string, { count: number; totalChange: number; totalShares: number }> = {}
-    selling.forEach(i => {
-      if (!grouped[i.share_code]) grouped[i.share_code] = { count: 0, totalChange: 0, totalShares: 0 }
-      grouped[i.share_code].count++
-      grouped[i.share_code].totalChange += Math.abs(i.pct_point_change)
-      grouped[i.share_code].totalShares += Math.abs(i.share_change)
+    prevData.forEach((d: any) => {
+      if (d.investor_type === 'Corporate') corpPrev += Number(d.percentage)
+      if (d.local_foreign === 'F') foreignPrev += Number(d.percentage)
+      if (d.investor_type === 'Individual') indPrev += Number(d.percentage)
     })
-    return Object.entries(grouped)
-      .sort((a, b) => b[1].totalChange - a[1].totalChange)
-      .slice(0, 5)
-      .map(([code, data]) => ({ code, ...data }))
-  }, [filteredInsiders])
 
-  // ─── Stats ───────────────────────────────────────────────────────────────────
-  const stats = useMemo(() => ({
-    total: filteredInsiders.length,
-    high: filteredInsiders.filter(i => i.alert_level === 'HIGH').length,
-    buying: filteredInsiders.filter(i => i.action === 'BUYING').length,
-    selling: filteredInsiders.filter(i => i.action === 'SELLING').length,
-    uniqueStocks: new Set(filteredInsiders.map(i => i.share_code)).size,
-  }), [filteredInsiders])
+    if (corpCurr - corpPrev > 1 && indCurr - indPrev < -0.5) 
+      sigs.push({ label: 'Corporate Accumulation', type: 'bullish', detail: `+${(corpCurr - corpPrev).toFixed(1)}% Corp, ${(indCurr - indPrev).toFixed(1)}% Ind` })
+    if (foreignCurr - foreignPrev > 1) 
+      sigs.push({ label: 'Foreign Inflow', type: 'bullish', detail: `+${(foreignCurr - foreignPrev).toFixed(1)}% Foreign` })
+    if (corpCurr + fundCurr + finCurr > 50) 
+      sigs.push({ label: 'Institutional Dominance', type: 'bullish', detail: `${(corpCurr + fundCurr + finCurr).toFixed(1)}% Institutional` })
+    if (corpCurr - corpPrev < -1 && indCurr - indPrev > 0.5) 
+      sigs.push({ label: 'Corporate Distribution', type: 'bearish', detail: `${(corpCurr - corpPrev).toFixed(1)}% Corp, +${(indCurr - indPrev).toFixed(1)}% Ind` })
+    if (foreignCurr - foreignPrev < -1) 
+      sigs.push({ label: 'Foreign Outflow', type: 'bearish', detail: `${(foreignCurr - foreignPrev).toFixed(1)}% Foreign` })
+    if (indCurr - indPrev > 1) 
+      sigs.push({ label: 'Insider Buying', type: 'neutral', detail: `+${(indCurr - indPrev).toFixed(1)}% Individual` })
+    if (indCurr > 60) 
+      sigs.push({ label: 'Retail Dominance', type: 'neutral', detail: `${indCurr.toFixed(1)}% Individual` })
+
+    setSignals(sigs)
+  }
+
+  // ─── Pie Chart Data ──────────────────────────────────────────────────────────
+  const pieData = useMemo(() => {
+    if (!currentMonthData.length) return []
+    const grouped: Record<string, number> = {}
+    currentMonthData.forEach(d => {
+      grouped[d.investor_type] = (grouped[d.investor_type] || 0) + d.percentage
+    })
+    return Object.entries(grouped).map(([name, value]) => ({ name, value }))
+  }, [currentMonthData])
+
+  // ─── Filtered Stock List ─────────────────────────────────────────────────────
+  const filteredStocks = useMemo(() => {
+    if (!searchStock) return stockList.slice(0, 50)
+    return stockList.filter(s => s.toLowerCase().includes(searchStock.toLowerCase())).slice(0, 50)
+  }, [stockList, searchStock])
 
   return (
     <div className="space-y-5 animate-fade-in pb-10">
@@ -151,318 +321,289 @@ export default function InsiderAlertsPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-3xl md:text-4xl font-black text-foreground tracking-tight">
-            <Eye className="w-8 h-8 text-red-400 inline mr-2" />
-            <span className="bg-gradient-to-r from-red-400 to-amber-400 bg-clip-text text-transparent">KSEI &gt;5%</span>
-            <span className="text-foreground"> Insider Alerts</span>
-            <span className="badge-hot ml-3">DAILY</span>
+            <Eye className="w-8 h-8 text-blue-400 inline mr-2" />
+            <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">KSEI &gt;1%</span>
+            <span className="text-foreground"> Ownership Intelligence</span>
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            Daily ownership changes from KSEI &gt;5% reports · Confirm accumulation & detect distribution
+            Monthly ownership data · Detect institutional accumulation & distribution
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={fetchInsiders} disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-sm font-medium transition-all">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-        </div>
       </div>
 
       {/* ════════════════════════════════════════════════════════════
-          INFO BOX
-      ════════════════════════════════════════════════════════════ */}
-      <div className="glass rounded-xl p-3 border border-blue-500/20 bg-blue-500/[0.03] flex items-start gap-2">
-        <Shield className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
-        <p className="text-[11px] text-blue-300/80 leading-relaxed">
-          Data dari laporan KSEI &gt;5% (daily). Transaksi mungkin sedikit tapi setiap pergerakan signifikan.
-          Gunakan sebagai <strong>konfirmasi</strong> sinyal dari Screener & Smart Money Radar.
-        </p>
-      </div>
-
-      {/* ════════════════════════════════════════════════════════════
-          PERIOD TOGGLE + FILTERS
+          FILTERS
       ════════════════════════════════════════════════════════════ */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1 bg-white/[0.03] rounded-lg p-0.5 border border-white/[0.06]">
-          <Clock className="w-3.5 h-3.5 text-muted-foreground ml-2" />
           {PERIOD_OPTIONS.map(opt => (
-            <button key={opt.days} onClick={() => setPeriod(opt.days)}
+            <button key={opt.months} onClick={() => setPeriod(opt.months)}
               className={`px-3 py-1.5 text-[10px] font-bold rounded-md transition-all ${
-                period === opt.days ? 'bg-red-400/20 text-red-400' : 'text-muted-foreground hover:text-white'
+                period === opt.months ? 'bg-blue-400/20 text-blue-400' : 'text-muted-foreground hover:text-white'
               }`}>{opt.label}</button>
           ))}
         </div>
 
-        <div className="w-px h-6 bg-white/[0.08]" />
-
-        <div className="flex gap-2">
-          {['ALL', 'HIGH', 'MEDIUM', 'LOW'].map(level => (
-            <button key={level} onClick={() => setAlertFilter(level as any)}
-              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                alertFilter === level
-                  ? level === 'HIGH' ? 'alert-high' 
-                  : level === 'MEDIUM' ? 'alert-medium' 
-                  : level === 'LOW' ? 'alert-low'
-                  : 'bg-red-400/20 text-red-400 border border-red-400/30'
-                  : 'bg-white/[0.03] text-muted-foreground border border-white/[0.06] hover:border-white/[0.12]'
-              }`}>
-              {level === 'ALL' ? 'All Levels' : level}
-            </button>
-          ))}
-        </div>
-
-        <div className="w-px h-6 bg-white/[0.08]" />
-
-        <div className="flex gap-2">
-          {['ALL', 'BUYING', 'SELLING'].map(action => (
-            <button key={action} onClick={() => setActionFilter(action as any)}
-              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                actionFilter === action
-                  ? action === 'BUYING' ? 'signal-strong-buy'
-                  : action === 'SELLING' ? 'signal-avoid'
-                  : 'bg-red-400/20 text-red-400 border border-red-400/30'
-                  : 'bg-white/[0.03] text-muted-foreground border border-white/[0.06] hover:border-white/[0.12]'
-              }`}>
-              {action === 'ALL' ? 'All Actions' : action}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ════════════════════════════════════════════════════════════
-          STATS CARDS (5)
-      ════════════════════════════════════════════════════════════ */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {[
-          { label: 'Total Alerts', value: stats.total, color: 'text-foreground', icon: Eye },
-          { label: 'HIGH Level', value: stats.high, color: 'text-red-400', icon: AlertTriangle },
-          { label: 'Buying', value: stats.buying, color: 'text-emerald-400', icon: TrendingUp },
-          { label: 'Selling', value: stats.selling, color: 'text-red-400', icon: TrendingDown },
-          { label: 'Stocks', value: stats.uniqueStocks, color: 'text-purple-400', icon: Building2 },
-        ].map((item, i) => {
-          const Icon = item.icon
-          return (
-            <div key={i} className="glass rounded-xl p-3 border border-border/30 card-hover">
-              <div className="flex items-center justify-between mb-1">
-                <Icon className={`w-3.5 h-3.5 ${item.color}`} />
-              </div>
-              <p className="text-[9px] text-muted-foreground uppercase tracking-widest font-bold">{item.label}</p>
-              <p className={`text-xl font-black mt-0.5 ${item.color}`}>{item.value}</p>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* ════════════════════════════════════════════════════════════
-          TOP STOCKS HEATMAP (Buy vs Sell)
-      ════════════════════════════════════════════════════════════ */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="glass rounded-2xl p-4 border border-emerald-500/20">
-          <div className="flex items-center gap-2 mb-3">
-            <TrendingUp className="w-4 h-4 text-emerald-400" />
-            <h3 className="text-xs font-black text-emerald-400 uppercase tracking-widest">Top Insider Buying</h3>
+        {/* Stock Search */}
+        <div className="relative">
+          <div className="flex items-center gap-2 bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-1.5 cursor-pointer"
+               onClick={() => setShowStockDropdown(!showStockDropdown)}>
+            <Search className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className={`text-sm ${selectedStock ? 'text-foreground font-bold' : 'text-muted-foreground'}`}>
+              {selectedStock || 'Select Stock...'}
+            </span>
+            <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
+            {selectedStock && (
+              <button onClick={(e) => { e.stopPropagation(); setSelectedStock(null) }}
+                className="ml-1 p-0.5 hover:bg-white/[0.05] rounded">
+                <X className="w-3 h-3 text-muted-foreground" />
+              </button>
+            )}
           </div>
-          {topBuyStocks.length > 0 ? (
-            <div className="space-y-2">
-              {topBuyStocks.map((s, i) => (
-                <Link key={s.code} href={`/stock/${s.code}`}
-                  className="flex items-center justify-between p-2 rounded-lg hover:bg-emerald-500/[0.05] border border-transparent hover:border-emerald-500/10 transition-all group">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-muted-foreground w-4">{i+1}</span>
-                    <span className="font-mono font-black text-sm text-foreground group-hover:text-emerald-400 transition-colors">{s.code}</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-[10px]">
-                    <span className="text-emerald-400 font-bold">+{s.totalChange.toFixed(2)}%</span>
-                    <span className="text-muted-foreground">{formatShares(s.totalShares)}</span>
-                    <span className="text-muted-foreground/50">{s.count}×</span>
-                  </div>
-                </Link>
+          {showStockDropdown && (
+            <div className="absolute top-full left-0 mt-1 w-64 max-h-64 overflow-y-auto glass rounded-xl border border-white/[0.08] shadow-2xl z-50">
+              <input
+                type="text"
+                placeholder="Search stock..."
+                value={searchStock}
+                onChange={(e) => setSearchStock(e.target.value.toUpperCase())}
+                className="w-full bg-transparent border-b border-white/[0.05] px-3 py-2 text-sm focus:outline-none sticky top-0 glass"
+                autoFocus
+              />
+              {filteredStocks.map(code => (
+                <button key={code} onClick={() => { setSelectedStock(code); setShowStockDropdown(false); setSearchStock('') }}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-white/[0.05] transition-colors font-mono">
+                  {code}
+                </button>
               ))}
             </div>
-          ) : (
-            <p className="text-center py-6 text-xs text-muted-foreground">No insider buying detected</p>
-          )}
-        </div>
-
-        <div className="glass rounded-2xl p-4 border border-red-500/20">
-          <div className="flex items-center gap-2 mb-3">
-            <TrendingDown className="w-4 h-4 text-red-400" />
-            <h3 className="text-xs font-black text-red-400 uppercase tracking-widest">Top Insider Selling</h3>
-          </div>
-          {topSellStocks.length > 0 ? (
-            <div className="space-y-2">
-              {topSellStocks.map((s, i) => (
-                <Link key={s.code} href={`/stock/${s.code}`}
-                  className="flex items-center justify-between p-2 rounded-lg hover:bg-red-500/[0.05] border border-transparent hover:border-red-500/10 transition-all group">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-muted-foreground w-4">{i+1}</span>
-                    <span className="font-mono font-black text-sm text-foreground group-hover:text-red-400 transition-colors">{s.code}</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-[10px]">
-                    <span className="text-red-400 font-bold">-{s.totalChange.toFixed(2)}%</span>
-                    <span className="text-muted-foreground">{formatShares(s.totalShares)}</span>
-                    <span className="text-muted-foreground/50">{s.count}×</span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <p className="text-center py-6 text-xs text-muted-foreground">No insider selling detected</p>
           )}
         </div>
       </div>
 
       {/* ════════════════════════════════════════════════════════════
-          ERROR
+          DEFAULT VIEW: TOP STOCKS WITH SIGNALS
       ════════════════════════════════════════════════════════════ */}
-      {error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 text-red-400 text-sm">
-          <AlertTriangle className="w-5 h-5 flex-shrink-0" />
-          <span className="flex-1">{error}</span>
-          <button onClick={() => setError(null)}><X className="w-4 h-4" /></button>
+      {!selectedStock && !loading && (
+        <div className="glass rounded-2xl p-5 border border-border/30">
+          <h2 className="text-sm font-black text-foreground mb-4 flex items-center gap-2">
+            <Activity className="w-4 h-4 text-blue-400" />
+            Top Stocks with Ownership Changes
+          </h2>
+          {topStocks.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {topStocks.map((s, i) => (
+                <button key={s.code} onClick={() => setSelectedStock(s.code)}
+                  className="glass rounded-xl p-4 border border-border/30 card-hover text-left hover:border-blue-400/30 transition-all">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-mono font-black text-lg text-foreground">{s.code}</span>
+                    <span className={`text-xs font-bold ${s.score > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      Score: {s.score > 0 ? '+' : ''}{s.score}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {s.signals.map((sig: string, j: number) => (
+                      <span key={j} className="text-[9px] px-1.5 py-0.5 rounded bg-white/[0.04] text-muted-foreground">
+                        {sig}
+                      </span>
+                    ))}
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-center py-8 text-muted-foreground">Loading data...</p>
+          )}
         </div>
       )}
 
       {/* ════════════════════════════════════════════════════════════
-          TABLE
+          STOCK DETAIL VIEW
       ════════════════════════════════════════════════════════════ */}
-      <div className="glass rounded-2xl overflow-hidden border border-border/30">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-white/[0.02] border-b border-white/[0.05]">
-                <th className="text-left text-[10px] text-muted-foreground font-bold uppercase tracking-widest p-3 pl-4">Date</th>
-                <th className="text-left text-[10px] text-muted-foreground font-bold uppercase tracking-widest p-3">Stock</th>
-                <th className="text-left text-[10px] text-muted-foreground font-bold uppercase tracking-widest p-3 hidden lg:table-cell">Investor</th>
-                <th className="text-center text-[10px] text-muted-foreground font-bold uppercase tracking-widest p-3 hidden sm:table-cell">Type</th>
-                <th className="text-right text-[10px] text-muted-foreground font-bold uppercase tracking-widest p-3">% Change</th>
-                <th className="text-right text-[10px] text-muted-foreground font-bold uppercase tracking-widest p-3 hidden md:table-cell">Shares</th>
-                <th className="text-center text-[10px] text-muted-foreground font-bold uppercase tracking-widest p-3">Action</th>
-                <th className="text-center text-[10px] text-muted-foreground font-bold uppercase tracking-widest p-3 pr-4">Level</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                Array.from({ length: 8 }).map((_, i) => (
-                  <tr key={i} className="border-b border-white/[0.02]">
-                    {Array.from({ length: 8 }).map((_, j) => (
-                      <td key={j} className="p-3"><div className="shimmer h-5 rounded-lg mx-auto" style={{ width: j < 2 ? '60px' : '40px' }} /></td>
-                    ))}
-                  </tr>
-                ))
-              ) : paginatedData.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="p-16 text-center">
-                    <Eye className="w-16 h-16 mx-auto mb-4 opacity-20" />
-                    <p className="text-muted-foreground font-medium">No insider alerts found</p>
-                    <p className="text-xs text-muted-foreground mt-1">Try adjusting filters or expanding time range</p>
-                  </td>
-                </tr>
-              ) : (
-                paginatedData.map((item, i) => (
-                  <tr key={`${item.share_code}-${item.investor_name}-${i}`} 
-                    className="tr-hover border-b border-white/[0.02]"
-                    style={{ animationDelay: `${i * 0.02}s` }}>
-                    
-                    <td className="p-3 pl-4">
-                      <span className="text-xs text-muted-foreground">{item.report_date}</span>
-                    </td>
-
-                    <td className="p-3">
-                      <Link href={`/stock/${item.share_code}`} 
-                        className="font-mono font-black text-sm text-foreground hover:text-gold-400 transition-colors">
-                        {item.share_code}
-                      </Link>
-                    </td>
-
-                    <td className="p-3 hidden lg:table-cell">
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{item.investor_name}</p>
-                        <p className="text-[10px] text-muted-foreground">{item.nationality || '-'}</p>
-                      </div>
-                    </td>
-
-                    <td className="p-3 text-center hidden sm:table-cell">
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-white/[0.03] text-muted-foreground">
-                        {item.investor_type}
-                      </span>
-                    </td>
-
-                    <td className="p-3 text-right">
-                      <div>
-                        <span className={`text-sm font-bold ${item.pct_point_change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {item.pct_point_change >= 0 ? '+' : ''}{item.pct_point_change.toFixed(2)}%
-                        </span>
-                        <p className="text-[9px] text-muted-foreground">
-                          {Number(item.prev_percentage).toFixed(1)}% → {Number(item.curr_percentage).toFixed(1)}%
-                        </p>
-                      </div>
-                    </td>
-
-                    <td className="p-3 text-right hidden md:table-cell">
-                      <span className={`text-sm font-semibold ${item.share_change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {item.share_change >= 0 ? '+' : ''}{formatShares(item.share_change)}
-                      </span>
-                    </td>
-
-                    <td className="p-3 text-center">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                        item.action === 'BUYING' 
-                          ? 'signal-strong-buy' 
-                          : item.action === 'SELLING' 
-                            ? 'signal-avoid' 
-                            : 'signal-neutral'
-                      }`}>
-                        {item.action === 'BUYING' ? <ArrowUp className="w-3 h-3" /> : 
-                         item.action === 'SELLING' ? <ArrowDown className="w-3 h-3" /> : null}
-                        {item.action}
-                      </span>
-                    </td>
-
-                    <td className="p-3 text-center pr-4">
-                      <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                        item.alert_level === 'HIGH' ? 'alert-high' : 
-                        item.alert_level === 'MEDIUM' ? 'alert-medium' : 'alert-low'
-                      }`}>
-                        {item.alert_level}
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {!loading && filteredInsiders.length > 0 && (
-          <>
-            <div className="p-3 border-t border-white/[0.05] bg-white/[0.01] flex items-center justify-between text-[10px] text-muted-foreground uppercase tracking-wider font-bold">
-              <span>{filteredInsiders.length} alerts</span>
-              <span>{period}D window</span>
-            </div>
-            
-            {totalPages > 1 && (
-              <div className="p-3 border-t border-white/[0.05] flex items-center justify-between">
-                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg glass border border-border/30 text-xs font-bold disabled:opacity-50 hover:border-red-400/30 transition-all">
-                  ← Prev
-                </button>
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="text-muted-foreground">Page</span>
-                  <span className="font-bold text-red-400">{page}</span>
-                  <span className="text-muted-foreground">of</span>
-                  <span className="font-bold text-foreground">{totalPages}</span>
-                </div>
-                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg glass border border-border/30 text-xs font-bold disabled:opacity-50 hover:border-red-400/30 transition-all">
-                  Next →
-                </button>
+      {selectedStock && (
+        <>
+          {/* Signal Detection */}
+          {signals.length > 0 && (
+            <div className="glass rounded-2xl p-4 border border-border/30">
+              <h3 className="text-xs font-black text-foreground uppercase tracking-widest mb-3 flex items-center gap-2">
+                <Shield className="w-4 h-4 text-blue-400" />
+                Signal Detection — {selectedStock}
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {signals.map((sig, i) => (
+                  <span key={i} className={`px-3 py-2 rounded-xl text-xs font-bold border ${
+                    sig.type === 'bullish' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                    : sig.type === 'bearish' ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                    : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                  }`}>
+                    {sig.label}: {sig.detail}
+                  </span>
+                ))}
               </div>
-            )}
-          </>
-        )}
-      </div>
+            </div>
+          )}
+
+          {/* Pie Chart + Table */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="glass rounded-2xl p-5 border border-border/30">
+              <h3 className="text-sm font-black text-foreground mb-4 flex items-center gap-2">
+                <PieChartIcon className="w-4 h-4 text-blue-400" />
+                Ownership by Investor Type
+              </h3>
+              {pieData.length > 0 ? (
+                <div className="flex flex-col items-center">
+                  <div className="w-64 h-64">
+                    <ResponsiveContainer>
+                      <PieChart>
+                        <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={3} stroke="none">
+                          {pieData.map((entry, i) => (
+                            <Cell key={i} fill={INVESTOR_TYPE_COLORS[entry.name] || '#6b7280'} />
+                          ))}
+                        </Pie>
+                        <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }} formatter={(v: any) => `${v.toFixed(1)}%`} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="flex flex-wrap gap-3 mt-3 justify-center">
+                    {pieData.map((entry, i) => (
+                      <div key={i} className="flex items-center gap-1.5 text-[9px]">
+                        <span className="w-2 h-2 rounded-sm" style={{ backgroundColor: INVESTOR_TYPE_COLORS[entry.name] || '#6b7280' }} />
+                        <span className="text-muted-foreground">{entry.name}</span>
+                        <span className="font-bold">{entry.value.toFixed(1)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : <p className="text-center py-8 text-muted-foreground">No data</p>}
+            </div>
+
+            <div className="glass rounded-2xl p-5 border border-border/30 overflow-x-auto">
+              <h3 className="text-sm font-black text-foreground mb-4 flex items-center gap-2">
+                <Users className="w-4 h-4 text-blue-400" />
+                Current Positions
+              </h3>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-[9px] text-muted-foreground uppercase border-b border-white/[0.05]">
+                    <th className="p-2 text-left">Investor</th>
+                    <th className="p-2 text-left hidden md:table-cell">Type</th>
+                    <th className="p-2 text-center">L/F</th>
+                    <th className="p-2 text-right">%</th>
+                    <th className="p-2 text-right hidden lg:table-cell">Shares</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentMonthData.map((d, i) => (
+                    <tr key={i} className="border-b border-white/[0.02] hover:bg-white/[0.02]">
+                      <td className="p-2 font-bold text-[10px] truncate max-w-[120px]">{d.investor_name}</td>
+                      <td className="p-2 text-[10px] text-muted-foreground hidden md:table-cell">{d.investor_type}</td>
+                      <td className="p-2 text-center">
+                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${d.local_foreign === 'F' ? 'bg-blue-500/10 text-blue-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                          {d.local_foreign === 'F' ? 'F' : 'L'}
+                        </span>
+                      </td>
+                      <td className="p-2 text-right font-black">{d.percentage.toFixed(2)}%</td>
+                      <td className="p-2 text-right text-muted-foreground hidden lg:table-cell">{formatShares(d.total_shares)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Line Chart */}
+          {historyData.length > 0 && (
+            <div className="glass rounded-2xl p-5 border border-border/30">
+              <h3 className="text-sm font-black text-foreground mb-4 flex items-center gap-2">
+                <Activity className="w-4 h-4 text-blue-400" />
+                Ownership History — Total Shares per Investor
+              </h3>
+              <div className="h-[400px]">
+                <ResponsiveContainer>
+                  <LineChart data={historyData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }} />
+                    <YAxis tickFormatter={v => formatShares(v)} tick={{ fontSize: 10, fill: '#6b7280' }} />
+                    <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }} formatter={(v: any) => formatShares(v)} />
+                    <Legend wrapperStyle={{ fontSize: '9px' }} />
+                    {currentMonthData.map((d, i) => (
+                      <Line key={d.investor_name} type="monotone" dataKey={d.investor_name}
+                        stroke={LINE_COLORS[i % LINE_COLORS.length]} strokeWidth={1.5}
+                        dot={false} activeDot={{ r: 3 }} connectNulls />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {/* Changes Table Toggle */}
+          {changes.length > 0 && (
+            <div className="glass rounded-2xl border border-border/30 overflow-hidden">
+              <button onClick={() => setShowChangeTable(!showChangeTable)}
+                className="w-full p-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
+                <h3 className="text-sm font-black text-foreground flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-blue-400" />
+                  Ownership Changes ({changes.length} detected)
+                </h3>
+                <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${showChangeTable ? 'rotate-180' : ''}`} />
+              </button>
+              {showChangeTable && (
+                <div className="overflow-x-auto border-t border-white/[0.05]">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-[9px] text-muted-foreground uppercase border-b border-white/[0.05]">
+                        <th className="p-2 text-left">Investor</th>
+                        <th className="p-2 text-right">% Prev</th>
+                        <th className="p-2 text-right">% Now</th>
+                        <th className="p-2 text-right">Δ%</th>
+                        <th className="p-2 text-right hidden md:table-cell">ΔShares</th>
+                        <th className="p-2 text-center">Action</th>
+                        <th className="p-2 text-center">Level</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {changes.map((c, i) => (
+                        <tr key={i} className="border-b border-white/[0.02] hover:bg-white/[0.02]">
+                          <td className="p-2 font-bold text-[10px] truncate max-w-[120px]">{c.investor_name}</td>
+                          <td className="p-2 text-right">{c.prev_percentage.toFixed(2)}%</td>
+                          <td className="p-2 text-right">{c.curr_percentage.toFixed(2)}%</td>
+                          <td className={`p-2 text-right font-bold ${c.pct_change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {c.pct_change >= 0 ? '+' : ''}{c.pct_change.toFixed(2)}%
+                          </td>
+                          <td className="p-2 text-right hidden md:table-cell">{formatShares(c.share_change)}</td>
+                          <td className="p-2 text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                              c.action === 'BUYING' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+                            }`}>{c.action}</span>
+                          </td>
+                          <td className="p-2 text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                              c.alert_level === 'HIGH' ? 'alert-high' : c.alert_level === 'MEDIUM' ? 'alert-medium' : 'alert-low'
+                            }`}>{c.alert_level}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Loading & Error */}
+      {loading && (
+        <div className="flex items-center justify-center py-16">
+          <RefreshCw className="w-8 h-8 text-blue-400 animate-spin" />
+        </div>
+      )}
+      {error && (
+        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
+          {error}
+        </div>
+      )}
     </div>
   )
 }
