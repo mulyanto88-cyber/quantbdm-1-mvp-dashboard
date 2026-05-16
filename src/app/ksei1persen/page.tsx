@@ -102,7 +102,7 @@ export default function KSEI1PersenPage() {
         .from('ksei_data1persen_mutasi')
         .select('date, share_code, investor_name, investor_type, local_foreign, percentage, total_holding_shares')
         .order('date', { ascending: false })
-        .limit(50000)
+        .limit(10000)
 
       if (fetchError) throw fetchError
       if (!data || data.length === 0) {
