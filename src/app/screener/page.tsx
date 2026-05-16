@@ -58,9 +58,11 @@ function formatDate(d: Date): string {
   return d.toISOString().split('T')[0]
 }
 
-function computeSpikeCount(aovHistory: number[] | null): number {
+function computeSpikeCount(aovHistory: number[] | null, days: number): number {
   if (!aovHistory || !Array.isArray(aovHistory)) return 0
-  return aovHistory.filter(v => v >= 1.5).length
+  // Ambil hanya N data terakhir sesuai periode
+  const relevant = aovHistory.slice(-Math.min(days, aovHistory.length))
+  return relevant.filter(v => v >= 1.5).length
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -178,7 +180,7 @@ export default function ScreenerPage() {
           smart_score: Number(r.smart_money_score || 0),
           net_foreign_period: foreignMap.get(r.stock_code) || Number(summary.net_foreign || 0),
           aov_max: Math.max(0, ...aovHistory.map((v: any) => Number(v) || 0)),
-          spike_count: computeSpikeCount(aovHistory),
+          spike_count: computeSpikeCount(aovHistory, period),
           anomaly_count: Number(summary.max_anomaly || 0),
           is_stealth: r.is_stealth || false,
           whale_signal: r.whale_signal || false,
