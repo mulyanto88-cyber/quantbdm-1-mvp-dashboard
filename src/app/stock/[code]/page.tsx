@@ -4,14 +4,14 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { formatRupiah, formatPercent, formatNumber, formatShares } from '@/lib/utils'
-import { 
-  TrendingUp, TrendingDown, Activity, Clock, 
-  Zap, Target, DollarSign, PieChart as PieChartIcon, ArrowRightLeft, Building2, 
+import {
+  TrendingUp, TrendingDown, Activity, Clock,
+  Zap, Target, DollarSign, PieChart as PieChartIcon, ArrowRightLeft, Building2,
   Flame, Globe, Eye, Shield, Maximize2, Minimize2, ExternalLink, BarChart3,
   Users, Loader2, AlertTriangle
 } from 'lucide-react'
-import { 
-  ResponsiveContainer, PieChart, Pie, Cell, Tooltip 
+import {
+  ResponsiveContainer, PieChart, Pie, Cell, Tooltip
 } from 'recharts'
 import Link from 'next/link'
 
@@ -110,33 +110,20 @@ export default function StockDetailPage() {
     return () => document.removeEventListener('fullscreenchange', handler)
   }, [])
 
-  // ─── Fetch All Data ─────────────────────────────────────────────────────────
+  // ─── Fetch All Data (Optimasi Performa) ────────────────────────────────────
   const fetchAllData = useCallback(async (code: string, days: number) => {
     if (!code) return
     setIsLoading(true)
     setErrorMsg('')
 
+    const fetchDays = Math.min(days, 250) // batasi data chart agar ringan
+
     try {
-      const [
-        latestRes, historyRes, smiRes, brokerRes,
-        ownerDetailRes, whaleRes, foreignRes, convictionRes
-      ] = await Promise.all([
+      // 1. Fetch data utama (harga terbaru, smart money, conviction) – ringan
+      const [latestRes, smiRes, convictionRes] = await Promise.all([
         supabase.from('daily_transactions').select('*').eq('stock_code', code)
           .order('trading_date', { ascending: false }).limit(1).single(),
-        supabase.from('daily_transactions')
-          .select('trading_date,open_price,high,low,close,volume,net_foreign_value,vwma_20d,aov_ratio_ma20,whale_signal,big_player_anomaly,previous')
-          .eq('stock_code', code).order('trading_date', { ascending: false }).limit(days),
         supabase.rpc('get_smart_money_index', { p_stock_code: code, p_window: 30 }),
-        supabase.rpc('get_broker_divergence', { p_stock_code: code, p_start_date: '2026-01-01' }),
-        // Fetch detail kepemilikan dari ksei_data1persen_mutasi untuk pie chart
-        supabase
-          .from('ksei_data1persen_mutasi')
-          .select('investor_name, investor_type, local_foreign, percentage, total_holding_shares')
-          .eq('share_code', code)
-          .order('report_date', { ascending: false })
-          .limit(100),
-        supabase.rpc('get_whale_timing_analysis', { p_stock_code: code }),
-        supabase.rpc('get_stealth_vs_foreign_divergence', { p_stock_code: code, p_window: 30 }),
         supabase.rpc('get_conviction_score', { p_stock_code: code, p_window: 5 }),
       ])
 
@@ -146,6 +133,28 @@ export default function StockDetailPage() {
         return
       }
       setStockData(latestRes.data)
+      if (smiRes.data?.[0]) setSmartMoneyIndex(smiRes.data[0])
+      if (convictionRes.data?.[0]) setConvictionData(convictionRes.data[0])
+
+      // 2. Fetch data berat (chart history, broker, ownership, whale, foreign) – setelahnya
+      const [
+        historyRes, brokerRes, ownerDetailRes, whaleRes, foreignRes
+      ] = await Promise.all([
+        supabase.from('daily_transactions')
+          .select('trading_date,open_price,high,low,close,volume,net_foreign_value,vwma_20d,aov_ratio_ma20,whale_signal,big_player_anomaly,previous')
+          .eq('stock_code', code)
+          .order('trading_date', { ascending: false })
+          .limit(fetchDays),
+        supabase.rpc('get_broker_divergence', { p_stock_code: code }), // tanpa p_start_date
+        supabase
+          .from('ksei_data1persen_mutasi')
+          .select('investor_name, investor_type, local_foreign, percentage, total_holding_shares')
+          .eq('share_code', code)
+          .order('report_date', { ascending: false })
+          .limit(100),
+        supabase.rpc('get_whale_timing_analysis', { p_stock_code: code }),
+        supabase.rpc('get_stealth_vs_foreign_divergence', { p_stock_code: code, p_window: 30 }),
+      ])
 
       if (historyRes.data) {
         setHistoryData(historyRes.data.reverse().map((d: any) => ({
@@ -163,21 +172,22 @@ export default function StockDetailPage() {
         })))
       }
 
-      if (smiRes.data?.[0]) setSmartMoneyIndex(smiRes.data[0])
       if (brokerRes.data) setBrokerData(brokerRes.data.slice(0, 6))
+
       if (ownerDetailRes.data) {
         const mapped = ownerDetailRes.data.map((d: any) => ({
           investor_name: d.investor_name,
           investor_type: d.investor_type,
           local_foreign: d.local_foreign,
           percentage: Number(d.percentage),
-          shares: Number(d.total_holding_shares),
+          shares: Number(d.total_holding_shares || 0),
         }))
         setOwnershipDetails(mapped)
       }
+
       if (whaleRes.data) setWhaleMovement(whaleRes.data)
       if (foreignRes.data?.[0]) setForeignDivergence(foreignRes.data[0])
-      if (convictionRes.data?.[0]) setConvictionData(convictionRes.data[0])
+
     } catch (err: any) {
       console.error(err)
       setErrorMsg(err.message || 'Failed to fetch data')
@@ -346,22 +356,22 @@ export default function StockDetailPage() {
       {/* ════════════════════════════════════════════════════════════
           HEADER + VERDICT + QUICK STATS
       ════════════════════════════════════════════════════════════ */}
-      <div className="glass rounded-3xl p-6 lg:p-8 border border-white/[0.08] shadow-2xl relative overflow-hidden">
+      <div className="glass rounded-3xl p-5 lg:p-7 border border-white/[0.08] shadow-2xl relative overflow-hidden">
         {/* Decorative background glow */}
         <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-emerald-500/5 blur-[100px] rounded-full pointer-events-none" />
         <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-64 h-64 bg-blue-500/5 blur-[100px] rounded-full pointer-events-none" />
-        
-        <div className="relative z-10 flex flex-col xl:flex-row gap-8 justify-between">
+
+        <div className="relative z-10 flex flex-col xl:flex-row gap-6 justify-between">
           {/* Title & Price Section */}
           <div className="flex flex-col justify-center min-w-fit">
             <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-4xl lg:text-5xl font-black text-white tracking-tight">{stockCode}</h1>
+              <h1 className="text-3xl lg:text-4xl font-black text-white tracking-tight">{stockCode}</h1>
               <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-black uppercase tracking-wider">
                 {stockData.sector || 'Stock'}
               </span>
             </div>
             <div className="flex items-baseline gap-4 mt-2">
-              <span className="text-5xl lg:text-6xl font-black text-white tracking-tighter">{formatRupiah(stockData.close)}</span>
+              <span className="text-4xl lg:text-5xl font-black text-white tracking-tighter">{formatRupiah(stockData.close)}</span>
               <span className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-black text-base lg:text-lg ${
                 stockData.change_percent >= 0 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.15)]'
                 : 'bg-red-500/10 text-red-400 border border-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.15)]'
@@ -380,33 +390,33 @@ export default function StockDetailPage() {
           </div>
 
           {/* Quick Stats Grid */}
-          <div className="grid grid-cols-2 gap-3 flex-1 xl:max-w-[400px]">
+          <div className="grid grid-cols-2 gap-3 flex-1 xl:max-w-[360px]">
             {[
               { label: 'Float Cap', value: formatRupiah(floatCap), color: 'text-gold-400', icon: <PieChartIcon className="w-4 h-4 text-gold-400/30" /> },
               { label: 'Public Shares', value: formatShares(publicShares), color: 'text-cyan-400', icon: <Users className="w-4 h-4 text-cyan-400/30" /> },
               { label: 'Volume', value: formatShares(stockData.volume), color: 'text-orange-400', icon: <Activity className="w-4 h-4 text-orange-400/30" /> },
               { label: 'Value', value: formatRupiah(stockData.value), color: 'text-blue-400', icon: <DollarSign className="w-4 h-4 text-blue-400/30" /> },
             ].map((m, i) => (
-              <div key={i} className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.04] flex flex-col justify-center relative overflow-hidden group hover:bg-white/[0.04] transition-colors">
+              <div key={i} className="p-3 rounded-2xl bg-white/[0.02] border border-white/[0.04] flex flex-col justify-center relative overflow-hidden group hover:bg-white/[0.04] transition-colors">
                 <div className="absolute right-3 top-3 transition-transform group-hover:scale-110">{m.icon}</div>
                 <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-2 font-medium">{m.label}</p>
-                <p className={`text-lg font-black ${m.color} tracking-tight`}>{m.value}</p>
+                <p className={`text-base font-black ${m.color} tracking-tight`}>{m.value}</p>
               </div>
             ))}
           </div>
 
           {/* Verdict Card */}
-          <div className={`rounded-3xl p-6 ${verdict.bg} border ${verdict.border} xl:min-w-[300px] flex flex-col justify-center relative overflow-hidden shrink-0 shadow-xl`}>
+          <div className={`rounded-3xl p-5 ${verdict.bg} border ${verdict.border} xl:min-w-[260px] flex flex-col justify-center relative overflow-hidden shrink-0 shadow-xl`}>
             <div className={`absolute -right-6 -bottom-6 opacity-[0.03] transition-transform group-hover:scale-110 ${verdict.color}`}>
-              <Shield className="w-40 h-40" />
+              <Shield className="w-32 h-32" />
             </div>
             <div className="relative z-10">
-              <div className="flex items-center gap-2 mb-4">
+              <div className="flex items-center gap-2 mb-3">
                 <Shield className={`w-5 h-5 ${verdict.color}`} />
                 <span className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">Verdict & Signal</span>
               </div>
-              <p className={`text-2xl font-black ${verdict.color} mb-4 tracking-tight`}>{verdict.label}</p>
-              <div className="space-y-2">
+              <p className={`text-xl font-black ${verdict.color} mb-3 tracking-tight`}>{verdict.label}</p>
+              <div className="space-y-1.5">
                 {verdict.reasons.map((r, i) => (
                   <div key={i} className="flex items-start gap-2 bg-black/10 p-1.5 rounded-md">
                     <span className={`mt-0.5 text-[10px] ${verdict.color}`}>✦</span>
@@ -419,7 +429,7 @@ export default function StockDetailPage() {
         </div>
 
         {/* Bottom Metrics Bar */}
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mt-8 pt-6 border-t border-white/[0.05]">
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mt-6 pt-5 border-t border-white/[0.05]">
           {[
             { label: 'Conviction', value: `${convictionScore}`, color: convictionScore >= 80 ? 'text-emerald-400' : convictionScore >= 60 ? 'text-amber-400' : 'text-red-400' },
             { label: 'Smart Money', value: `${Math.round(smiScore)}`, color: smiScore >= 60 ? 'text-emerald-400' : smiScore >= 30 ? 'text-amber-400' : 'text-red-400' },
@@ -428,9 +438,9 @@ export default function StockDetailPage() {
             { label: 'Turnover', value: `${dailyTurnover.toFixed(2)}%`, color: dailyTurnover > 5 ? 'text-emerald-400' : dailyTurnover < 1 ? 'text-red-400' : 'text-amber-400' },
             { label: 'Free Float', value: `${stockData.free_float?.toFixed(1) || '--'}%`, color: 'text-blue-400' },
           ].map((m, i) => (
-            <div key={i} className="p-3 rounded-xl bg-white/[0.01] hover:bg-white/[0.03] transition-colors border border-white/[0.03] text-center">
+            <div key={i} className="p-2 rounded-xl bg-white/[0.01] hover:bg-white/[0.03] transition-colors border border-white/[0.03] text-center">
               <p className="text-[9px] text-muted-foreground uppercase tracking-wider mb-1">{m.label}</p>
-              <p className={`text-base font-black ${m.color}`}>{m.value}</p>
+              <p className={`text-sm font-black ${m.color}`}>{m.value}</p>
             </div>
           ))}
         </div>
@@ -555,7 +565,7 @@ export default function StockDetailPage() {
               }`}>
                 {foreignDivergence.divergence_type || 'NEUTRAL'}
               </div>
-              
+
               <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] flex items-center justify-between">
                 <span className="text-[10px] text-muted-foreground uppercase tracking-widest flex items-center gap-1.5"><DollarSign className="w-3 h-3"/> Net Value</span>
                 <span className={`text-sm font-black ${stockData.net_foreign_value >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -658,7 +668,7 @@ export default function StockDetailPage() {
               <PieChartIcon className="w-8 h-8 text-gold-400" />
             </div>
             <p className="text-sm text-foreground font-bold">No Ownership Data</p>
-            <p className="text-xs text-muted-foreground mt-1 max-w-sm text-center">KSEI scripless ownership data is currently unavailable for {stockCode}. Please check back later.</p>
+            <p className="text-xs text-muted-foreground mt-1 max-w-sm text-center">KSEI scripless ownership data is currently unavailable for {stockCode}.</p>
           </div>
         )}
       </div>
