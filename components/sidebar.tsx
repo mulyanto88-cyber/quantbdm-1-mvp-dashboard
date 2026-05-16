@@ -106,7 +106,6 @@ const navGroups = [
     title: 'Signals & Screeners',
     items: [
       { href: '/screener',  label: 'Screener Pro',       icon: icons.crosshair,  badge: 'PRO' },
-      { href: '/radar',     label: 'Smart Money Radar',  icon: icons.radar,      badge: 'NEW' },
       { href: '/insider',   label: 'Insider Alerts',     icon: icons.eye },
     ]
   },
