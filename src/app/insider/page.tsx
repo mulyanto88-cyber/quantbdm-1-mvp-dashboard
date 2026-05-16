@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { formatNumber, formatPercent, formatShares } from '@/lib/utils'
+import { formatShares } from '@/lib/utils'
 import { 
-  Eye, AlertTriangle, ArrowUp, ArrowDown, Filter,
+  Eye, AlertTriangle, ArrowUp, ArrowDown,
   Building2, TrendingUp, TrendingDown, Clock,
-  Shield, X, RefreshCw, ArrowRight, User
+  Shield, X, RefreshCw
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -42,19 +42,34 @@ export default function InsiderAlertsPage() {
   const [alertFilter, setAlertFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM' | 'LOW'>('ALL')
   const [actionFilter, setActionFilter] = useState<'ALL' | 'BUYING' | 'SELLING'>('ALL')
   const [period, setPeriod] = useState(7)
+  const [page, setPage] = useState(1)
+  const pageSize = 25
 
   // ─── Fetch Data ──────────────────────────────────────────────────────────────
   const fetchInsiders = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
+      const months = period <= 14 ? 1 : period <= 30 ? 3 : 6
+      
       const { data, error: rpcError } = await supabase.rpc('get_insider_alert', {
         p_stock_code: null,
-        p_months: period <= 14 ? 1 : period <= 30 ? 3 : 6, // mapping period ke months
+        p_months: months,
         p_min_pct_chg: 0.3,
       })
       if (rpcError) throw rpcError
-      setInsiders(data || [])
+      
+      const now = new Date()
+      const cutoff = new Date()
+      cutoff.setDate(now.getDate() - period)
+      cutoff.setHours(0, 0, 0, 0)
+      
+      const filtered = (data || []).filter((item: any) => {
+        const itemDate = new Date(item.report_date)
+        return itemDate >= cutoff
+      })
+      
+      setInsiders(filtered)
     } catch (err) {
       console.error(err)
       setError(err instanceof Error ? err.message : 'Failed to fetch insider data')
@@ -67,14 +82,27 @@ export default function InsiderAlertsPage() {
     fetchInsiders()
   }, [fetchInsiders])
 
-  // ─── Filter & Aggregate ──────────────────────────────────────────────────────
-  const filteredInsiders = useMemo(() => insiders.filter(item => {
-    if (alertFilter !== 'ALL' && item.alert_level !== alertFilter) return false
-    if (actionFilter !== 'ALL' && item.action !== actionFilter) return false
-    return true
-  }), [insiders, alertFilter, actionFilter])
+  // ─── Filter, Sort & Paginate ─────────────────────────────────────────────────
+  const filteredInsiders = useMemo(() => insiders
+    .filter(item => {
+      if (alertFilter !== 'ALL' && item.alert_level !== alertFilter) return false
+      if (actionFilter !== 'ALL' && item.action !== actionFilter) return false
+      return true
+    })
+    .sort((a, b) => {
+      // Sort by date descending (terbaru dulu)
+      const dateCompare = new Date(b.report_date).getTime() - new Date(a.report_date).getTime()
+      if (dateCompare !== 0) return dateCompare
+      // Jika tanggal sama, sort by %change absolute descending
+      return Math.abs(b.pct_point_change) - Math.abs(a.pct_point_change)
+    }), [insiders, alertFilter, actionFilter])
 
-  // Top 5 Stocks with Insider Buying
+  const totalPages = Math.ceil(filteredInsiders.length / pageSize)
+  const paginatedData = filteredInsiders.slice((page - 1) * pageSize, page * pageSize)
+
+  useEffect(() => { setPage(1) }, [period, alertFilter, actionFilter])
+
+  // ─── Top 5 Stocks ────────────────────────────────────────────────────────────
   const topBuyStocks = useMemo(() => {
     const buying = filteredInsiders.filter(i => i.action === 'BUYING')
     const grouped: Record<string, { count: number; totalChange: number; totalShares: number }> = {}
@@ -90,7 +118,6 @@ export default function InsiderAlertsPage() {
       .map(([code, data]) => ({ code, ...data }))
   }, [filteredInsiders])
 
-  // Top 5 Stocks with Insider Selling
   const topSellStocks = useMemo(() => {
     const selling = filteredInsiders.filter(i => i.action === 'SELLING')
     const grouped: Record<string, { count: number; totalChange: number; totalShares: number }> = {}
@@ -106,7 +133,7 @@ export default function InsiderAlertsPage() {
       .map(([code, data]) => ({ code, ...data }))
   }, [filteredInsiders])
 
-  // Stats
+  // ─── Stats ───────────────────────────────────────────────────────────────────
   const stats = useMemo(() => ({
     total: filteredInsiders.length,
     high: filteredInsiders.filter(i => i.alert_level === 'HIGH').length,
@@ -231,7 +258,6 @@ export default function InsiderAlertsPage() {
           TOP STOCKS HEATMAP (Buy vs Sell)
       ════════════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Top Insider Buying */}
         <div className="glass rounded-2xl p-4 border border-emerald-500/20">
           <div className="flex items-center gap-2 mb-3">
             <TrendingUp className="w-4 h-4 text-emerald-400" />
@@ -259,7 +285,6 @@ export default function InsiderAlertsPage() {
           )}
         </div>
 
-        {/* Top Insider Selling */}
         <div className="glass rounded-2xl p-4 border border-red-500/20">
           <div className="flex items-center gap-2 mb-3">
             <TrendingDown className="w-4 h-4 text-red-400" />
@@ -326,7 +351,7 @@ export default function InsiderAlertsPage() {
                     ))}
                   </tr>
                 ))
-              ) : filteredInsiders.length === 0 ? (
+              ) : paginatedData.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="p-16 text-center">
                     <Eye className="w-16 h-16 mx-auto mb-4 opacity-20" />
@@ -335,7 +360,7 @@ export default function InsiderAlertsPage() {
                   </td>
                 </tr>
               ) : (
-                filteredInsiders.map((item, i) => (
+                paginatedData.map((item, i) => (
                   <tr key={`${item.share_code}-${item.investor_name}-${i}`} 
                     className="tr-hover border-b border-white/[0.02]"
                     style={{ animationDelay: `${i * 0.02}s` }}>
@@ -411,10 +436,31 @@ export default function InsiderAlertsPage() {
         </div>
 
         {!loading && filteredInsiders.length > 0 && (
-          <div className="p-3 border-t border-white/[0.05] bg-white/[0.01] flex items-center justify-between text-[10px] text-muted-foreground uppercase tracking-wider font-bold">
-            <span>{filteredInsiders.length} alerts</span>
-            <span>{period}D window</span>
-          </div>
+          <>
+            <div className="p-3 border-t border-white/[0.05] bg-white/[0.01] flex items-center justify-between text-[10px] text-muted-foreground uppercase tracking-wider font-bold">
+              <span>{filteredInsiders.length} alerts</span>
+              <span>{period}D window</span>
+            </div>
+            
+            {totalPages > 1 && (
+              <div className="p-3 border-t border-white/[0.05] flex items-center justify-between">
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg glass border border-border/30 text-xs font-bold disabled:opacity-50 hover:border-red-400/30 transition-all">
+                  ← Prev
+                </button>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-muted-foreground">Page</span>
+                  <span className="font-bold text-red-400">{page}</span>
+                  <span className="text-muted-foreground">of</span>
+                  <span className="font-bold text-foreground">{totalPages}</span>
+                </div>
+                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg glass border border-border/30 text-xs font-bold disabled:opacity-50 hover:border-red-400/30 transition-all">
+                  Next →
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
