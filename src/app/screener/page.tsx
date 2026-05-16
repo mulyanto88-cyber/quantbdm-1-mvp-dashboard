@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { formatRupiah, formatPercent, formatNumber } from '@/lib/utils'
-import { Search, RefreshCw, TrendingUp, TrendingDown, X, AlertTriangle, SlidersHorizontal, Radar, Download, Share2, ChevronLeft, ChevronRight, Eye, EyeOff, Zap, Star, Filter, Maximize2, Clock, BarChart3, ChevronDown } from 'lucide-react'
+import { formatRupiah, formatNumber } from '@/lib/utils'
+import { Search, RefreshCw, TrendingUp, X, AlertTriangle, SlidersHorizontal, Radar, Download, Share2, ChevronLeft, ChevronRight, Maximize2, EyeOff, Zap, Star, Filter, Clock, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 
@@ -18,19 +18,21 @@ interface StockRow {
   institutional_flow: number
   net_foreign_30d: number
   aov_max: number
-  spike_count: number
+  spike_count: number          // Frekuensi AOV spike dalam periode
+  whale_signal_days: number    // Berapa hari muncul whale signal
+  foreign_buy_days: number     // Berapa hari foreign net buy
   avg_daily_value: number
+  is_stealth: boolean
   whale_signal: boolean
   big_player_anomaly: boolean
-  is_stealth: boolean
   signal: string
 }
 
-type SortField = 'smart_score' | 'change_percent' | 'institutional_flow' | 'net_foreign_30d' | 'aov_max' | 'spike_count' | 'avg_daily_value' | 'stock_code'
-type ColumnKey = 'code' | 'sector' | 'change' | 'score' | 'inst_flow' | 'foreign' | 'aov' | 'spike_count' | 'avg_value' | 'flags' | 'signal'
+type SortField = 'smart_score' | 'change_percent' | 'institutional_flow' | 'net_foreign_30d' | 'aov_max' | 'spike_count' | 'whale_signal_days' | 'foreign_buy_days' | 'avg_daily_value' | 'stock_code'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const PERIOD_OPTIONS = [
+  { label: '1D',  days: 1 },
   { label: '7D',  days: 7 },
   { label: '14D', days: 14 },
   { label: '1M',  days: 30 },
@@ -51,24 +53,8 @@ const PRESETS = [
   { id: 'whale-hunt', name: '🐋 Whale Hunt', icon: Zap, filters: { flag: 'WHALE', minScore: 50 } },
   { id: 'foreign-flow', name: '🌏 Foreign Flow', icon: TrendingUp, filters: { flag: 'FOREIGN_BUY', minScore: 40 } },
   { id: 'accumulation', name: '📈 Accumulation', icon: Star, filters: { signal: 'STRONG_BUY', minScore: 50 } },
-  { id: 'stealth-mode', name: '🕵️ Stealth Mode', icon: Eye, filters: { flag: 'STEALTH', minScore: 35 } },
+  { id: 'stealth-mode', name: '🕵️ Stealth Mode', icon: EyeOff, filters: { flag: 'STEALTH', minScore: 35 } },
   { id: 'big-player', name: '⚡ Big Player', icon: Zap, filters: { flag: 'BIG_PLAYER', minScore: 45 } },
-]
-
-const DEFAULT_COLUMNS: ColumnKey[] = ['code', 'sector', 'change', 'score', 'inst_flow', 'signal', 'flags']
-
-const ALL_COLUMNS: { key: ColumnKey; label: string }[] = [
-  { key: 'code', label: 'Kode' },
-  { key: 'sector', label: 'Sektor' },
-  { key: 'change', label: 'Chg%' },
-  { key: 'score', label: 'Score' },
-  { key: 'inst_flow', label: 'Inst Flow' },
-  { key: 'foreign', label: 'Foreign' },
-  { key: 'aov', label: 'AOV Max' },
-  { key: 'spike_count', label: 'Spikes' },
-  { key: 'avg_value', label: 'Avg Value' },
-  { key: 'flags', label: 'Flags' },
-  { key: 'signal', label: 'Signal' },
 ]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -94,7 +80,6 @@ export default function ScreenerPage() {
   const [showFilters, setShowFilters] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [showPresets, setShowPresets] = useState(false)
-  const [showColumnPicker, setShowColumnPicker] = useState(false)
 
   // Filter states
   const [period, setPeriod] = useState(7)
@@ -108,37 +93,7 @@ export default function ScreenerPage() {
   const [sortBy, setSortBy] = useState<SortField>('smart_score')
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc')
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(50)
-
-  // Column visibility
-  const [visibleColumns, setVisibleColumns] = useState<ColumnKey[]>(DEFAULT_COLUMNS)
-
-  // ─── Load filters from URL ──────────────────────────────────────────────────
-  useEffect(() => {
-    const p = new URLSearchParams(searchParams.toString())
-    if (p.get('period')) setPeriod(Number(p.get('period')))
-    if (p.get('s')) setSearch(p.get('s')!)
-    if (p.get('sig')) setFilterSignal(p.get('sig')!)
-    if (p.get('sec')) setFilterSector(p.get('sec')!)
-    if (p.get('flag')) setFilterFlag(p.get('flag')!)
-    if (p.get('score')) setMinScore(Number(p.get('score')))
-    if (p.get('sort')) setSortBy(p.get('sort') as SortField)
-    if (p.get('dir')) setSortDir(p.get('dir') as 'desc' | 'asc')
-  }, [searchParams])
-
-  // ─── Sync filters to URL ────────────────────────────────────────────────────
-  const updateUrlParams = useCallback(() => {
-    const p = new URLSearchParams()
-    p.set('period', String(period))
-    if (search) p.set('s', search)
-    if (filterSignal !== 'ALL') p.set('sig', filterSignal)
-    if (filterSector !== 'ALL') p.set('sec', filterSector)
-    if (filterFlag !== 'ALL') p.set('flag', filterFlag)
-    if (minScore > 0) p.set('score', String(minScore))
-    p.set('sort', sortBy)
-    p.set('dir', sortDir)
-    router.push(`/screener?${p.toString()}`, { scroll: false })
-  }, [period, search, filterSignal, filterSector, filterFlag, minScore, sortBy, sortDir, router])
+  const pageSize = 20 // Default 20 saham
 
   // ─── Fetch Data ─────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
@@ -203,15 +158,16 @@ export default function ScreenerPage() {
           net_foreign_30d: Number(summary.net_foreign || r.net_foreign_30d || 0),
           aov_max: Math.max(0, ...aovHistory.map((v: any) => Number(v) || 0)),
           spike_count: computeSpikeCount(aovHistory),
+          whale_signal_days: summary.whale_count || 0,
+          foreign_buy_days: summary.foreign_buy_days || 0,
           avg_daily_value: Number(summary.avg_daily_value || 0),
+          is_stealth: r.is_stealth || false,
           whale_signal: r.whale_signal || false,
           big_player_anomaly: r.big_player_anomaly || false,
-          is_stealth: r.is_stealth || false,
           signal: r.signal || summary.signal || 'NEUTRAL',
         }
       })
 
-      // Sortir saham yang tidak ada summary-nya (tampilkan semua)
       setResults(merged)
     } catch (err: any) {
       console.error(err)
@@ -263,15 +219,6 @@ export default function ScreenerPage() {
 
   useEffect(() => { setPage(1) }, [search, filterSignal, filterSector, filterFlag, minScore, period])
 
-  // ─── Stats ───────────────────────────────────────────────────────────────────
-  const stats = useMemo(() => ({
-    total: results.length,
-    akumulasi: results.filter(r => r.signal === 'STRONG_BUY' || r.signal === 'Akumulasi').length,
-    whale: results.filter(r => r.whale_signal).length,
-    stealth: results.filter(r => r.is_stealth).length,
-    avgScore: results.length ? Math.round(results.reduce((s, r) => s + r.smart_score, 0) / results.length) : 0,
-  }), [results])
-
   // ─── Handlers ────────────────────────────────────────────────────────────────
   const toggleSort = (col: SortField) => {
     if (sortBy === col) setSortDir(d => d === 'desc' ? 'asc' : 'desc')
@@ -291,17 +238,18 @@ export default function ScreenerPage() {
     setFilterSignal('ALL')
     setFilterSector('ALL')
     setFilterFlag('ALL')
-    setMinScore(0)
+    setMinScore(20)
     setPeriod(7)
     router.push('/screener')
   }
 
   const exportToCSV = () => {
-    const headers = ['Kode', 'Sektor', 'Harga', 'Chg%', 'Score', 'Inst Flow', 'Foreign', 'AOV Max', 'Spikes', 'Avg Value', 'Signal']
+    const headers = ['Kode', 'Sektor', 'Harga', 'Chg%', 'Score', 'Inst Flow', 'Foreign', 'AOV Max', 'Spikes', 'Whale Days', 'Foreign Days', 'Avg Value', 'Signal']
     const rows = filtered.map(r => [
       r.stock_code, r.sector, r.close, `${r.change_percent.toFixed(2)}%`,
       r.smart_score, `${r.institutional_flow.toFixed(1)}`, formatRupiah(r.net_foreign_30d),
-      `${r.aov_max.toFixed(2)}x`, r.spike_count, formatRupiah(r.avg_daily_value), r.signal
+      `${r.aov_max.toFixed(2)}x`, r.spike_count, r.whale_signal_days, r.foreign_buy_days,
+      formatRupiah(r.avg_daily_value), r.signal
     ])
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
@@ -319,12 +267,6 @@ export default function ScreenerPage() {
     alert('Link filter disalin ke clipboard!')
   }
 
-  const toggleColumn = (col: ColumnKey) => {
-    setVisibleColumns(prev =>
-      prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]
-    )
-  }
-
   const SortArrow = ({ col }: { col: SortField }) =>
     sortBy === col ? (sortDir === 'desc' ? ' ▼' : ' ▲') : null
 
@@ -336,19 +278,14 @@ export default function ScreenerPage() {
           HEADER
       ════════════════════════════════════════════════════════════ */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div className="flex items-center gap-3">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-black tracking-tight">
-              <Radar className="w-8 h-8 text-gold-400 inline mr-2" />
-              <span className="gradient-gold">Screener</span> <span className="text-foreground">Pro</span>
-            </h1>
-            <p className="text-muted-foreground mt-1 text-sm">
-              {filtered.length} / {results.length} stocks · {lastDate} · {period}D window
-            </p>
-          </div>
-          {(filterSignal !== 'ALL' || filterFlag !== 'ALL' || minScore > 0 || search) && (
-            <button onClick={resetFilters} className="text-xs text-gold-400 hover:text-gold-300 underline">Reset</button>
-          )}
+        <div>
+          <h1 className="text-3xl md:text-4xl font-black tracking-tight">
+            <Radar className="w-8 h-8 text-gold-400 inline mr-2" />
+            <span className="gradient-gold">Screener</span> <span className="text-foreground">Pro</span>
+          </h1>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {filtered.length} / {results.length} stocks · {lastDate} · {period}D window
+          </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -395,54 +332,36 @@ export default function ScreenerPage() {
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gold-400/10 border border-gold-400/30 text-gold-400 text-xs font-bold hover:bg-gold-400/20 transition-all">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Scan
           </button>
+
+          {(filterSignal !== 'ALL' || filterFlag !== 'ALL' || minScore > 20 || search) && (
+            <button onClick={resetFilters} className="text-xs text-red-400 hover:text-red-300 underline">Reset</button>
+          )}
         </div>
       </div>
 
       {/* ════════════════════════════════════════════════════════════
-          PERIOD TOGGLE
+          PERIOD TOGGLE + QUICK PRESETS
       ════════════════════════════════════════════════════════════ */}
-      <div className="flex items-center gap-1 bg-white/[0.03] rounded-lg p-0.5 w-fit border border-white/[0.06]">
-        <Clock className="w-3.5 h-3.5 text-muted-foreground ml-2" />
-        {PERIOD_OPTIONS.map(opt => (
-          <button key={opt.days} onClick={() => setPeriod(opt.days)}
-            className={`px-3 py-1.5 text-[10px] font-bold rounded-md transition-all ${
-              period === opt.days ? 'bg-gold-400/20 text-gold-400' : 'text-muted-foreground hover:text-white'
-            }`}>{opt.label}</button>
-        ))}
-      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1 bg-white/[0.03] rounded-lg p-0.5 border border-white/[0.06]">
+          <Clock className="w-3.5 h-3.5 text-muted-foreground ml-2" />
+          {PERIOD_OPTIONS.map(opt => (
+            <button key={opt.days} onClick={() => setPeriod(opt.days)}
+              className={`px-3 py-1.5 text-[10px] font-bold rounded-md transition-all ${
+                period === opt.days ? 'bg-gold-400/20 text-gold-400' : 'text-muted-foreground hover:text-white'
+              }`}>{opt.label}</button>
+          ))}
+        </div>
 
-      {/* ════════════════════════════════════════════════════════════
-          STATS CARDS
-      ════════════════════════════════════════════════════════════ */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-        {[
-          { label: 'Universe', value: stats.total, color: 'text-foreground', icon: '📊' },
-          { label: 'Akumulasi', value: stats.akumulasi, color: 'text-emerald-400', icon: '📈' },
-          { label: 'Whale', value: stats.whale, color: 'text-blue-400', icon: '🐋' },
-          { label: 'Stealth', value: stats.stealth, color: 'text-purple-400', icon: '🕵️' },
-          { label: 'Avg Score', value: stats.avgScore, color: 'text-gold-400', icon: '⭐' },
-        ].map((m, i) => (
-          <div key={i} className="glass rounded-xl p-4 border border-border/30 hover:border-gold-400/20 transition-all">
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] text-muted-foreground uppercase">{m.label}</p>
-              <span className="text-lg">{m.icon}</span>
-            </div>
-            <p className={`text-2xl font-black mt-2 ${m.color}`}>{m.value.toLocaleString()}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* ════════════════════════════════════════════════════════════
-          QUICK PRESETS BAR
-      ════════════════════════════════════════════════════════════ */}
-      <div className="flex gap-2 overflow-x-auto pb-2">
-        {PRESETS.map(preset => (
-          <button key={preset.id} onClick={() => applyPreset(preset)}
-            className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl glass border border-white/[0.08] text-xs font-semibold hover:border-gold-400/30 hover:bg-gold-400/10 transition-all">
-            <preset.icon className="w-4 h-4 text-gold-400" />
-            {preset.name.split(' ')[1]}
-          </button>
-        ))}
+        <div className="flex gap-2 overflow-x-auto">
+          {PRESETS.map(preset => (
+            <button key={preset.id} onClick={() => applyPreset(preset)}
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg glass border border-white/[0.06] text-[10px] font-semibold hover:border-gold-400/30 hover:bg-gold-400/10 transition-all">
+              <preset.icon className="w-3 h-3 text-gold-400" />
+              {preset.name.split(' ')[1]}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ════════════════════════════════════════════════════════════
@@ -454,7 +373,7 @@ export default function ScreenerPage() {
             <h3 className="text-sm font-bold text-gold-400 flex items-center gap-2"><Filter className="w-4 h-4" /> Advanced Filters</h3>
             <button onClick={resetFilters} className="text-xs text-muted-foreground hover:text-foreground underline">Reset All</button>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <div>
               <label className="text-[11px] text-muted-foreground uppercase mb-2 block">Signal</label>
               <select value={filterSignal} onChange={e => setFilterSignal(e.target.value)}
@@ -474,9 +393,9 @@ export default function ScreenerPage() {
               <select value={filterFlag} onChange={e => setFilterFlag(e.target.value)}
                 className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl px-3 py-2 text-xs focus:border-gold-400/30 focus:outline-none">
                 <option value="ALL">Semua</option>
-                <option value="WHALE">🐋 Whale Signal</option>
+                <option value="WHALE">🐋 Whale</option>
                 <option value="BIG_PLAYER">⚡ Big Player</option>
-                <option value="FOREIGN_BUY">🌏 Foreign Net Buy</option>
+                <option value="FOREIGN_BUY">🌏 Foreign Buy</option>
                 <option value="STEALTH">🕵️ Stealth</option>
               </select>
             </div>
@@ -486,37 +405,7 @@ export default function ScreenerPage() {
                 onChange={e => setMinScore(Number(e.target.value))}
                 className="w-full accent-amber-400 mt-2" />
             </div>
-            <div>
-              <label className="text-[11px] text-muted-foreground uppercase mb-2 block">Page Size</label>
-              <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))}
-                className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl px-3 py-2 text-xs">
-                <option value={25}>25 / page</option>
-                <option value={50}>50 / page</option>
-                <option value={100}>100 / page</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-[11px] text-muted-foreground uppercase mb-2 block">Columns</label>
-              <button onClick={() => setShowColumnPicker(!showColumnPicker)}
-                className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl px-3 py-2 text-xs text-left flex justify-between items-center">
-                <span>{visibleColumns.length} visible</span>
-                <ChevronDown className={`w-3 h-3 transition-transform ${showColumnPicker ? 'rotate-180' : ''}`} />
-              </button>
-            </div>
           </div>
-
-          {showColumnPicker && (
-            <div className="border-t border-white/[0.05] pt-4 mt-2">
-              <div className="flex flex-wrap gap-2">
-                {ALL_COLUMNS.map(col => (
-                  <button key={col.key} onClick={() => toggleColumn(col.key)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                      visibleColumns.includes(col.key) ? 'bg-gold-400/20 border-gold-400/40 text-gold-400' : 'bg-white/[0.03] border-white/[0.08] text-muted-foreground'
-                    }`}>{col.label}</button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
 
@@ -548,7 +437,7 @@ export default function ScreenerPage() {
       )}
 
       {/* ════════════════════════════════════════════════════════════
-          TABLE
+          TABLE — 11 KOLOM DEFAULT
       ════════════════════════════════════════════════════════════ */}
       {loading ? (
         <div className="space-y-2">{Array.from({length:8}).map((_,i) => <div key={i} className="shimmer h-12 rounded-xl" />)}</div>
@@ -563,131 +452,97 @@ export default function ScreenerPage() {
         <>
           <div className="flex justify-between items-center">
             <p className="text-xs text-muted-foreground">
-              Menampilkan <span className="text-gold-400 font-bold">{paginatedData.length}</span> dari <span className="text-foreground font-bold">{filtered.length}</span>
+              Menampilkan <span className="text-gold-400 font-bold">{paginatedData.length}</span> dari <span className="text-foreground font-bold">{filtered.length}</span> saham
             </p>
             <p className="text-xs text-muted-foreground">Sort: <span className="text-gold-400 font-bold">{sortBy.replace(/_/g, ' ')}</span> ({sortDir})</p>
           </div>
 
           <div className="glass rounded-2xl overflow-hidden border border-border/30">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-xs">
                 <thead>
-                  <tr className="bg-white/[0.02] border-b border-white/[0.05] text-[10px] text-muted-foreground uppercase tracking-wider">
-                    {visibleColumns.includes('code') && <th className="p-3 text-left w-8">#</th>}
-                    {visibleColumns.includes('code') && <th className="p-3 text-left sticky left-0 bg-[#0B0F19]/95 backdrop-blur-sm z-10 cursor-pointer hover:text-foreground" onClick={() => toggleSort('stock_code')}>Emiten<SortArrow col="stock_code" /></th>}
-                    {visibleColumns.includes('sector') && <th className="p-3 text-left hidden md:table-cell">Sektor</th>}
-                    {visibleColumns.includes('change') && (
-                      <th className="p-3 text-right cursor-pointer hover:text-foreground" onClick={() => toggleSort('change_percent')}>Chg%<SortArrow col="change_percent" /></th>
-                    )}
-                    {visibleColumns.includes('score') && (
-                      <th className="p-3 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('smart_score')}>Score<SortArrow col="smart_score" /></th>
-                    )}
-                    {visibleColumns.includes('inst_flow') && (
-                      <th className="p-3 text-center cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('institutional_flow')}>Inst Flow<SortArrow col="institutional_flow" /></th>
-                    )}
-                    {visibleColumns.includes('foreign') && (
-                      <th className="p-3 text-right cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('net_foreign_30d')}>Foreign<SortArrow col="net_foreign_30d" /></th>
-                    )}
-                    {visibleColumns.includes('aov') && (
-                      <th className="p-3 text-center cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('aov_max')}>AOV Max<SortArrow col="aov_max" /></th>
-                    )}
-                    {visibleColumns.includes('spike_count') && (
-                      <th className="p-3 text-center cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('spike_count')}>Spikes<SortArrow col="spike_count" /></th>
-                    )}
-                    {visibleColumns.includes('avg_value') && (
-                      <th className="p-3 text-right cursor-pointer hover:text-foreground hidden xl:table-cell" onClick={() => toggleSort('avg_daily_value')}>Avg Value<SortArrow col="avg_daily_value" /></th>
-                    )}
-                    {visibleColumns.includes('flags') && <th className="p-3 text-center">Flags</th>}
-                    {visibleColumns.includes('signal') && <th className="p-3 text-center">Signal</th>}
+                  <tr className="bg-white/[0.02] border-b border-white/[0.05] text-[9px] text-muted-foreground uppercase tracking-wider">
+                    <th className="p-2 text-left w-6">#</th>
+                    <th className="p-2 text-left sticky left-0 bg-[#0B0F19]/95 backdrop-blur-sm z-10 cursor-pointer hover:text-foreground" onClick={() => toggleSort('stock_code')}>Kode<SortArrow col="stock_code" /></th>
+                    <th className="p-2 text-left hidden md:table-cell">Sektor</th>
+                    <th className="p-2 text-right cursor-pointer hover:text-foreground" onClick={() => toggleSort('change_percent')}>Chg%<SortArrow col="change_percent" /></th>
+                    <th className="p-2 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('smart_score')}>Score<SortArrow col="smart_score" /></th>
+                    <th className="p-2 text-center cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('institutional_flow')}>Inst Flow<SortArrow col="institutional_flow" /></th>
+                    <th className="p-2 text-right cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('net_foreign_30d')}>Foreign<SortArrow col="net_foreign_30d" /></th>
+                    <th className="p-2 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('aov_max')}>AOV Max<SortArrow col="aov_max" /></th>
+                    <th className="p-2 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('spike_count')}>Spikes<SortArrow col="spike_count" /></th>
+                    <th className="p-2 text-center cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('whale_signal_days')}>🐋 Days<SortArrow col="whale_signal_days" /></th>
+                    <th className="p-2 text-center cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('foreign_buy_days')}>🌏 Days<SortArrow col="foreign_buy_days" /></th>
+                    <th className="p-2 text-center">Flags</th>
+                    <th className="p-2 text-center">Signal</th>
                   </tr>
                 </thead>
                 <tbody>
                   {paginatedData.map((r, i) => (
                     <tr key={r.stock_code} className="tr-hover border-b border-white/[0.02] group hover:bg-gold-400/[0.03] transition-all">
-                      {visibleColumns.includes('code') && <td className="p-3 text-[11px] text-muted-foreground">{(page - 1) * pageSize + i + 1}</td>}
-                      {visibleColumns.includes('code') && (
-                        <td className="p-3 sticky left-0 bg-[#0B0F19] group-hover:bg-[#0B0F19]/95 backdrop-blur-sm z-10">
-                          <Link href={`/stock/${r.stock_code}`} className="block group/link">
-                            <p className="font-black font-mono text-sm text-foreground group-hover/link:text-gold-400 transition-colors">{r.stock_code}</p>
-                            <p className="text-[10px] text-muted-foreground truncate max-w-[130px] md:hidden">{r.sector || '—'}</p>
-                          </Link>
-                        </td>
-                      )}
-                      {visibleColumns.includes('sector') && (
-                        <td className="p-3 hidden md:table-cell"><p className="text-xs text-muted-foreground">{r.sector || '—'}</p></td>
-                      )}
-                      {visibleColumns.includes('change') && (
-                        <td className={`p-3 text-right font-bold ${r.change_percent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {r.change_percent >= 0 ? '▲' : '▼'} {Math.abs(r.change_percent).toFixed(2)}%
-                        </td>
-                      )}
-                      {visibleColumns.includes('score') && (
-                        <td className="p-3 text-center">
-                          <div className="flex flex-col items-center gap-1">
-                            <span className={`text-lg font-black ${r.smart_score >= 60 ? 'text-emerald-400' : r.smart_score >= 40 ? 'text-amber-400' : 'text-muted-foreground'}`}>
-                              {Math.round(r.smart_score)}
-                            </span>
-                            <div className="w-12 h-1.5 rounded-full bg-white/[0.05] overflow-hidden">
-                              <div className={`h-full rounded-full ${r.smart_score >= 60 ? 'bg-emerald-400' : r.smart_score >= 40 ? 'bg-amber-400' : 'bg-slate-500'}`} style={{width:`${r.smart_score}%`}} />
-                            </div>
-                          </div>
-                        </td>
-                      )}
-                      {visibleColumns.includes('inst_flow') && (
-                        <td className="p-3 text-center hidden lg:table-cell">
-                          <span className={`text-sm font-bold ${r.institutional_flow >= 10 ? 'text-emerald-400' : r.institutional_flow >= 0 ? 'text-amber-400' : 'text-red-400'}`}>
-                            {r.institutional_flow.toFixed(1)}
+                      <td className="p-2 text-[10px] text-muted-foreground">{(page - 1) * pageSize + i + 1}</td>
+                      <td className="p-2 sticky left-0 bg-[#0B0F19] group-hover:bg-[#0B0F19]/95 backdrop-blur-sm z-10">
+                        <Link href={`/stock/${r.stock_code}`} className="block group/link">
+                          <p className="font-black font-mono text-xs text-foreground group-hover/link:text-gold-400 transition-colors">{r.stock_code}</p>
+                        </Link>
+                      </td>
+                      <td className="p-2 hidden md:table-cell text-[10px] text-muted-foreground truncate max-w-[100px]">{r.sector || '—'}</td>
+                      <td className={`p-2 text-right font-bold ${r.change_percent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {r.change_percent >= 0 ? '+' : ''}{r.change_percent.toFixed(2)}%
+                      </td>
+                      <td className="p-2 text-center">
+                        <span className={`text-sm font-black ${r.smart_score >= 60 ? 'text-emerald-400' : r.smart_score >= 40 ? 'text-amber-400' : 'text-muted-foreground'}`}>
+                          {Math.round(r.smart_score)}
+                        </span>
+                      </td>
+                      <td className="p-2 text-center hidden lg:table-cell">
+                        <span className={`font-bold ${r.institutional_flow >= 10 ? 'text-emerald-400' : r.institutional_flow >= 0 ? 'text-amber-400' : 'text-red-400'}`}>
+                          {r.institutional_flow.toFixed(1)}
+                        </span>
+                      </td>
+                      <td className={`p-2 text-right hidden lg:table-cell font-semibold ${r.net_foreign_30d >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {formatRupiah(r.net_foreign_30d)}
+                      </td>
+                      <td className="p-2 text-center">
+                        {r.aov_max > 0 ? (
+                          <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold font-mono ${r.aov_max >= 2 ? 'bg-purple-500/20 text-purple-400' : r.aov_max >= 1.5 ? 'bg-blue-500/20 text-blue-400' : 'bg-white/[0.04] text-muted-foreground'}`}>
+                            {r.aov_max.toFixed(2)}x
                           </span>
-                        </td>
-                      )}
-                      {visibleColumns.includes('foreign') && (
-                        <td className={`p-3 text-right hidden lg:table-cell font-semibold ${r.net_foreign_30d >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {formatRupiah(r.net_foreign_30d)}
-                        </td>
-                      )}
-                      {visibleColumns.includes('aov') && (
-                        <td className="p-3 text-center hidden lg:table-cell">
-                          {r.aov_max > 0 ? (
-                            <span className={`px-2 py-1 rounded-full text-[10px] font-bold font-mono ${r.aov_max >= 2 ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : r.aov_max >= 1.5 ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-white/[0.04] text-muted-foreground border border-white/[0.06]'}`}>
-                              {r.aov_max.toFixed(2)}x
-                            </span>
-                          ) : <span className="text-muted-foreground/30">—</span>}
-                        </td>
-                      )}
-                      {visibleColumns.includes('spike_count') && (
-                        <td className="p-3 text-center hidden lg:table-cell">
-                          <span className={`text-sm font-black ${r.spike_count >= 3 ? 'text-purple-400' : r.spike_count >= 1 ? 'text-blue-400' : 'text-muted-foreground'}`}>
-                            {r.spike_count}
+                        ) : <span className="text-muted-foreground/30">—</span>}
+                      </td>
+                      <td className="p-2 text-center">
+                        <span className={`font-bold ${r.spike_count >= 3 ? 'text-purple-400' : r.spike_count >= 1 ? 'text-blue-400' : 'text-muted-foreground'}`}>
+                          {r.spike_count}
+                        </span>
+                      </td>
+                      <td className="p-2 text-center hidden lg:table-cell">
+                        <span className={`font-bold ${r.whale_signal_days >= 2 ? 'text-emerald-400' : r.whale_signal_days >= 1 ? 'text-amber-400' : 'text-muted-foreground'}`}>
+                          {r.whale_signal_days}
+                        </span>
+                      </td>
+                      <td className="p-2 text-center hidden lg:table-cell">
+                        <span className={`font-bold ${r.foreign_buy_days >= Math.max(3, period*0.5) ? 'text-emerald-400' : r.foreign_buy_days >= 1 ? 'text-amber-400' : 'text-red-400'}`}>
+                          {r.foreign_buy_days}
+                        </span>
+                      </td>
+                      <td className="p-2 text-center">
+                        <div className="flex justify-center gap-1">
+                          {r.whale_signal && <span title="Whale">🐋</span>}
+                          {r.big_player_anomaly && <span title="Big Player">⚡</span>}
+                          {r.is_stealth && <span title="Stealth">🕵️</span>}
+                          {r.net_foreign_30d > 0 && <span title="Foreign Buy">🌏</span>}
+                          {!r.whale_signal && !r.big_player_anomaly && !r.is_stealth && r.net_foreign_30d <= 0 && (
+                            <span className="text-muted-foreground/30">—</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-2 text-center">
+                        <Link href={`/stock/${r.stock_code}`}>
+                          <span className={`px-2 py-1 rounded-full text-[9px] font-bold ${SIGNAL_STYLE[r.signal] || SIGNAL_STYLE.NEUTRAL} hover:scale-105 inline-block transition-transform`}>
+                            {r.signal || 'NEUTRAL'}
                           </span>
-                        </td>
-                      )}
-                      {visibleColumns.includes('avg_value') && (
-                        <td className="p-3 text-right hidden xl:table-cell text-muted-foreground text-xs">
-                          {formatRupiah(r.avg_daily_value)}
-                        </td>
-                      )}
-                      {visibleColumns.includes('flags') && (
-                        <td className="p-3 text-center">
-                          <div className="flex justify-center gap-1.5">
-                            {r.whale_signal && <span title="Whale">🐋</span>}
-                            {r.big_player_anomaly && <span title="Big Player">⚡</span>}
-                            {r.is_stealth && <span title="Stealth" className="stealth-dot">🕵️</span>}
-                            {r.net_foreign_30d > 0 && <span title="Foreign Buy">🌏</span>}
-                            {!r.whale_signal && !r.big_player_anomaly && !r.is_stealth && r.net_foreign_30d <= 0 && (
-                              <span className="text-muted-foreground/30 text-[10px]">—</span>
-                            )}
-                          </div>
-                        </td>
-                      )}
-                      {visibleColumns.includes('signal') && (
-                        <td className="p-3 text-center">
-                          <Link href={`/stock/${r.stock_code}`}>
-                            <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold ${SIGNAL_STYLE[r.signal] || SIGNAL_STYLE.NEUTRAL} hover:scale-105 inline-block transition-transform`}>
-                              {r.signal || 'NEUTRAL'}
-                            </span>
-                          </Link>
-                        </td>
-                      )}
+                        </Link>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
