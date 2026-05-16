@@ -349,7 +349,7 @@ export default function ScreenerPage() {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Scan
           </button>
 
-          {(filterSignal !== 'ALL' || filterFlag !== 'ALL' || minScore > 20 || search) && (
+          {(filterSignal !== 'ALL' || filterFlag !== 'ALL' || minScore > 20) && (
             <button onClick={resetFilters} className="text-xs text-red-400 hover:text-red-300 underline">Reset</button>
           )}
         </div>
