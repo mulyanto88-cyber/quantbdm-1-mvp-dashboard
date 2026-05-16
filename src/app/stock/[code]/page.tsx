@@ -349,6 +349,8 @@ export default function StockDetailPage() {
   const publicShares = (stockData.tradeable_shares || 0) * ((stockData.free_float || 0) / 100)
   const floatCap = publicShares * stockData.close
   const dailyTurnover = publicShares > 0 ? ((stockData.volume || 0) / publicShares) * 100 : 0
+  const totalShares = stockData.tradeable_shares || 0
+  const marketCap = totalShares * stockData.close
 
   return (
     <div className="space-y-4 pb-12 animate-fade-in">
@@ -389,9 +391,10 @@ export default function StockDetailPage() {
             </div>
           </div>
 
-          {/* Quick Stats Grid */}
-          <div className="grid grid-cols-2 gap-3 flex-1 xl:max-w-[360px]">
+          {/* Quick Stats Grid (5 Kartu) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 flex-1 xl:max-w-[440px]">
             {[
+              { label: 'Market Cap', value: formatRupiah(marketCap), color: 'text-gold-400', icon: <DollarSign className="w-4 h-4 text-gold-400/30" /> },
               { label: 'Float Cap', value: formatRupiah(floatCap), color: 'text-gold-400', icon: <PieChartIcon className="w-4 h-4 text-gold-400/30" /> },
               { label: 'Public Shares', value: formatShares(publicShares), color: 'text-cyan-400', icon: <Users className="w-4 h-4 text-cyan-400/30" /> },
               { label: 'Volume', value: formatShares(stockData.volume), color: 'text-orange-400', icon: <Activity className="w-4 h-4 text-orange-400/30" /> },
