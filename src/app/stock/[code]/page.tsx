@@ -1544,8 +1544,6 @@ export default function StockDetailPage() {
                     </div>
                   </div>
                 )}
-                </>
-              )}
             </>
           ) : (
             <div className="glass rounded-xl p-16 text-center text-muted-foreground">
