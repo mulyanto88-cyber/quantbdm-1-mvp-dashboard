@@ -1,13 +1,13 @@
 import React from 'react'
-import { Activity, DollarSign, ShieldCheck, Zap, Globe, Target, ArrowRightLeft } from 'lucide-react'
+import { Activity, DollarSign, ShieldCheck, Zap, Globe, Target, ArrowRightLeft, TrendingUp, TrendingDown } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { formatRupiah, formatNumber } from '@/lib/utils'
-import SectorHeatmap from './_components/SectorHeatmap'
+import { formatRupiah, formatNumber, formatPercent } from '@/lib/utils'
 
 export const revalidate = 60
 
-async function getMarketData() {
+// ── Data Fetching ──────────────────────────────────────────────────────────
+async function getMarketBreadth() {
   const { data: dateData } = await supabase
     .from('daily_transactions')
     .select('trading_date')
@@ -18,368 +18,368 @@ async function getMarketData() {
 
   const { data } = await supabase
     .from('daily_transactions')
-    .select('stock_code,close,change_percent,value,volume,net_foreign_value,aov_ratio_ma20,whale_signal,signal,sector')
+    .select('close,change_percent,value,volume,net_foreign_value,aov_ratio_ma20,whale_signal,sector')
     .eq('trading_date', date)
     .gt('volume', 0)
-    .limit(2000)
 
   if (!data) return null
 
-  let totalForeign = 0, totalValue = 0
-  const gainers: any[] = [], losers: any[] = [], foreignBuy: any[] = [], foreignSell: any[] = [], spikes: any[] = [], topVol: any[] = [], topVal: any[] = []
-  let up = 0, down = 0
-  const allStocks: any[] = []
-  const sectorMap: Record<string, any> = {}
+  let totalForeign = 0, totalValue = 0, totalVolume = 0, whaleCount = 0
+  let up = 0, down = 0, unchanged = 0
 
   data.forEach((r: any) => {
     const netF = Number(r.net_foreign_value) || 0
     const val  = Number(r.value) || 0
     const pct  = Number(r.change_percent) || 0
-    const vol  = Number(r.volume) || 0
     totalForeign += netF
     totalValue   += val
-    if (pct > 0) up++; else if (pct < 0) down++
-    if (pct > 0) gainers.push({ code: r.stock_code, close: Number(r.close), change: pct })
-    if (pct < 0) losers.push({ code: r.stock_code, close: Number(r.close), change: pct })
-    if (netF > 0) foreignBuy.push({ code: r.stock_code, netForeign: netF })
-    if (netF < 0) foreignSell.push({ code: r.stock_code, netForeign: Math.abs(netF) })
-    if ((Number(r.aov_ratio_ma20) || 0) >= 1.5) spikes.push({ code: r.stock_code, close: Number(r.close), aov: Number(r.aov_ratio_ma20), change: pct })
-    topVol.push({ code: r.stock_code, volume: vol, change: pct })
-    topVal.push({ code: r.stock_code, value: val, change: pct })
-
-    const sec = r.sector || 'Other'
-    allStocks.push({ code: r.stock_code, close: Number(r.close), change: pct, value: val, volume: vol, netForeign: netF, sector: sec })
-    if (!sectorMap[sec]) sectorMap[sec] = { sector: sec, count: 0, up: 0, down: 0, totalValue: 0, netForeign: 0, changeSum: 0 }
-    sectorMap[sec].count++
-    if (pct > 0) sectorMap[sec].up++
-    if (pct < 0) sectorMap[sec].down++
-    sectorMap[sec].totalValue += val
-    sectorMap[sec].netForeign += netF
-    sectorMap[sec].changeSum  += pct
+    totalVolume  += Number(r.volume) || 0
+    if (r.whale_signal) whaleCount++
+    if (pct > 0.1) up++
+    else if (pct < -0.1) down++
+    else unchanged++
   })
 
-  const sectorHeatmap = Object.values(sectorMap)
-    .map((s: any) => ({ ...s, avgChange: s.count > 0 ? s.changeSum / s.count : 0 }))
-    .sort((a: any, b: any) => b.totalValue - a.totalValue).slice(0, 12)
-
-  return {
-    date,
-    totalForeign, totalValue, up, down,
-    gainers: gainers.sort((a, b) => b.change - a.change).slice(0, 10),
-    losers:  losers.sort((a, b) => a.change - b.change).slice(0, 10),
-    foreignBuy: foreignBuy.sort((a, b) => b.netForeign - a.netForeign).slice(0, 6),
-    foreignSell: foreignSell.sort((a, b) => b.netForeign - a.netForeign).slice(0, 6),
-    topVolume: topVol.sort((a, b) => b.volume - a.volume).slice(0, 8),
-    topValue:  topVal.sort((a, b) => b.value - a.value).slice(0, 8),
-    spikes: spikes.sort((a, b) => b.aov - a.aov).slice(0, 7),
-    sectorHeatmap, allStocks,
-  }
+  return { date, totalForeign, totalValue, totalVolume, up, down, unchanged, whaleCount, total: up + down + unchanged }
 }
 
-async function getKseiAlerts() {
-  const { data } = await supabase.rpc('get_ksei_movement_alert')
-  return data ? data.slice(0, 8) : []
+async function getSectorRotation() {
+  // Ambil tanggal terbaru dari daily_transactions
+  const { data: dateData } = await supabase
+    .from('daily_transactions')
+    .select('trading_date')
+    .order('trading_date', { ascending: false })
+    .limit(1)
+  const date = dateData?.[0]?.trading_date
+  if (!date) return []
+
+  const { data } = await supabase.rpc('get_sector_rotation', {
+    p_date: date,
+    p_window: 20
+  })
+  return data || []
 }
 
 async function getHighConviction() {
-  const { data } = await supabase.rpc('scan_high_conviction', { p_min_score: 60, p_min_flow: 0 })
+  const { data } = await supabase.rpc('scan_high_conviction', {
+    p_min_score: 60,
+    p_min_flow: 5
+  })
   if (!data) return []
   return data.map((s: any) => ({
-    ...s,
+    stock_code:         s.stock_code,
+    sector:             s.sector,
     price:              Number(s.price),
     price_chg_pct:      Number(s.price_chg_pct),
     conviction_score:   Number(s.conviction_score),
     institutional_flow: Number(s.institutional_flow),
+    is_stealth:         s.is_stealth,
   })).sort((a: any, b: any) => b.conviction_score - a.conviction_score).slice(0, 10)
 }
 
+async function getBigPlayerActivity() {
+  const { data: broker } = await supabase.rpc('get_broker_top_mover', {
+    p_start_date: '2026-01-01',
+    p_end_date: '2026-05-16',
+    p_limit: 5
+  })
+  const { data: insider } = await supabase.rpc('get_insider_alert', {
+    p_months: 1,
+    p_min_pct_chg: 0.5
+  })
+  const { data: ksei } = await supabase.rpc('get_ksei_movement_alert')
+
+  return {
+    brokers: broker || [],
+    insiders: (insider || []).filter((i: any) => i.alert_level === 'HIGH').slice(0, 5),
+    kseiAlerts: (ksei || []).slice(0, 5),
+  }
+}
+
+// ── Sub-components ─────────────────────────────────────────────────────────
+
+function ScoreRing({ score, size = 48 }: { score: number; size?: number }) {
+  const clamped = Math.min(Math.max(score, 0), 100)
+  const strokeWidth = 3
+  const radius = (size - strokeWidth) / 2
+  const circumference = radius * 2 * Math.PI
+  const offset = circumference - (clamped / 100) * circumference
+  const color = clamped >= 80 ? '#22c55e' : clamped >= 60 ? '#eab308' : '#ef4444'
+
+  return (
+    <svg width={size} height={size} className="shrink-0" style={{ transform: 'rotate(-90deg)' }}>
+      <circle cx={size/2} cy={size/2} r={radius} fill="transparent" stroke="currentColor" strokeWidth={strokeWidth} className="text-white/5" />
+      <circle cx={size/2} cy={size/2} r={radius} fill="transparent" stroke={color} strokeWidth={strokeWidth}
+        strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round"
+        className="transition-all duration-1000" />
+    </svg>
+  )
+}
+
+// ── Page Component ─────────────────────────────────────────────────────────
 export default async function MarketOverview() {
-  const [marketData, kseiAlerts, highConviction] = await Promise.all([
-    getMarketData(), getKseiAlerts(), getHighConviction(),
+  const [breadth, sectors, highConviction, bigPlayers] = await Promise.all([
+    getMarketBreadth(),
+    getSectorRotation(),
+    getHighConviction(),
+    getBigPlayerActivity(),
   ])
 
-  if (!marketData) {
+  if (!breadth) {
     return <div className="p-10 text-center text-muted-foreground">Failed to load market data.</div>
   }
 
-  const { date, totalForeign, totalValue, up, down, gainers, losers, foreignBuy, foreignSell, topVolume, topValue, spikes, sectorHeatmap, allStocks } = marketData
+  const { date, totalForeign, totalValue, totalVolume, up, down, unchanged, whaleCount, total } = breadth
+  const foreignSentiment = totalForeign > 5e9 ? 'ACCUMULATION' : totalForeign < -5e9 ? 'DISTRIBUTION' : 'NEUTRAL'
 
   return (
-    <div className="space-y-3 pb-8 animate-fade-in">
+    <div className="space-y-4 pb-8 animate-fade-in">
 
-      {/* ════════════════════════════════════════
-          COMMAND STRIP — compact hero bar
-      ════════════════════════════════════════ */}
-      <div className="relative overflow-hidden rounded-xl border border-white/[0.07] bg-gradient-to-r from-[#0d1117] via-[#0f172a] to-[#0d1117] shadow-2xl">
+      {/* ════════════════════════════════════════════════════════════
+          BLOK 1: COMMAND STRIP — Market Breadth & Flow
+          ════════════════════════════════════════════════════════════ */}
+      <div className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-gradient-to-r from-[#0d1117] via-[#0f172a] to-[#0d1117] shadow-2xl">
         <div className="absolute inset-0 bg-gradient-to-r from-gold-500/5 via-transparent to-emerald-500/5 pointer-events-none" />
-        <div className="absolute top-0 left-1/3 w-64 h-px bg-gradient-to-r from-transparent via-gold-400/30 to-transparent" />
 
         <div className="relative z-10 flex flex-wrap items-stretch divide-x divide-white/[0.05]">
-
-          {/* Verdict gauge */}
-          <div className="flex items-center gap-3 px-4 py-3 shrink-0">
+          {/* Sentiment Gauge */}
+          <div className="flex items-center gap-3 px-5 py-4 shrink-0">
             <div className="relative">
-              <svg className="w-14 h-14 -rotate-90">
-                <circle cx="28" cy="28" r="22" stroke="currentColor" strokeWidth="3.5" fill="transparent" className="text-white/5" />
-                <circle cx="28" cy="28" r="22" stroke="currentColor" strokeWidth="3.5" fill="transparent"
-                  strokeDasharray={138}
-                  strokeDashoffset={138 - (138 * (totalForeign > 0 ? 75 : 45)) / 100}
-                  strokeLinecap="round"
-                  className={`${totalForeign > 0 ? 'text-emerald-400' : 'text-amber-400'} transition-all duration-1000`}
-                />
+              <svg className="w-16 h-16 -rotate-90">
+                <circle cx="32" cy="32" r="26" fill="transparent" stroke="currentColor" strokeWidth="4" className="text-white/[0.04]" />
+                <circle cx="32" cy="32" r="26" fill="transparent" stroke={foreignSentiment === 'ACCUMULATION' ? '#22c55e' : foreignSentiment === 'DISTRIBUTION' ? '#ef4444' : '#eab308'}
+                  strokeWidth="4" strokeDasharray={163} strokeDashoffset={163 - (163 * (foreignSentiment === 'ACCUMULATION' ? 78 : foreignSentiment === 'DISTRIBUTION' ? 35 : 55)) / 100}
+                  strokeLinecap="round" className="transition-all duration-1000" />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-[9px] font-black text-white tracking-tighter">{totalForeign > 0 ? 'BULL' : 'NEUT'}</span>
+                <span className="text-[10px] font-black text-white tracking-tighter">
+                  {foreignSentiment === 'ACCUMULATION' ? 'BULL' : foreignSentiment === 'DISTRIBUTION' ? 'BEAR' : 'NEUT'}
+                </span>
               </div>
             </div>
             <div>
-              <p className="text-[8px] font-bold text-muted-foreground/50 uppercase tracking-widest">Sentiment</p>
-              <p className={`text-[11px] font-black ${totalForeign > 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {totalForeign > 0 ? '▲ Accumulation' : '⏸ Wait & See'}
+              <p className="text-[9px] font-bold text-muted-foreground/50 uppercase tracking-widest">Market Sentiment</p>
+              <p className={`text-xs font-black ${foreignSentiment === 'ACCUMULATION' ? 'text-emerald-400' : foreignSentiment === 'DISTRIBUTION' ? 'text-red-400' : 'text-amber-400'}`}>
+                {foreignSentiment === 'ACCUMULATION' ? '▲ Institutional Buying' : foreignSentiment === 'DISTRIBUTION' ? '▼ Institutional Selling' : '⏸ Wait & See'}
               </p>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-[8px] text-muted-foreground/40 uppercase tracking-widest">Live · {date}</span>
+                <span className="text-[9px] text-muted-foreground/40 uppercase tracking-widest">Live · {date}</span>
               </div>
             </div>
           </div>
 
-          {/* Brand */}
-          <div className="flex flex-col justify-center px-4 py-3 shrink-0">
-            <div className="flex items-center gap-1.5 mb-0.5">
-              <span className="px-1.5 py-0.5 rounded bg-gold-400/10 border border-gold-400/20 text-[8px] font-black text-gold-400 uppercase tracking-widest">Terminal v2</span>
-            </div>
-            <h1 className="text-xl font-black text-white tracking-tight leading-none whitespace-nowrap">
-              Market <span className="text-transparent bg-clip-text bg-gradient-to-r from-gold-300 to-gold-500">Intelligence</span>
-            </h1>
-            <p className="text-[8px] text-muted-foreground/40 mt-0.5 uppercase tracking-widest">IDX Institutional DNA</p>
-          </div>
-
-          {/* 4 stat cells */}
+          {/* Market Stats */}
           {[
-            { label: 'Turnover',     value: formatRupiah(totalValue),   sub: 'daily vol',  color: 'text-gold-400' },
-            { label: 'Foreign Net',  value: formatRupiah(totalForeign), sub: totalForeign >= 0 ? '▲ inflow' : '▼ outflow', color: totalForeign >= 0 ? 'text-emerald-400' : 'text-red-400' },
-            { label: 'Breadth',      value: `${up}↑  ${down}↓`,        sub: 'adv / dec',  color: 'text-blue-400' },
-            { label: 'Whale Signals',value: String(spikes?.length || 0),sub: 'aov spikes', color: 'text-purple-400' },
+            { label: 'Turnover',      value: formatRupiah(totalValue),   sub: `${formatNumber(totalVolume)} vol`, color: 'text-gold-400' },
+            { label: 'Foreign Net',   value: formatRupiah(totalForeign), sub: foreignSentiment === 'ACCUMULATION' ? '▲ inflow' : foreignSentiment === 'DISTRIBUTION' ? '▼ outflow' : '⏸ flat', color: foreignSentiment === 'ACCUMULATION' ? 'text-emerald-400' : foreignSentiment === 'DISTRIBUTION' ? 'text-red-400' : 'text-amber-400' },
+            { label: 'Breadth',       value: `${up}↑ ${down}↓`,         sub: `${unchanged} unch · ${((up/total)*100).toFixed(0)}% up`, color: up > down ? 'text-emerald-400' : 'text-red-400' },
+            { label: 'Whale Signals', value: String(whaleCount),         sub: 'AOV anomalies', color: 'text-purple-400' },
           ].map((s, i) => (
-            <div key={i} className="flex flex-col justify-center px-4 py-3 min-w-[100px]">
-              <p className="text-[8px] font-bold text-muted-foreground/40 uppercase tracking-widest">{s.label}</p>
+            <div key={i} className="flex flex-col justify-center px-5 py-4 min-w-[120px]">
+              <p className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest">{s.label}</p>
               <p className={`text-lg font-black ${s.color} leading-none mt-0.5 whitespace-nowrap`}>{s.value}</p>
-              <p className="text-[8px] text-muted-foreground/30 mt-0.5 uppercase tracking-widest">{s.sub}</p>
+              <p className="text-[9px] text-muted-foreground/30 mt-0.5 uppercase tracking-widest">{s.sub}</p>
             </div>
           ))}
         </div>
       </div>
 
-      {/* ════════════════════════════════════════
-          5-COLUMN MARKET DATA GRID
-      ════════════════════════════════════════ */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2.5">
-
-        {/* COL 1: Gainers */}
-        <div className="glass rounded-xl overflow-hidden border border-emerald-500/20">
-          <div className="px-3 py-2 bg-emerald-500/5 border-b border-emerald-500/10 flex items-center justify-between">
-            <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider">🔥 Gainers</span>
-            <span className="text-[8px] text-muted-foreground/50">{gainers.length}stk</span>
-          </div>
-          {gainers.map((s: any, i: number) => (
-            <Link key={i} href={`/stock/${s.code}`}
-              className="flex items-center justify-between px-3 py-1.5 hover:bg-emerald-500/5 transition-colors group border-b border-white/[0.03] last:border-0">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[8px] text-muted-foreground/30 w-3">{i+1}</span>
-                <span className="font-mono font-black text-[11px] text-foreground group-hover:text-emerald-400 transition-colors">{s.code}</span>
-              </div>
-              <span className="font-black text-[10px] text-emerald-400">+{s.change?.toFixed(1)}%</span>
+      {/* ════════════════════════════════════════════════════════════
+          BLOK 2: SECTOR ROTATION HEATMAP
+          ════════════════════════════════════════════════════════════ */}
+      {sectors.length > 0 && (
+        <div className="glass rounded-2xl p-5 border border-white/[0.06]">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4 text-purple-400" />
+              <h2 className="text-sm font-black text-white uppercase tracking-widest">Sector Rotation</h2>
+              <span className="text-[9px] text-muted-foreground/40 hidden sm:inline">· 20D momentum</span>
+            </div>
+            <Link href="/sector" className="text-[9px] font-black text-gold-400 hover:text-white transition-colors uppercase tracking-widest">
+              Full Map →
             </Link>
-          ))}
-        </div>
-
-        {/* COL 2: Losers */}
-        <div className="glass rounded-xl overflow-hidden border border-red-500/20">
-          <div className="px-3 py-2 bg-red-500/5 border-b border-red-500/10 flex items-center justify-between">
-            <span className="text-[10px] font-black text-red-400 uppercase tracking-wider">❄️ Losers</span>
-            <span className="text-[8px] text-muted-foreground/50">{losers.length}stk</span>
-          </div>
-          {losers.map((s: any, i: number) => (
-            <Link key={i} href={`/stock/${s.code}`}
-              className="flex items-center justify-between px-3 py-1.5 hover:bg-red-500/5 transition-colors group border-b border-white/[0.03] last:border-0">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[8px] text-muted-foreground/30 w-3">{i+1}</span>
-                <span className="font-mono font-black text-[11px] text-foreground group-hover:text-red-400 transition-colors">{s.code}</span>
-              </div>
-              <span className="font-black text-[10px] text-red-400">{s.change?.toFixed(1)}%</span>
-            </Link>
-          ))}
-        </div>
-
-        {/* COL 3: Net Foreign — buy & sell */}
-        <div className="glass rounded-xl overflow-hidden border border-blue-500/20">
-          <div className="px-3 py-2 bg-blue-500/5 border-b border-blue-500/10 flex items-center gap-1.5">
-            <Globe className="w-2.5 h-2.5 text-blue-400" />
-            <span className="text-[10px] font-black text-blue-400 uppercase tracking-wider">Net Foreign</span>
-          </div>
-          <div className="px-3 py-1.5 border-b border-white/[0.04]">
-            <p className="text-[8px] font-black text-emerald-400 uppercase tracking-widest mb-1">▲ Buy</p>
-            {foreignBuy.slice(0, 5).map((s: any, i: number) => (
-              <Link key={i} href={`/stock/${s.code}`}
-                className="flex items-center justify-between py-1 hover:opacity-70 group border-b border-white/[0.03] last:border-0">
-                <span className="font-mono font-black text-[11px] group-hover:text-emerald-400">{s.code}</span>
-                <span className="text-[9px] font-bold text-emerald-400">{formatRupiah(s.netForeign)}</span>
-              </Link>
-            ))}
-          </div>
-          <div className="px-3 py-1.5">
-            <p className="text-[8px] font-black text-red-400 uppercase tracking-widest mb-1">▼ Sell</p>
-            {foreignSell.slice(0, 5).map((s: any, i: number) => (
-              <Link key={i} href={`/stock/${s.code}`}
-                className="flex items-center justify-between py-1 hover:opacity-70 group border-b border-white/[0.03] last:border-0">
-                <span className="font-mono font-black text-[11px] group-hover:text-red-400">{s.code}</span>
-                <span className="text-[9px] font-bold text-red-400">-{formatRupiah(s.netForeign)}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-
-        {/* COL 4: Volume + Value stacked */}
-        <div className="grid grid-rows-2 gap-2.5">
-          <div className="glass rounded-xl overflow-hidden border border-blue-500/15">
-            <div className="px-3 py-2 border-b border-blue-500/10">
-              <span className="text-[10px] font-black text-blue-400 uppercase tracking-wider">📊 Volume</span>
-            </div>
-            {topVolume.slice(0, 5).map((s: any, i: number) => (
-              <Link key={i} href={`/stock/${s.code}`}
-                className="flex items-center justify-between px-3 py-1.5 hover:bg-blue-500/5 group border-b border-white/[0.03] last:border-0 transition-colors">
-                <span className="font-mono font-black text-[11px] group-hover:text-blue-400">{s.code}</span>
-                <div className="text-right">
-                  <p className="text-[9px] font-bold text-blue-400">{formatNumber(s.volume)}</p>
-                  <p className={`text-[7px] ${s.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{s.change > 0 ? '+' : ''}{s.change?.toFixed(1)}%</p>
-                </div>
-              </Link>
-            ))}
-          </div>
-          <div className="glass rounded-xl overflow-hidden border border-yellow-500/15">
-            <div className="px-3 py-2 border-b border-yellow-500/10">
-              <span className="text-[10px] font-black text-gold-400 uppercase tracking-wider">💰 Value</span>
-            </div>
-            {topValue.slice(0, 5).map((s: any, i: number) => (
-              <Link key={i} href={`/stock/${s.code}`}
-                className="flex items-center justify-between px-3 py-1.5 hover:bg-yellow-500/5 group border-b border-white/[0.03] last:border-0 transition-colors">
-                <span className="font-mono font-black text-[11px] group-hover:text-gold-400">{s.code}</span>
-                <div className="text-right">
-                  <p className="text-[9px] font-bold text-gold-400">{formatRupiah(s.value)}</p>
-                  <p className={`text-[7px] ${s.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{s.change > 0 ? '+' : ''}{s.change?.toFixed(1)}%</p>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
-
-        {/* COL 5: AOV Spikes + Whale Moves stacked */}
-        <div className="grid grid-rows-2 gap-2.5">
-          <div className="glass rounded-xl overflow-hidden border border-purple-500/20">
-            <div className="px-3 py-2 border-b border-purple-500/10 flex items-center justify-between">
-              <span className="text-[10px] font-black text-purple-400 uppercase tracking-wider flex items-center gap-1">
-                <Zap className="w-2.5 h-2.5" /> AOV Spikes
-              </span>
-              <Link href="/radar" className="text-[8px] text-gold-400 hover:text-white transition-colors">Radar →</Link>
-            </div>
-            {spikes.slice(0, 5).map((s: any, i: number) => (
-              <Link key={i} href={`/stock/${s.code}`}
-                className="flex items-center justify-between px-3 py-1.5 hover:bg-purple-500/5 group border-b border-white/[0.03] last:border-0 transition-colors">
-                <span className="font-mono font-black text-[11px] group-hover:text-purple-400">{s.code}</span>
-                <div className="text-right">
-                  <span className={`text-[8px] font-bold px-1 py-0.5 rounded ${s.aov >= 2 ? 'bg-purple-500/20 text-purple-300' : 'bg-blue-500/10 text-blue-400'}`}>{s.aov?.toFixed(1)}x</span>
-                  <p className={`text-[7px] mt-0.5 ${s.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{s.change > 0 ? '+' : ''}{s.change?.toFixed(1)}%</p>
-                </div>
-              </Link>
-            ))}
           </div>
 
-          {/* Whale mini tracker */}
-          <div className="glass rounded-xl overflow-hidden border border-gold-400/20">
-            <div className="px-3 py-2 border-b border-gold-400/10 flex items-center justify-between">
-              <span className="text-[10px] font-black text-gold-400 uppercase tracking-wider flex items-center gap-1">
-                <ShieldCheck className="w-2.5 h-2.5" /> Whale Moves
-              </span>
-              <Link href="/flow" className="text-[8px] text-gold-400 hover:text-white transition-colors">All →</Link>
-            </div>
-            {kseiAlerts.slice(0, 5).map((a: any, i: number) => {
-              const isAccum = Number(a.scripless_diff) > 0
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+            {sectors.map((sec: any, i: number) => {
+              const isInflow = sec.momentum?.includes('INFLOW')
+              const isOutflow = sec.momentum?.includes('OUTFLOW')
+              const isStrong = sec.momentum?.includes('STRONG')
+
               return (
-                <Link key={i} href={`/stock/${a.share_code}`}
-                  className="flex items-center justify-between px-3 py-1.5 hover:bg-gold-400/5 group border-b border-white/[0.03] last:border-0 transition-colors">
-                  <div className="min-w-0">
-                    <span className="font-mono font-black text-[11px] group-hover:text-gold-400">{a.share_code}</span>
-                    <p className="text-[7px] text-muted-foreground/40 truncate">{a.investor_name?.slice(0, 12)}</p>
+                <Link key={i} href={`/sector?name=${encodeURIComponent(sec.sector)}`}
+                  className={`relative rounded-xl p-4 border transition-all duration-300 group cursor-pointer
+                    ${isStrong ? (isInflow ? 'bg-emerald-500/5 border-emerald-500/30 hover:bg-emerald-500/10' : 'bg-red-500/5 border-red-500/30 hover:bg-red-500/10')
+                    : isInflow ? 'bg-emerald-500/[0.02] border-emerald-500/15 hover:bg-emerald-500/5'
+                    : isOutflow ? 'bg-red-500/[0.02] border-red-500/15 hover:bg-red-500/5'
+                    : 'bg-white/[0.02] border-white/5 hover:bg-white/[0.04]'}`}>
+                  <div className="flex items-start justify-between mb-2">
+                    <p className="text-[10px] font-black text-foreground/80 truncate max-w-[80%] uppercase tracking-wider">{sec.sector}</p>
+                    {isStrong && <span className="w-1.5 h-1.5 rounded-full bg-gold-400 shadow-[0_0_6px_rgba(231,183,51,0.6)] animate-pulse" />}
                   </div>
-                  <span className={`text-[9px] font-black shrink-0 ml-1.5 ${isAccum ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {isAccum ? '▲' : '▼'} {formatNumber(Math.abs(Number(a.scripless_diff)))}
-                  </span>
+                  <p className={`text-xl font-black ${isInflow ? 'text-emerald-400' : isOutflow ? 'text-red-400' : 'text-muted-foreground'}`}>
+                    {sec.avg_change_pct > 0 ? '+' : ''}{Number(sec.avg_change_pct).toFixed(2)}%
+                  </p>
+                  <div className="mt-2 pt-2 border-t border-white/[0.04] flex items-center justify-between">
+                    <span className="text-[9px] font-bold text-muted-foreground/60">{sec.stock_count} stk</span>
+                    <span className={`text-[9px] font-black ${isInflow ? 'text-emerald-400' : isOutflow ? 'text-red-400' : 'text-muted-foreground'}`}>
+                      {formatRupiah(sec.total_net_foreign)}
+                    </span>
+                  </div>
+                  {/* Momentum label */}
+                  <div className={`mt-2 px-2 py-0.5 rounded-full text-[8px] font-black text-center uppercase tracking-wider
+                    ${isStrong && isInflow ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    : isInflow ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                    : isOutflow ? 'bg-red-500/10 text-red-400 border border-red-500/20'
+                    : 'bg-white/5 text-muted-foreground border border-white/5'}`}>
+                    {sec.momentum?.replace(/_/g, ' ') || 'NEUTRAL'}
+                  </div>
                 </Link>
               )
             })}
           </div>
         </div>
-      </div>
+      )}
 
-      {/* ════════════════════════════════════════
-          SECTOR HEATMAP
-      ════════════════════════════════════════ */}
-      <SectorHeatmap sectorHeatmap={sectorHeatmap} allStocks={allStocks} />
-
-      {/* ════════════════════════════════════════
-          HIGH CONVICTION — compact table
-      ════════════════════════════════════════ */}
-      <div className="glass rounded-xl overflow-hidden border border-white/[0.06]">
-        <div className="px-4 py-2.5 border-b border-white/[0.05] flex items-center justify-between bg-white/[0.01]">
+      {/* ════════════════════════════════════════════════════════════
+          BLOK 3: SMART MONEY RADAR — High Conviction Cards
+          ════════════════════════════════════════════════════════════ */}
+      <div className="glass rounded-2xl p-5 border border-white/[0.06]">
+        <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <Target className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="text-[10px] font-black text-white uppercase tracking-widest">High Conviction Alpha</span>
-            <span className="text-[9px] text-muted-foreground/40 hidden sm:inline">· Smart Money picks · Score ≥ 60</span>
+            <Target className="w-4 h-4 text-emerald-400" />
+            <h2 className="text-sm font-black text-white uppercase tracking-widest">Smart Money Radar</h2>
+            <span className="text-[9px] text-muted-foreground/40 hidden sm:inline">· High conviction ≥ 60</span>
           </div>
-          <Link href="/screener" className="text-[9px] font-black text-gold-400 hover:text-white transition-colors uppercase tracking-widest">Screener →</Link>
+          <Link href="/screener" className="text-[9px] font-black text-gold-400 hover:text-white transition-colors uppercase tracking-widest">
+            Screener Pro →
+          </Link>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-white/[0.04] text-[8px] text-muted-foreground/40 uppercase tracking-widest">
-                <th className="px-4 py-2 text-left">Stock</th>
-                <th className="px-3 py-2 text-center">Score</th>
-                <th className="px-3 py-2 text-right">Price</th>
-                <th className="px-3 py-2 text-right">Chg%</th>
-                <th className="px-3 py-2 text-center hidden md:table-cell">Flow</th>
-                <th className="px-3 py-2 text-center hidden lg:table-cell">Flags</th>
-              </tr>
-            </thead>
-            <tbody>
-              {highConviction.map((s: any, i: number) => (
-                <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors group">
-                  <td className="px-4 py-2">
-                    <Link href={`/stock/${s.stock_code}`} className="flex items-center gap-2">
-                      <span className="font-mono font-black text-sm text-foreground group-hover:text-gold-400 transition-colors">{s.stock_code}</span>
-                      {s.is_stealth && <span className="text-[7px] bg-gold-400/10 text-gold-400 border border-gold-400/20 px-1 py-0.5 rounded font-black uppercase hidden sm:inline">Stealth</span>}
-                      <span className="text-[8px] text-muted-foreground/30 hidden xl:inline">{s.sector}</span>
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <span className={`text-sm font-black ${s.conviction_score >= 80 ? 'text-emerald-400' : s.conviction_score >= 60 ? 'text-amber-400' : 'text-muted-foreground'}`}>
-                      {Math.round(s.conviction_score)}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-right text-muted-foreground/70">{formatRupiah(s.price)}</td>
-                  <td className={`px-3 py-2 text-right font-black ${s.price_chg_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {s.price_chg_pct > 0 ? '+' : ''}{s.price_chg_pct?.toFixed(2)}%
-                  </td>
-                  <td className="px-3 py-2 text-center text-muted-foreground/40 hidden md:table-cell text-[10px]">{s.institutional_flow?.toFixed(1)}</td>
-                  <td className="px-3 py-2 text-center hidden lg:table-cell text-sm">
-                    {s.whale_signal ? '🐋' : ''}{s.big_player_anomaly ? '⚡' : ''}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+        <div className="flex gap-3 overflow-x-auto pb-2 -mx-2 px-2">
+          {highConviction.map((s: any, i: number) => (
+            <Link key={i} href={`/stock/${s.stock_code}`}
+              className="flex-shrink-0 w-52 glass rounded-xl p-4 border border-white/[0.06] hover:border-gold-400/30 hover:shadow-lg transition-all group">
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <p className="font-mono font-black text-sm text-foreground group-hover:text-gold-400 transition-colors">{s.stock_code}</p>
+                  <p className="text-[9px] text-muted-foreground/50 uppercase truncate max-w-[100px]">{s.sector}</p>
+                </div>
+                {s.is_stealth && (
+                  <span className="text-[7px] bg-purple-500/10 text-purple-400 border border-purple-500/20 px-1.5 py-0.5 rounded-full font-black uppercase">Stealth</span>
+                )}
+              </div>
+
+              <div className="flex items-end justify-between mb-3">
+                <div className="relative flex items-center gap-2">
+                  <ScoreRing score={s.conviction_score} size={36} />
+                  <span className="absolute top-1/2 left-[18px] -translate-y-1/2 -translate-x-1/2 text-[9px] font-black text-white">
+                    {Math.round(s.conviction_score)}
+                  </span>
+                  <div>
+                    <p className="font-black text-lg text-foreground">{formatRupiah(s.price)}</p>
+                    <p className={`text-[10px] font-bold ${s.price_chg_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {s.price_chg_pct > 0 ? '+' : ''}{s.price_chg_pct.toFixed(2)}%
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-white/[0.04]">
+                <span className="text-[9px] text-muted-foreground/60">Inst. Flow</span>
+                <span className="text-[10px] font-bold text-foreground">{s.institutional_flow.toFixed(1)}</span>
+              </div>
+            </Link>
+          ))}
+
+          {highConviction.length === 0 && (
+            <div className="w-full text-center py-8 text-muted-foreground text-sm">
+              No high conviction signals at the moment.
+            </div>
+          )}
         </div>
       </div>
+
+      {/* ════════════════════════════════════════════════════════════
+          BLOK 4: BIG PLAYER ACTIVITY — 3 Kolom
+          ════════════════════════════════════════════════════════════ */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        {/* Broker Top Movers */}
+        <div className="glass rounded-xl p-4 border border-white/[0.06]">
+          <div className="flex items-center gap-1.5 mb-3">
+            <ArrowRightLeft className="w-3.5 h-3.5 text-blue-400" />
+            <h3 className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Broker Movers</h3>
+          </div>
+          <div className="space-y-2">
+            {bigPlayers.brokers.map((b: any, i: number) => (
+              <div key={i} className="flex items-center justify-between py-1 border-b border-white/[0.03] last:border-0">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold text-foreground truncate">{b.nama_broker?.slice(0, 20)}</p>
+                  <p className="text-[8px] text-muted-foreground/50">{b.saham_count} saham</p>
+                </div>
+                <span className={`text-[10px] font-black shrink-0 ml-2 ${b.total_net_value > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {formatRupiah(b.total_net_value)}
+                </span>
+              </div>
+            ))}
+            {bigPlayers.brokers.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">No data</p>}
+          </div>
+        </div>
+
+        {/* Insider Alerts */}
+        <div className="glass rounded-xl p-4 border border-white/[0.06]">
+          <div className="flex items-center gap-1.5 mb-3">
+            <ShieldCheck className="w-3.5 h-3.5 text-red-400" />
+            <h3 className="text-[10px] font-black text-red-400 uppercase tracking-widest">Insider Alerts</h3>
+          </div>
+          <div className="space-y-2">
+            {bigPlayers.insiders.map((ins: any, i: number) => (
+              <Link key={i} href={`/stock/${ins.share_code}`}
+                className="flex items-center justify-between py-1 border-b border-white/[0.03] last:border-0 hover:bg-white/[0.02] -mx-2 px-2 rounded transition-colors group">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-mono font-black text-foreground group-hover:text-gold-400">{ins.share_code}</p>
+                  <p className="text-[8px] text-muted-foreground/50 truncate max-w-[130px]">{ins.investor_name?.slice(0, 18)}</p>
+                </div>
+                <div className="text-right shrink-0 ml-2">
+                  <p className={`text-[9px] font-black ${ins.action === 'BUYING' ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {ins.action === 'BUYING' ? '▲' : '▼'} {Number(ins.pct_point_change).toFixed(2)}%
+                  </p>
+                  <p className="text-[7px] text-muted-foreground">{ins.alert_level}</p>
+                </div>
+              </Link>
+            ))}
+            {bigPlayers.insiders.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">No alerts</p>}
+          </div>
+        </div>
+
+        {/* KSEI Whale Alerts */}
+        <div className="glass rounded-xl p-4 border border-white/[0.06]">
+          <div className="flex items-center gap-1.5 mb-3">
+            <Globe className="w-3.5 h-3.5 text-purple-400" />
+            <h3 className="text-[10px] font-black text-purple-400 uppercase tracking-widest">KSEI Movers</h3>
+          </div>
+          <div className="space-y-2">
+            {bigPlayers.kseiAlerts.map((k: any, i: number) => {
+              const isAccum = Number(k.scripless_diff) > 0
+              return (
+                <Link key={i} href={`/stock/${k.share_code}`}
+                  className="flex items-center justify-between py-1 border-b border-white/[0.03] last:border-0 hover:bg-white/[0.02] -mx-2 px-2 rounded transition-colors group">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-mono font-black text-foreground group-hover:text-gold-400">{k.share_code}</p>
+                    <p className="text-[8px] text-muted-foreground/50 truncate max-w-[130px]">{k.investor_name?.slice(0, 18)}</p>
+                  </div>
+                  <span className={`text-[9px] font-black shrink-0 ml-2 ${isAccum ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {isAccum ? '▲' : '▼'} {formatNumber(Math.abs(Number(k.scripless_diff)))}
+                  </span>
+                </Link>
+              )
+            })}
+            {bigPlayers.kseiAlerts.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">No data</p>}
+          </div>
+        </div>
+      </div>
+
     </div>
   )
 }
