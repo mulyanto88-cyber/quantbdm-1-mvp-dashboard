@@ -252,7 +252,6 @@ export default function ScreenerPage() {
   }
 
   const resetFilters = () => {
-    setSearch('')
     setFilterSignal('ALL')
     setFilterSector('ALL')
     setFilterFlag('ALL')
