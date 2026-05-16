@@ -346,59 +346,80 @@ export default function StockDetailPage() {
       {/* ════════════════════════════════════════════════════════════
           HEADER + VERDICT + QUICK STATS
       ════════════════════════════════════════════════════════════ */}
-      <div className="glass rounded-2xl p-5 border border-white/[0.08] shadow-2xl">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <h1 className="text-3xl font-black text-white tracking-tight">{stockCode}</h1>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-black uppercase">
+      <div className="glass rounded-3xl p-6 lg:p-8 border border-white/[0.08] shadow-2xl relative overflow-hidden">
+        {/* Decorative background glow */}
+        <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-emerald-500/5 blur-[100px] rounded-full pointer-events-none" />
+        <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-64 h-64 bg-blue-500/5 blur-[100px] rounded-full pointer-events-none" />
+        
+        <div className="relative z-10 flex flex-col xl:flex-row gap-8 justify-between">
+          {/* Title & Price Section */}
+          <div className="flex flex-col justify-center min-w-fit">
+            <div className="flex items-center gap-3 mb-2">
+              <h1 className="text-4xl lg:text-5xl font-black text-white tracking-tight">{stockCode}</h1>
+              <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-black uppercase tracking-wider">
                 {stockData.sector || 'Stock'}
               </span>
             </div>
-            <div className="flex items-baseline gap-3">
-              <span className="text-4xl font-black text-white">{formatRupiah(stockData.close)}</span>
-              <span className={`flex items-center gap-1 px-3 py-1 rounded-xl font-black text-sm ${
-                stockData.change_percent >= 0 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                : 'bg-red-500/10 text-red-400 border border-red-500/20'
+            <div className="flex items-baseline gap-4 mt-2">
+              <span className="text-5xl lg:text-6xl font-black text-white tracking-tighter">{formatRupiah(stockData.close)}</span>
+              <span className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-black text-base lg:text-lg ${
+                stockData.change_percent >= 0 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.15)]'
+                : 'bg-red-500/10 text-red-400 border border-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.15)]'
               }`}>
-                {stockData.change_percent >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                {stockData.change_percent >= 0 ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
                 {Math.abs(stockData.change_percent).toFixed(2)}%
               </span>
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1">
-              H: {formatNumber(stockData.high)} · L: {formatNumber(stockData.low)} · O: {formatNumber(stockData.open_price)} · {stockData.trading_date}
-            </p>
-            {/* Quick Stats moved here */}
-            <div className="grid grid-cols-4 gap-2 mt-3">
-              {[
-                { label: 'Float Cap', value: formatRupiah(floatCap), color: 'text-gold-400' },
-                { label: 'Public Shares', value: formatShares(publicShares), color: 'text-cyan-400' },
-                { label: 'Volume', value: formatShares(stockData.volume), color: 'text-orange-400' },
-                { label: 'Value', value: formatRupiah(stockData.value), color: 'text-blue-400' },
-              ].map((m, i) => (
-                <div key={i} className="p-2 rounded-xl bg-white/[0.02] border border-white/[0.04] text-center">
-                  <p className="text-[8px] text-muted-foreground uppercase">{m.label}</p>
-                  <p className={`text-xs font-black ${m.color}`}>{m.value}</p>
-                </div>
-              ))}
+            <div className="text-xs text-muted-foreground mt-4 font-medium flex gap-3 lg:gap-4 bg-white/[0.02] p-2 rounded-lg border border-white/[0.04] w-fit">
+              <span><span className="opacity-50">H:</span> <span className="text-white/80">{formatNumber(stockData.high)}</span></span>
+              <span><span className="opacity-50">L:</span> <span className="text-white/80">{formatNumber(stockData.low)}</span></span>
+              <span><span className="opacity-50">O:</span> <span className="text-white/80">{formatNumber(stockData.open_price)}</span></span>
+              <span className="opacity-30">|</span>
+              <span className="opacity-60 flex items-center gap-1"><Clock className="w-3 h-3" /> {stockData.trading_date}</span>
             </div>
           </div>
 
-          <div className={`rounded-2xl p-4 ${verdict.bg} border ${verdict.border} min-w-[200px]`}>
-            <div className="flex items-center gap-2 mb-2">
-              <Shield className={`w-5 h-5 ${verdict.color}`} />
-              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Verdict</span>
+          {/* Quick Stats Grid */}
+          <div className="grid grid-cols-2 gap-3 flex-1 xl:max-w-[400px]">
+            {[
+              { label: 'Float Cap', value: formatRupiah(floatCap), color: 'text-gold-400', icon: <PieChartIcon className="w-4 h-4 text-gold-400/30" /> },
+              { label: 'Public Shares', value: formatShares(publicShares), color: 'text-cyan-400', icon: <Users className="w-4 h-4 text-cyan-400/30" /> },
+              { label: 'Volume', value: formatShares(stockData.volume), color: 'text-orange-400', icon: <Activity className="w-4 h-4 text-orange-400/30" /> },
+              { label: 'Value', value: formatRupiah(stockData.value), color: 'text-blue-400', icon: <DollarSign className="w-4 h-4 text-blue-400/30" /> },
+            ].map((m, i) => (
+              <div key={i} className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.04] flex flex-col justify-center relative overflow-hidden group hover:bg-white/[0.04] transition-colors">
+                <div className="absolute right-3 top-3 transition-transform group-hover:scale-110">{m.icon}</div>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-2 font-medium">{m.label}</p>
+                <p className={`text-lg font-black ${m.color} tracking-tight`}>{m.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Verdict Card */}
+          <div className={`rounded-3xl p-6 ${verdict.bg} border ${verdict.border} xl:min-w-[300px] flex flex-col justify-center relative overflow-hidden shrink-0 shadow-xl`}>
+            <div className={`absolute -right-6 -bottom-6 opacity-[0.03] transition-transform group-hover:scale-110 ${verdict.color}`}>
+              <Shield className="w-40 h-40" />
             </div>
-            <p className={`text-xl font-black ${verdict.color} mb-2`}>{verdict.label}</p>
-            <div className="space-y-0.5">
-              {verdict.reasons.map((r, i) => (
-                <p key={i} className="text-[9px] text-muted-foreground">• {r}</p>
-              ))}
+            <div className="relative z-10">
+              <div className="flex items-center gap-2 mb-4">
+                <Shield className={`w-5 h-5 ${verdict.color}`} />
+                <span className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">Verdict & Signal</span>
+              </div>
+              <p className={`text-2xl font-black ${verdict.color} mb-4 tracking-tight`}>{verdict.label}</p>
+              <div className="space-y-2">
+                {verdict.reasons.map((r, i) => (
+                  <div key={i} className="flex items-start gap-2 bg-black/10 p-1.5 rounded-md">
+                    <span className={`mt-0.5 text-[10px] ${verdict.color}`}>✦</span>
+                    <p className="text-xs text-foreground/80 font-medium">{r}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
-        {/* Additional quick stats row (AOV, Turnover, dll) */}
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mt-4 pt-4 border-t border-white/[0.05]">
+
+        {/* Bottom Metrics Bar */}
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mt-8 pt-6 border-t border-white/[0.05]">
           {[
             { label: 'Conviction', value: `${convictionScore}`, color: convictionScore >= 80 ? 'text-emerald-400' : convictionScore >= 60 ? 'text-amber-400' : 'text-red-400' },
             { label: 'Smart Money', value: `${Math.round(smiScore)}`, color: smiScore >= 60 ? 'text-emerald-400' : smiScore >= 30 ? 'text-amber-400' : 'text-red-400' },
@@ -407,9 +428,9 @@ export default function StockDetailPage() {
             { label: 'Turnover', value: `${dailyTurnover.toFixed(2)}%`, color: dailyTurnover > 5 ? 'text-emerald-400' : dailyTurnover < 1 ? 'text-red-400' : 'text-amber-400' },
             { label: 'Free Float', value: `${stockData.free_float?.toFixed(1) || '--'}%`, color: 'text-blue-400' },
           ].map((m, i) => (
-            <div key={i} className="p-2 rounded-xl bg-white/[0.02] border border-white/[0.04] text-center">
-              <p className="text-[8px] text-muted-foreground uppercase">{m.label}</p>
-              <p className={`text-sm font-black ${m.color}`}>{m.value}</p>
+            <div key={i} className="p-3 rounded-xl bg-white/[0.01] hover:bg-white/[0.03] transition-colors border border-white/[0.03] text-center">
+              <p className="text-[9px] text-muted-foreground uppercase tracking-wider mb-1">{m.label}</p>
+              <p className={`text-base font-black ${m.color}`}>{m.value}</p>
             </div>
           ))}
         </div>
@@ -507,7 +528,15 @@ export default function StockDetailPage() {
                 </div>
               ))}
             </div>
-          ) : <p className="text-xs text-muted-foreground text-center py-4">No broker data</p>}
+          ) : (
+            <div className="flex flex-col items-center justify-center py-8 opacity-50">
+              <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center mb-3">
+                <Building2 className="w-5 h-5 text-blue-400" />
+              </div>
+              <p className="text-xs text-foreground font-medium">No Broker Data</p>
+              <p className="text-[10px] text-muted-foreground mt-1 text-center max-w-[180px]">Transaction data is currently unavailable for this period.</p>
+            </div>
+          )}
         </div>
 
         <div className="glass rounded-xl p-4 border border-white/[0.06]">
@@ -516,23 +545,45 @@ export default function StockDetailPage() {
             <h3 className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Foreign Flow</h3>
           </div>
           {foreignDivergence ? (
-            <div className="space-y-2">
-              <div className={`px-3 py-2 rounded-lg text-[10px] font-black ${
+            <div className="space-y-3">
+              <div className={`px-3 py-2.5 rounded-xl text-[11px] font-black text-center border ${
                 foreignDivergence.divergence_type?.includes('STEALTH') || foreignDivergence.divergence_type?.includes('BULLISH')
-                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.1)]'
                   : foreignDivergence.divergence_type?.includes('BEARISH') || foreignDivergence.divergence_type?.includes('DISTRIBUTION')
-                  ? 'bg-red-500/10 text-red-400 border border-red-500/20'
-                  : 'bg-white/[0.02] text-muted-foreground border border-white/[0.04]'
-              }`}>{foreignDivergence.divergence_type || 'NEUTRAL'}</div>
-              <div className="grid grid-cols-2 gap-2 text-[9px]">
-                <div><span className="text-muted-foreground">Price Chg: </span><span className={foreignDivergence.price_chg_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}>{Number(foreignDivergence.price_chg_pct).toFixed(2)}%</span></div>
-                <div><span className="text-muted-foreground">Signal: </span><span className="text-gold-400">{foreignDivergence.signal_strength || 'WEAK'}</span></div>
+                  ? 'bg-red-500/10 text-red-400 border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.1)]'
+                  : 'bg-white/[0.02] text-muted-foreground border-white/[0.04]'
+              }`}>
+                {foreignDivergence.divergence_type || 'NEUTRAL'}
+              </div>
+              
+              <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] flex items-center justify-between">
+                <span className="text-[10px] text-muted-foreground uppercase tracking-widest flex items-center gap-1.5"><DollarSign className="w-3 h-3"/> Net Value</span>
+                <span className={`text-sm font-black ${stockData.net_foreign_value >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {stockData.net_foreign_value >= 0 ? '+' : ''}{formatRupiah(stockData.net_foreign_value)}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                <div className="p-2 rounded-lg bg-white/[0.01] border border-white/[0.02]"><span className="text-muted-foreground block mb-0.5">Price Chg</span><span className={`font-bold ${foreignDivergence.price_chg_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{Number(foreignDivergence.price_chg_pct).toFixed(2)}%</span></div>
+                <div className="p-2 rounded-lg bg-white/[0.01] border border-white/[0.02]"><span className="text-muted-foreground block mb-0.5">Signal</span><span className="text-gold-400 font-bold">{foreignDivergence.signal_strength || 'WEAK'}</span></div>
               </div>
               {foreignDivergence.interpretation && (
-                <p className="text-[9px] text-muted-foreground leading-relaxed">💡 {foreignDivergence.interpretation}</p>
+                <div className="p-2.5 rounded-lg bg-blue-500/5 border border-blue-500/10">
+                  <p className="text-[10px] text-blue-200/70 leading-relaxed flex items-start gap-1.5">
+                    <span className="shrink-0 mt-0.5">💡</span>
+                    <span>{foreignDivergence.interpretation}</span>
+                  </p>
+                </div>
               )}
             </div>
-          ) : <p className="text-xs text-muted-foreground text-center py-4">No data</p>}
+          ) : (
+            <div className="flex flex-col items-center justify-center py-8 opacity-50">
+              <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center mb-3">
+                <Globe className="w-5 h-5 text-emerald-400" />
+              </div>
+              <p className="text-xs text-foreground font-medium">No Foreign Data</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -602,7 +653,13 @@ export default function StockDetailPage() {
             </div>
           </div>
         ) : (
-          <p className="text-center py-8 text-xs text-muted-foreground">No ownership data</p>
+          <div className="flex flex-col items-center justify-center py-16 opacity-60 bg-white/[0.01] rounded-xl border border-white/[0.02] mt-4">
+            <div className="w-16 h-16 rounded-full bg-gold-400/10 flex items-center justify-center mb-4">
+              <PieChartIcon className="w-8 h-8 text-gold-400" />
+            </div>
+            <p className="text-sm text-foreground font-bold">No Ownership Data</p>
+            <p className="text-xs text-muted-foreground mt-1 max-w-sm text-center">KSEI scripless ownership data is currently unavailable for {stockCode}. Please check back later.</p>
+          </div>
         )}
       </div>
 
