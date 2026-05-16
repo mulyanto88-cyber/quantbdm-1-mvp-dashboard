@@ -1,8 +1,9 @@
 import React from 'react'
-import { Activity, DollarSign, ShieldCheck, Zap, Globe, Target, ArrowRightLeft, TrendingUp, TrendingDown } from 'lucide-react'
+import { ArrowRightLeft, ShieldCheck, Zap, Globe, Target, Activity } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { formatRupiah, formatNumber, formatPercent } from '@/lib/utils'
+import { formatRupiah, formatNumber } from '@/lib/utils'
+import SectorRotationWidget from './_components/SectorRotationWidget' // 👈 baru
 
 export const revalidate = 60
 
@@ -43,23 +44,6 @@ async function getMarketBreadth() {
   return { date, totalForeign, totalValue, totalVolume, up, down, unchanged, whaleCount, total: up + down + unchanged }
 }
 
-async function getSectorRotation() {
-  // Ambil tanggal terbaru dari daily_transactions
-  const { data: dateData } = await supabase
-    .from('daily_transactions')
-    .select('trading_date')
-    .order('trading_date', { ascending: false })
-    .limit(1)
-  const date = dateData?.[0]?.trading_date
-  if (!date) return []
-
-  const { data } = await supabase.rpc('get_sector_rotation', {
-    p_date: date,
-    p_window: 20
-  })
-  return data || []
-}
-
 async function getHighConviction() {
   const { data } = await supabase.rpc('scan_high_conviction', {
     p_min_score: 60,
@@ -97,7 +81,6 @@ async function getBigPlayerActivity() {
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────
-
 function ScoreRing({ score, size = 48 }: { score: number; size?: number }) {
   const clamped = Math.min(Math.max(score, 0), 100)
   const strokeWidth = 3
@@ -118,9 +101,8 @@ function ScoreRing({ score, size = 48 }: { score: number; size?: number }) {
 
 // ── Page Component ─────────────────────────────────────────────────────────
 export default async function MarketOverview() {
-  const [breadth, sectors, highConviction, bigPlayers] = await Promise.all([
+  const [breadth, highConviction, bigPlayers] = await Promise.all([
     getMarketBreadth(),
-    getSectorRotation(),
     getHighConviction(),
     getBigPlayerActivity(),
   ])
@@ -186,61 +168,9 @@ export default async function MarketOverview() {
       </div>
 
       {/* ════════════════════════════════════════════════════════════
-          BLOK 2: SECTOR ROTATION HEATMAP
+          BLOK 2: SECTOR ROTATION (Client Component)
           ════════════════════════════════════════════════════════════ */}
-      {sectors.length > 0 && (
-        <div className="glass rounded-2xl p-5 border border-white/[0.06]">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Activity className="w-4 h-4 text-purple-400" />
-              <h2 className="text-sm font-black text-white uppercase tracking-widest">Sector Rotation</h2>
-              <span className="text-[9px] text-muted-foreground/40 hidden sm:inline">· 20D momentum</span>
-            </div>
-            <Link href="/sector" className="text-[9px] font-black text-gold-400 hover:text-white transition-colors uppercase tracking-widest">
-              Full Map →
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-            {sectors.map((sec: any, i: number) => {
-              const isInflow = sec.momentum?.includes('INFLOW')
-              const isOutflow = sec.momentum?.includes('OUTFLOW')
-              const isStrong = sec.momentum?.includes('STRONG')
-
-              return (
-                <Link key={i} href={`/sector?name=${encodeURIComponent(sec.sector)}`}
-                  className={`relative rounded-xl p-4 border transition-all duration-300 group cursor-pointer
-                    ${isStrong ? (isInflow ? 'bg-emerald-500/5 border-emerald-500/30 hover:bg-emerald-500/10' : 'bg-red-500/5 border-red-500/30 hover:bg-red-500/10')
-                    : isInflow ? 'bg-emerald-500/[0.02] border-emerald-500/15 hover:bg-emerald-500/5'
-                    : isOutflow ? 'bg-red-500/[0.02] border-red-500/15 hover:bg-red-500/5'
-                    : 'bg-white/[0.02] border-white/5 hover:bg-white/[0.04]'}`}>
-                  <div className="flex items-start justify-between mb-2">
-                    <p className="text-[10px] font-black text-foreground/80 truncate max-w-[80%] uppercase tracking-wider">{sec.sector}</p>
-                    {isStrong && <span className="w-1.5 h-1.5 rounded-full bg-gold-400 shadow-[0_0_6px_rgba(231,183,51,0.6)] animate-pulse" />}
-                  </div>
-                  <p className={`text-xl font-black ${isInflow ? 'text-emerald-400' : isOutflow ? 'text-red-400' : 'text-muted-foreground'}`}>
-                    {sec.avg_change_pct > 0 ? '+' : ''}{Number(sec.avg_change_pct).toFixed(2)}%
-                  </p>
-                  <div className="mt-2 pt-2 border-t border-white/[0.04] flex items-center justify-between">
-                    <span className="text-[9px] font-bold text-muted-foreground/60">{sec.stock_count} stk</span>
-                    <span className={`text-[9px] font-black ${isInflow ? 'text-emerald-400' : isOutflow ? 'text-red-400' : 'text-muted-foreground'}`}>
-                      {formatRupiah(sec.total_net_foreign)}
-                    </span>
-                  </div>
-                  {/* Momentum label */}
-                  <div className={`mt-2 px-2 py-0.5 rounded-full text-[8px] font-black text-center uppercase tracking-wider
-                    ${isStrong && isInflow ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                    : isInflow ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                    : isOutflow ? 'bg-red-500/10 text-red-400 border border-red-500/20'
-                    : 'bg-white/5 text-muted-foreground border border-white/5'}`}>
-                    {sec.momentum?.replace(/_/g, ' ') || 'NEUTRAL'}
-                  </div>
-                </Link>
-              )
-            })}
-          </div>
-        </div>
-      )}
+      <SectorRotationWidget />
 
       {/* ════════════════════════════════════════════════════════════
           BLOK 3: SMART MONEY RADAR — High Conviction Cards
