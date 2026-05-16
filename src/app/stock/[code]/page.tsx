@@ -591,130 +591,110 @@ export default function StockDetailPage() {
     <>
     <div className="space-y-8 animate-fade-in pb-12">
       <div className="relative group">
-        <div className="absolute -inset-0.5 bg-gradient-to-r from-gold-500/20 to-emerald-500/20 rounded-[2.5rem] blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
-        <div className="glass rounded-[2.5rem] p-8 border border-white/[0.08] shadow-2xl relative overflow-hidden">
-          <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+        <div className="absolute -inset-0.5 bg-gradient-to-r from-gold-500/20 to-emerald-500/20 rounded-[2rem] blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
+        <div className="glass rounded-[2rem] p-5 border border-white/[0.08] shadow-2xl relative overflow-hidden">
+          <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
             {/* 1. Identity & Price */}
-            <div className="lg:col-span-4 space-y-5">
+            <div className="lg:col-span-4 space-y-3">
               <div className="flex items-center gap-3">
-                <div className="w-14 h-14 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-center shadow-inner">
-                  <Activity className="w-7 h-7 text-emerald-400" />
+                <div className="w-10 h-10 rounded-xl bg-white/[0.03] border border-white/10 flex items-center justify-center shadow-inner">
+                  <Activity className="w-5 h-5 text-emerald-400" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h1 className="text-4xl font-black tracking-tighter text-white">{stockCode}</h1>
-                    <span className="px-3 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-black uppercase">
+                    <h1 className="text-2xl font-black tracking-tighter text-white">{stockCode}</h1>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-black uppercase">
                       {stockData?.sector || 'Stock'}
                     </span>
                   </div>
-                  <p className="text-muted-foreground text-xs font-bold tracking-widest uppercase opacity-60">Institutional Intelligence Pulse</p>
+                  <p className="text-muted-foreground text-[10px] font-bold tracking-widest uppercase opacity-60">Institutional Intel</p>
                 </div>
               </div>
               
-              <div className="flex items-baseline gap-4">
-                <span className="text-6xl font-black text-white tracking-tighter drop-shadow-2xl">
+              <div className="flex items-baseline gap-3">
+                <span className="text-4xl font-black text-white tracking-tighter drop-shadow-2xl">
                   {stockData?.close ? formatRupiah(stockData.close) : '---'}
                 </span>
-                <div className={`flex items-center gap-1.5 px-4 py-2 rounded-2xl font-black text-lg ${
+                <div className={`flex items-center gap-1 px-3 py-1 rounded-xl font-black text-sm ${
                   (stockData?.change_percent || 0) >= 0 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
                 }`}>
-                  {(stockData?.change_percent || 0) >= 0 ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
+                  {(stockData?.change_percent || 0) >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
                   {Math.abs(stockData?.change_percent || 0).toFixed(2)}%
                 </div>
               </div>
             </div>
 
             {/* 2. Conviction Brain (The Core Verdict) */}
-            <div className="lg:col-span-4 flex flex-col items-center justify-center p-8 rounded-[2.5rem] bg-white/[0.02] border border-white/5 relative group/score">
-              <div className="flex items-center gap-2 mb-4 relative">
-                <Shield className="w-4 h-4 text-gold-400" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Market Conviction</span>
+            <div className="lg:col-span-4 flex flex-col items-center justify-center p-4 rounded-3xl bg-white/[0.02] border border-white/5 relative group/score">
+              <div className="flex items-center gap-1.5 mb-2 relative">
+                <Shield className="w-3.5 h-3.5 text-gold-400" />
+                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Conviction</span>
               </div>
               <div className="relative">
-                <svg className="w-36 h-36 transform -rotate-90">
-                  <circle cx="72" cy="72" r="64" stroke="currentColor" strokeWidth="10" fill="transparent" className="text-white/5" />
-                  <circle cx="72" cy="72" r="64" stroke="currentColor" strokeWidth="10" fill="transparent" 
-                    strokeDasharray={402} 
-                    strokeDashoffset={402 - (402 * (convictionData?.score || 50)) / 100}
+                <svg className="w-24 h-24 transform -rotate-90">
+                  <circle cx="48" cy="48" r="40" stroke="currentColor" strokeWidth="6" fill="transparent" className="text-white/5" />
+                  <circle cx="48" cy="48" r="40" stroke="currentColor" strokeWidth="6" fill="transparent" 
+                    strokeDasharray={251} 
+                    strokeDashoffset={251 - (251 * (convictionData?.score || 50)) / 100}
                     strokeLinecap="round"
                     className={`${(convictionData?.score || 0) > 70 ? 'text-emerald-400' : (convictionData?.score || 0) > 40 ? 'text-gold-400' : 'text-red-400'} transition-all duration-1000`} 
                   />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-5xl font-black text-white tracking-tighter">{convictionData?.score || '--'}</span>
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase opacity-50">Score</span>
+                  <span className="text-3xl font-black text-white tracking-tighter">{convictionData?.score || '--'}</span>
                 </div>
               </div>
             </div>
 
             {/* 3. Liquidity & DNA Summary */}
-            <div className="lg:col-span-4 grid grid-cols-2 gap-4">
-              <div className="p-6 rounded-[2rem] bg-white/[0.03] border border-white/5 hover:border-emerald-500/30 transition-all">
-                <div className="flex items-center gap-2 mb-3">
-                  <Globe className="w-4 h-4 text-emerald-400" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Real Float</span>
+            <div className="lg:col-span-4 grid grid-cols-2 gap-3">
+              <div className="p-4 rounded-[1.5rem] bg-white/[0.03] border border-white/5 hover:border-emerald-500/30 transition-all">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Globe className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Real Float</span>
                 </div>
-                <p className="text-4xl font-black text-white mb-1 tracking-tighter">
+                <p className="text-2xl font-black text-white mb-1 tracking-tighter">
                   {holderAnalytics?.realFreeFloat?.toFixed(1) ?? stockData?.free_float?.toFixed(1) ?? '--'}%
                 </p>
-                <span className={`text-[10px] font-black px-2.5 py-1 rounded-xl ${
+                <span className={`text-[9px] font-black px-2 py-0.5 rounded-lg ${
                   (holderAnalytics?.realFreeFloat || 0) < 20 ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                 }`}>
                   {((holderAnalytics?.realFreeFloat ?? stockData?.free_float) || 0) < 20 ? '🔥 TIGHT' : '💎 LIKUID'}
                 </span>
               </div>
 
-              <div className="p-6 rounded-[2rem] bg-white/[0.03] border border-white/5 hover:border-gold-500/30 transition-all">
-                <div className="flex items-center gap-2 mb-3">
-                  <Zap className="w-4 h-4 text-gold-400" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Smart Money</span>
+              <div className="p-4 rounded-[1.5rem] bg-white/[0.03] border border-white/5 hover:border-gold-500/30 transition-all">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Zap className="w-3.5 h-3.5 text-gold-400" />
+                  <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Smart Money</span>
                 </div>
-                <p className="text-4xl font-black text-white mb-1 tracking-tighter">{holderAnalytics?.institutionalPct?.toFixed(1) || '--'}%</p>
-                <span className="text-[10px] font-black text-gold-400 bg-gold-500/10 border border-gold-500/20 px-2.5 py-1 rounded-xl">
+                <p className="text-2xl font-black text-white mb-1 tracking-tighter">{holderAnalytics?.institutionalPct?.toFixed(1) || '--'}%</p>
+                <span className="text-[9px] font-black text-gold-400 bg-gold-500/10 border border-gold-500/20 px-2 py-0.5 rounded-lg">
                   INSTITUTIONAL
                 </span>
               </div>
             </div>
           </div>
           
-          <div className="mt-8 pt-6 border-t border-white/5 flex flex-wrap items-center gap-x-10 gap-y-4">
+          <div className="mt-5 pt-4 border-t border-white/5 flex flex-wrap items-center gap-x-8 gap-y-3">
              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-[11px] font-medium text-muted-foreground">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[10px] font-medium text-muted-foreground">
                   Status: <span className="text-white font-black">{stockData?.signal || 'MONITORING'}</span>
                 </span>
              </div>
-             <div className="flex items-center gap-4 text-xs text-muted-foreground ml-auto">
+             <div className="flex items-center gap-3 text-[10px] text-muted-foreground ml-auto">
                <span>H: {formatNumber(stockData?.high)}</span>
                <span>L: {formatNumber(stockData?.low)}</span>
                <span>O: {formatNumber(stockData?.open_price)}</span>
-               <Clock className="w-3 h-3" />
+               <Clock className="w-3 h-3 ml-2" />
                <span>{stockData?.trading_date}</span>
              </div>
           </div>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 stagger">
-        {[
-          { label: 'Public Shares', value: formatShares(publicShares), sub: holderAnalytics ? `${holderAnalytics.realFreeFloat.toFixed(1)}% Real Float` : `${(stockData?.free_float || 0).toFixed(1)}% Float`, icon: <PieChartIcon className="w-4 h-4 text-cyan-400" /> },
-          { label: 'Float Cap', value: formatRupiah(floatCap), icon: <DollarSign className="w-4 h-4 text-gold-400" /> },
-          { label: 'Turnover', value: `${dailyTurnover.toFixed(2)}%`, icon: <ArrowRightLeft className="w-4 h-4 text-purple-400" />, color: dailyTurnover > 5 ? 'text-emerald-400' : dailyTurnover < 1 ? 'text-red-400' : 'text-amber-400' },
-          { label: 'AOV Ratio', value: `${(stockData.aov_ratio_ma20 || 1).toFixed(2)}x`, icon: <Scale className="w-4 h-4 text-pink-400" /> },
-          { label: 'Foreign Flow', value: formatRupiah(stockData.net_foreign_value), icon: <Globe className="w-4 h-4 text-blue-400" />, color: stockData.net_foreign_value >= 0 ? 'text-emerald-400' : 'text-red-400' },
-          { label: 'Volume', value: formatShares(stockData.volume), icon: <Flame className="w-4 h-4 text-orange-400" /> },
-        ].map((m, i) => (
-          <div key={i} className="glass rounded-xl p-4 border border-border/30 card-hover">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] text-muted-foreground uppercase font-bold">{m.label}</p>
-              {m.icon}
-            </div>
-            <p className={`text-lg font-black ${m.color || 'text-foreground'}`}>{m.value}</p>
-            {m.sub && <p className="text-[10px] text-muted-foreground mt-0.5">{m.sub}</p>}
-          </div>
-        ))}
-      </div>
+
 
       {/* Tab Navigation */}
       <div className="glass rounded-xl p-1.5 flex gap-1 overflow-x-auto border border-border/30">
@@ -1417,82 +1397,84 @@ export default function StockDetailPage() {
                 </div>
               )}
 
-              {/* Specific Whale Table (Consolidated) */}
-              {whaleData.length > 0 && (
-                <>
+              {/* Pemegang Saham Tercatat >1% */}
+              {((kseiWhaleData && kseiWhaleData.length > 0) || whaleData.length > 0) && (
                 <div className="glass rounded-2xl overflow-hidden border border-border/30">
-                  <div className="p-4 border-b border-white/[0.05] flex items-center justify-between bg-white/[0.01]">
-                    <h3 className="font-bold text-foreground text-sm">Whale List & DNA Analysis</h3>
+                  <div className="p-5 border-b border-white/[0.05] bg-white/[0.01]">
+                    <h3 className="font-bold text-lg text-white">Pemegang Saham Tercatat {'>'}1%</h3>
+                    <p className="text-xs text-muted-foreground mt-1">Kepemilikan scripless terbesar berdasarkan data KSEI</p>
                   </div>
                   <div className="overflow-x-auto">
-                    {/* ... Whale Table Content (Existing) ... */}
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="bg-white/[0.02] border-b border-white/[0.05] text-[10px] text-muted-foreground uppercase">
-                          <th className="p-4 text-left">Investor & DNA</th>
-                          <th className="p-4 text-right">Last Chg (%)</th>
-                          <th className="p-4 text-right">Holding %</th>
-                          <th className="p-4 text-center">Trend</th>
-                          <th className="p-4 text-center">Verdict</th>
+                        <tr className="bg-[#0b1221] border-b border-gold-500/30 text-[10px] text-muted-foreground uppercase tracking-widest">
+                          <th className="p-4 text-left font-bold">Nama Investor</th>
+                          <th className="p-4 text-center font-bold">L/F & Type</th>
+                          <th className="p-4 text-right font-bold">%</th>
+                          <th className="p-4 text-right font-bold">Ribu Lot</th>
+                          <th className="p-4 text-right font-bold">Miliar Rp</th>
+                          <th className="p-4 text-right font-bold">Buy/Sell</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {(kseiWhaleData.length > 0 ? kseiWhaleData : whaleData).map((w: any, i: number) => {
-                          const dna = w.dna || (['Insurance', 'Pension Funds', 'Mutual Funds', 'Financial Institutional', 'Sovereign Wealth Fund'].includes(w.investor_type) ? 'Institutional' : (w.latest_percentage >= 5 ? 'Strategic' : 'HNW'))
-                          const isStrategic = dna === 'Strategic'
-                          const isInst = dna === 'Institutional'
+                        {(kseiWhaleData.length > 0 ? kseiWhaleData : whaleData)
+                          .sort((a: any, b: any) => Number(b.percentage || b.latest_percentage || 0) - Number(a.percentage || a.latest_percentage || 0))
+                          .map((w: any, i: number) => {
+                          const pct = Number(w.percentage || w.latest_percentage || 0)
+                          const shares = Number(w.holdings_scripless || w.latest_shares || 0)
+                          const ribuLot = shares / 100 / 1000
+                          const miliarRp = (shares * (stockData?.close || 0)) / 1e9
+                          
+                          // L/F & Type logic
+                          const lf = w.local_foreign === 'F' || w.local_foreign?.toLowerCase() === 'foreign' ? 'Foreign' : 'Local'
+                          let typeCode = 'OT'
+                          const itype = (w.investor_type || '').toLowerCase()
+                          if (itype.includes('individual') || itype.includes('individu')) typeCode = 'ID'
+                          else if (itype.includes('corporate') || itype.includes('perusahaan') || itype === 'corporate') typeCode = 'CP'
+                          else if (itype.includes('mutual') || itype.includes('reksadana')) typeCode = 'MF'
+                          else if (itype.includes('insurance') || itype.includes('asuransi')) typeCode = 'IS'
+                          else if (itype.includes('pension') || itype.includes('pensiun')) typeCode = 'PF'
+                          else if (itype.includes('securities') || itype.includes('sekuritas')) typeCode = 'SC'
+                          else if (itype.includes('financial') || itype.includes('bank') || itype.includes('investment')) typeCode = 'IB'
+                          
+                          const badgeColor = lf === 'Local' ? 'border-emerald-500/30 text-emerald-400' : 'border-gold-500/30 text-gold-400'
+                          
+                          const diff = Number(w.change_percentage || 0)
                           
                           return (
-                            <tr key={i} className="tr-hover border-b border-white/[0.02]">
+                            <tr key={i} className="border-b border-white/[0.05] hover:bg-white/[0.02] transition-colors group">
                               <td className="p-4">
                                 <div className="flex items-center gap-3">
-                                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xs font-bold shadow-lg ${
-                                    isStrategic ? 'bg-gradient-to-br from-amber-400 to-yellow-600 text-navy-950' :
-                                    isInst ? 'bg-gradient-to-br from-blue-400 to-indigo-600 text-white' : 'bg-white/5 text-slate-400'
-                                  }`}>
-                                    {w.investor_name.slice(0, 2)}
+                                  <div className="w-6 h-6 rounded-full bg-gold-500/20 text-gold-400 flex items-center justify-center text-[10px] font-bold">
+                                    {i + 1}
                                   </div>
-                                  <div>
-                                    <p className="font-bold text-foreground flex items-center gap-2">
-                                      {w.investor_name}
-                                      {isStrategic && <Shield className="w-3.5 h-3.5 text-gold-400" />}
-                                    </p>
-                                    <div className="flex items-center gap-2 mt-0.5">
-                                      <span className={`text-[9px] px-1.5 py-0.5 rounded-sm font-black ${
-                                        isStrategic ? 'bg-gold-500/20 text-gold-400' :
-                                        isInst ? 'bg-blue-500/20 text-blue-400' : 'bg-emerald-500/20 text-emerald-400'
-                                      }`}>
-                                        {dna}
-                                      </span>
-                                      <span className="text-[10px] text-muted-foreground uppercase">
-                                        {w.local_foreign === 'F' ? 'Foreign' : 'Local'} • {w.investor_type}
-                                      </span>
-                                    </div>
-                                  </div>
+                                  <span className="font-bold text-xs text-white uppercase group-hover:text-gold-400 transition-colors">
+                                    {w.investor_name}
+                                  </span>
                                 </div>
                               </td>
-                              <td className={`p-4 text-right font-bold ${w.change_percentage >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                {w.change_percentage ? `${w.change_percentage > 0 ? '+' : ''}${w.change_percentage.toFixed(2)}%` : '0.00%'}
+                              <td className="p-4 text-center">
+                                <span className={`px-2 py-1 rounded-full border text-[10px] font-bold ${badgeColor}`}>
+                                  {lf} {typeCode}
+                                </span>
+                              </td>
+                              <td className="p-4 text-right font-black text-white">
+                                {pct.toFixed(2)}%
+                              </td>
+                              <td className="p-4 text-right text-muted-foreground font-mono text-xs">
+                                {ribuLot.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                              </td>
+                              <td className="p-4 text-right text-muted-foreground font-mono text-xs">
+                                {miliarRp.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </td>
                               <td className="p-4 text-right">
-                                <span className="font-bold text-lg">{w.latest_percentage.toFixed(2)}%</span>
-                                <p className="text-[10px] text-muted-foreground">{formatShares(w.latest_shares)} shares</p>
-                              </td>
-                              <td className="p-4 text-center">
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                  w.position_trend === 'INCREASING' ? 'bg-emerald-500/20 text-emerald-400' :
-                                  w.position_trend === 'DECREASING' ? 'bg-red-500/20 text-red-400' : 'bg-slate-500/20 text-slate-400'
-                                }`}>{w.position_trend}</span>
-                              </td>
-                              <td className="p-4 text-center">
-                                <span className={`px-3 py-1 rounded-lg text-[10px] font-black flex items-center justify-center gap-1.5 ${
-                                  w.whale_verdict === 'ADDING_POSITION' || w.whale_verdict === 'AVERAGING_DOWN' ? 'bg-emerald-500/20 text-emerald-400' :
-                                  w.whale_verdict === 'TRIMMING' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'
-                                }`}>
-                                  {w.whale_verdict === 'ADDING_POSITION' && <TrendingUp className="w-3 h-3" />}
-                                  {w.whale_verdict === 'TRIMMING' && <TrendingDown className="w-3 h-3" />}
-                                  {w.whale_verdict || 'HOLDING'}
-                                </span>
+                                {diff > 0 ? (
+                                  <span className="text-emerald-400 font-bold text-xs">+{diff.toFixed(2)}</span>
+                                ) : diff < 0 ? (
+                                  <span className="text-red-400 font-bold text-xs">{diff.toFixed(2)}</span>
+                                ) : (
+                                  <span className="text-muted-foreground text-xs">—</span>
+                                )}
                               </td>
                             </tr>
                           )
@@ -1501,6 +1483,7 @@ export default function StockDetailPage() {
                     </table>
                   </div>
                 </div>
+              )}
 
                 {/* 🛡️ NEW: WHALE BROKER ACTIVITY (LAYER 2 INTEGRATION) */}
                 {kseiBrokerSummary.length > 0 && (
@@ -1731,6 +1714,27 @@ export default function StockDetailPage() {
         </div>
         )
       )}
+
+      {/* KPI Cards (Moved to bottom) */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 stagger mt-8 border-t border-white/[0.05] pt-8">
+        {[
+          { label: 'Public Shares', value: formatShares(publicShares), sub: holderAnalytics ? `${holderAnalytics.realFreeFloat.toFixed(1)}% Real Float` : `${(stockData?.free_float || 0).toFixed(1)}% Float`, icon: <PieChartIcon className="w-4 h-4 text-cyan-400" /> },
+          { label: 'Float Cap', value: formatRupiah(floatCap), icon: <DollarSign className="w-4 h-4 text-gold-400" /> },
+          { label: 'Turnover', value: `${dailyTurnover.toFixed(2)}%`, icon: <ArrowRightLeft className="w-4 h-4 text-purple-400" />, color: dailyTurnover > 5 ? 'text-emerald-400' : dailyTurnover < 1 ? 'text-red-400' : 'text-amber-400' },
+          { label: 'AOV Ratio', value: `${(stockData.aov_ratio_ma20 || 1).toFixed(2)}x`, icon: <Scale className="w-4 h-4 text-pink-400" /> },
+          { label: 'Foreign Flow', value: formatRupiah(stockData.net_foreign_value), icon: <Globe className="w-4 h-4 text-blue-400" />, color: stockData.net_foreign_value >= 0 ? 'text-emerald-400' : 'text-red-400' },
+          { label: 'Volume', value: formatShares(stockData.volume), icon: <Flame className="w-4 h-4 text-orange-400" /> },
+        ].map((m, i) => (
+          <div key={i} className="glass rounded-xl p-4 border border-border/30 card-hover">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] text-muted-foreground uppercase font-bold">{m.label}</p>
+              {m.icon}
+            </div>
+            <p className={`text-lg font-black ${m.color || 'text-foreground'}`}>{m.value}</p>
+            {m.sub && <p className="text-[10px] text-muted-foreground mt-0.5">{m.sub}</p>}
+          </div>
+        ))}
+      </div>
     </div>
     </>
   )
