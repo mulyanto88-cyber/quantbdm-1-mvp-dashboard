@@ -228,7 +228,7 @@ export default function ScreenerPage() {
         : Number(aVal) - Number(bVal)
       return sortDir === 'desc' ? -cmp : cmp
     }),
-    [results, search, filterSignal, filterSector, filterFlag, minScore, sortBy, sortDir]
+    [results, filterSignal, filterSector, filterFlag, minScore, sortBy, sortDir]
   )
 
   // ─── Pagination ─────────────────────────────────────────────────────────────
