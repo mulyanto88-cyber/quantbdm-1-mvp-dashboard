@@ -91,6 +91,8 @@ export default function ScreenerPage() {
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc')
   const [page, setPage] = useState(1)
   const pageSize = 20
+  const periodLabel = period === 30 ? '1M' : period === 90 ? '3M' : `${period}D`
+
 
   // ─── Fetch Data ─────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
@@ -466,15 +468,31 @@ export default function ScreenerPage() {
                 <thead>
                   <tr className="bg-white/[0.02] border-b border-white/[0.05] text-[9px] text-muted-foreground uppercase tracking-wider">
                     <th className="p-2 text-left w-6">#</th>
-                    <th className="p-2 text-left sticky left-0 bg-[#0B0F19]/95 backdrop-blur-sm z-10 cursor-pointer hover:text-foreground" onClick={() => toggleSort('stock_code')}>Kode<SortArrow col="stock_code" /></th>
+                    <th className="p-2 text-left sticky left-0 bg-[#0B0F19]/95 backdrop-blur-sm z-10 cursor-pointer hover:text-foreground" onClick={() => toggleSort('stock_code')}>
+                      Kode<SortArrow col="stock_code" />
+                    </th>
                     <th className="p-2 text-left hidden md:table-cell">Sektor</th>
-                    <th className="p-2 text-right cursor-pointer hover:text-foreground" onClick={() => toggleSort('close')}>Close<SortArrow col="close" /></th>
-                    <th className="p-2 text-right cursor-pointer hover:text-foreground" onClick={() => toggleSort('change_percent')}>Chg%<SortArrow col="change_percent" /></th>
-                    <th className="p-2 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('smart_score')}>Score<SortArrow col="smart_score" /></th>
-                    <th className="p-2 text-right cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('net_foreign_period')}>Foreign<SortArrow col="net_foreign_period" /></th>
-                    <th className="p-2 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('aov_max')}>AOV Max<SortArrow col="aov_max" /></th>
-                    <th className="p-2 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('spike_count')}>Spikes<SortArrow col="spike_count" /></th>
-                    <th className="p-2 text-center cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('anomaly_count')}>Anomaly<SortArrow col="anomaly_count" /></th>
+                    <th className="p-2 text-right cursor-pointer hover:text-foreground" onClick={() => toggleSort('close')}>
+                      Close<SortArrow col="close" />
+                    </th>
+                    <th className="p-2 text-right cursor-pointer hover:text-foreground" onClick={() => toggleSort('change_percent')}>
+                      Chg%<SortArrow col="change_percent" />
+                    </th>
+                    <th className="p-2 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('smart_score')}>
+                      Score<SortArrow col="smart_score" />
+                    </th>
+                    <th className="p-2 text-right cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('net_foreign_period')}>
+                      Foreign ({periodLabel})<SortArrow col="net_foreign_period" />
+                    </th>
+                    <th className="p-2 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('aov_max')}>
+                      AOV Max ({periodLabel})<SortArrow col="aov_max" />
+                    </th>
+                    <th className="p-2 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('spike_count')}>
+                      Spike ({periodLabel})<SortArrow col="spike_count" />
+                    </th>
+                    <th className="p-2 text-center cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('anomaly_count')}>
+                      Anomaly (L20D)<SortArrow col="anomaly_count" />
+                    </th>
                     <th className="p-2 text-center">Flags</th>
                     <th className="p-2 text-center">Signal</th>
                   </tr>
