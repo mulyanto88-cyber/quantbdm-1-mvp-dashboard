@@ -127,7 +127,7 @@ export default function ScreenerPage() {
           aov_ratio_ma20,
           net_foreign_value
         FROM market.daily_transactions
-        WHERE trading_date >= '${latestDate}'::DATE - INTERVAL '${period} days'
+        WHERE CAST(trading_date AS DATE) >= '${latestDate}'::DATE - INTERVAL '${period} days'
         ORDER BY stock_code, trading_date ASC
       `)
 
