@@ -13,7 +13,7 @@ interface StockRow {
   close: number
   change_percent: number
   smart_score: number
-  net_foreign_30d: number
+  foreign_30d: number
   aov_max: number
   spike_count: number
   anomaly_count: number
@@ -23,7 +23,7 @@ interface StockRow {
   signal: string
 }
 
-type SortField = 'smart_score' | 'change_percent' | 'net_foreign_30d' | 'aov_max' | 'spike_count' | 'anomaly_count' | 'close' | 'stock_code'
+type SortField = 'smart_score' | 'change_percent' | 'foreign_30d' | 'aov_max' | 'spike_count' | 'anomaly_count' | 'close' | 'stock_code'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const PERIOD_OPTIONS = [
@@ -105,7 +105,7 @@ export default function ScreenerPage() {
           close,
           change_percent,
           smart_money_score,
-          net_foreign_30d,
+          foreign_30d,
           aov_ratio_ma20,
           whale_signal,
           big_player_anomaly,
@@ -154,7 +154,7 @@ export default function ScreenerPage() {
           close: Number(r.close || 0),
           change_percent: Number(r.change_percent || 0),
           smart_score: Number(r.smart_money_score || 0),
-          net_foreign_30d: Number(r.net_foreign_30d || 0),
+          foreign_30d: Number(r.foreign_30d || 0),
           aov_max: aovMax,
           spike_count: spikeCount,
           anomaly_count: r.big_player_anomaly ? 5 : 0,
@@ -193,7 +193,7 @@ export default function ScreenerPage() {
       if (filterSector !== 'ALL' && r.sector !== filterSector) return false
       if (filterFlag === 'WHALE' && !r.whale_signal) return false
       if (filterFlag === 'BIG_PLAYER' && !r.big_player_anomaly) return false
-      if (filterFlag === 'FOREIGN_BUY' && r.net_foreign_30d <= 0) return false
+      if (filterFlag === 'FOREIGN_BUY' && r.foreign_30d <= 0) return false
       if (filterFlag === 'STEALTH' && !r.is_stealth) return false
       if (r.smart_score < minScore) return false
       return true
@@ -241,7 +241,7 @@ export default function ScreenerPage() {
     const headers = ['Kode', 'Sektor', 'Close', 'Chg%', 'Score', 'Foreign', 'AOV Max', 'Spikes', 'Signal']
     const rows = filtered.map(r => [
       r.stock_code, r.sector, r.close, `${r.change_percent.toFixed(2)}%`,
-      r.smart_score, formatRupiah(r.net_foreign_30d), `${r.aov_max.toFixed(2)}x`,
+      r.smart_score, formatRupiah(r.foreign_30d), `${r.aov_max.toFixed(2)}x`,
       r.spike_count, r.signal
     ])
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
@@ -425,7 +425,7 @@ export default function ScreenerPage() {
                     <th className="p-2 text-right cursor-pointer hover:text-foreground" onClick={() => toggleSort('close')}>Close<SortArrow col="close" /></th>
                     <th className="p-2 text-right cursor-pointer hover:text-foreground" onClick={() => toggleSort('change_percent')}>Chg%<SortArrow col="change_percent" /></th>
                     <th className="p-2 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('smart_score')}>Score<SortArrow col="smart_score" /></th>
-                    <th className="p-2 text-right cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('net_foreign_30d')}>Foreign<SortArrow col="net_foreign_30d" /></th>
+                    <th className="p-2 text-right cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('foreign_30d')}>Foreign<SortArrow col="foreign_30d" /></th>
                     <th className="p-2 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('aov_max')}>AOV Max<SortArrow col="aov_max" /></th>
                     <th className="p-2 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('spike_count')}>Spikes<SortArrow col="spike_count" /></th>
                     <th className="p-2 text-center">Flags</th>
@@ -451,8 +451,8 @@ export default function ScreenerPage() {
                           {Math.round(r.smart_score)}
                         </span>
                       </td>
-                      <td className={`p-2 text-right hidden lg:table-cell font-semibold ${r.net_foreign_30d >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {formatRupiah(r.net_foreign_30d)}
+                      <td className={`p-2 text-right hidden lg:table-cell font-semibold ${r.foreign_30d >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {formatRupiah(r.foreign_30d)}
                       </td>
                       <td className="p-2 text-center">
                         {r.aov_max > 0 ? (
