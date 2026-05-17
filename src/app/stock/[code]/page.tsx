@@ -355,7 +355,7 @@ export default function StockDetailPage() {
               <span>L: {formatNumber(stockData.low)}</span>
               <span>O: {formatNumber(stockData.open_price)}</span>
               <span className="opacity-30">|</span>
-              <span className="opacity-60 flex items-center gap-1"><Clock className="w-3 h-3" /> {stockData.trading_date instanceof Date ? stockData.trading_date.toISOString().split('T')[0] : String(stockData.trading_date).split('T')[0]}</span>
+              <span className="opacity-60 flex items-center gap-1"><Clock className="w-3 h-3" /> {String(stockData.trading_date).split('T')[0]}</span>
             </div>
           </div>
 
