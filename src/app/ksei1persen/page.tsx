@@ -81,6 +81,8 @@ export default function KSEI1PersenPage() {
   const [selectedStock, setSelectedStock] = useState<string | null>(null)
   const [searchStock, setSearchStock] = useState('')
   const [showChangeTable, setShowChangeTable] = useState(false)
+
+  // Screener pagination & sort
   const [sortField, setSortField] = useState<'score' | 'corpChange' | 'foreignChange' | 'indChange'>('score')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [page, setPage] = useState(1)
@@ -106,9 +108,8 @@ export default function KSEI1PersenPage() {
     try {
       const { data, error: fetchError } = await supabase
         .from('ksei_data1persen_mutasi')
-        .select('date, share_code, investor_name, investor_type, local_foreign, percentage, holdings_scripless, holdings_scrip, total_holding_shares')
+        .select('date, share_code, investor_name, investor_type, local_foreign, percentage, holdings_scripless, holdings_scrip')
         .gte('date', '2026-02-01')
-        .gt('holdings_scripless', 0)
         .order('date', { ascending: true })
         .limit(15000)
 
@@ -119,13 +120,11 @@ export default function KSEI1PersenPage() {
         return
       }
 
-      // Bersihkan data: ganti 'nan' investor_type jadi 'Others'
       const cleaned = data.map((d: any) => ({
         ...d,
         investor_type: (!d.investor_type || d.investor_type === 'nan') ? 'Others' : d.investor_type,
         holdings_scripless: Number(d.holdings_scripless) || 0,
         holdings_scrip: Number(d.holdings_scrip) || 0,
-        total_holding_shares: Number(d.total_holding_shares) || 0,
         percentage: Number(d.percentage) || 0,
       }))
 
@@ -187,7 +186,6 @@ export default function KSEI1PersenPage() {
       if (foreignChange < -1) { signals.push('🔴 Foreign Out'); score -= 2 }
       if (indChange > 1) { signals.push('🟡 Insider Buy'); score += 1 }
 
-      // Tampilkan semua saham yang ada perubahan minimal
       if (Math.abs(corpChange) >= 0.1 || Math.abs(foreignChange) >= 0.1 || Math.abs(indChange) >= 0.1) {
         stockSignals.push({ code, signals, score, corpChange, foreignChange, indChange })
       }
@@ -219,7 +217,7 @@ export default function KSEI1PersenPage() {
       investor_name: d.investor_name,
       investor_type: d.investor_type,
       local_foreign: d.local_foreign,
-      percentage: 0, // percentage dari scripless, jadi untuk scrip tidak relevan
+      percentage: 0,
       shares: d.holdings_scrip,
     })))
 
@@ -236,11 +234,11 @@ export default function KSEI1PersenPage() {
     // Changes
     const changeList: OwnershipChange[] = []
     currScripless.forEach((curr: any) => {
-      const prev = prevScripless.find((p: any) => p.investor_name === curr.investor_name)
+      const prevItem = prevScripless.find((p: any) => p.investor_name === curr.investor_name)
       const currPct = curr.percentage
-      const prevPct = prev ? prev.percentage : 0
+      const prevPct = prevItem ? prevItem.percentage : 0
       const currShares = curr.holdings_scripless
-      const prevShares = prev ? prev.holdings_scripless : 0
+      const prevShares = prevItem ? prevItem.holdings_scripless : 0
       const pctChange = currPct - prevPct
       const shareChange = currShares - prevShares
 
@@ -263,7 +261,7 @@ export default function KSEI1PersenPage() {
     })
     setChanges(changeList.sort((a, b) => Math.abs(b.pct_change) - Math.abs(a.pct_change)))
 
-    // History for line chart
+    // History for line chart (semua tanggal)
     const allDates = Array.from(new Set(stockData.map((d: any) => d.date))).sort()
     const historyMap: Record<string, any[]> = {}
     allDates.forEach(date => {
@@ -324,7 +322,6 @@ export default function KSEI1PersenPage() {
     setSignals(sigs)
   }
 
-
   // ─── Sort & Paginate Screener ────────────────────────────────────────────────
   const sortedStocks = useMemo(() => {
     return [...topStocks].sort((a, b) => {
@@ -334,12 +331,12 @@ export default function KSEI1PersenPage() {
       return sortDir === 'desc' ? -cmp : cmp
     })
   }, [topStocks, sortField, sortDir])
-  
+
   const totalPages = Math.ceil(sortedStocks.length / pageSize)
   const paginatedStocks = sortedStocks.slice((page - 1) * pageSize, page * pageSize)
-  
-  // Reset page when period changes
+
   useEffect(() => { setPage(1) }, [periodIdx])
+
   // ─── Pie Chart Data ──────────────────────────────────────────────────────────
   const pieData = useMemo(() => {
     if (!currentMonthData.length) return []
@@ -384,38 +381,40 @@ export default function KSEI1PersenPage() {
       </div>
 
       {/* ════════════════════════════════════════════════════════════
-          INSTITUTIONAL FLOW SCREENER
+          SEARCH SAHAM (Mandiri, tidak mempengaruhi screener)
       ════════════════════════════════════════════════════════════ */}
-      {!selectedStock && !loading && (
+      <div className="glass rounded-xl p-3 border border-border/30 flex items-center gap-3">
+        <Search className="w-4 h-4 text-muted-foreground" />
+        <input
+          type="text"
+          placeholder="Cari kode saham untuk detail kepemilikan..."
+          value={searchStock}
+          onChange={(e) => setSearchStock(e.target.value.toUpperCase())}
+          onKeyDown={(e) => { if (e.key === 'Enter' && searchStock.length >= 2) setSelectedStock(searchStock) }}
+          className="flex-1 bg-transparent text-sm focus:outline-none uppercase"
+          maxLength={4}
+        />
+        {selectedStock && (
+          <button onClick={() => { setSelectedStock(null); setSearchStock('') }}
+            className="px-3 py-1 rounded-lg bg-white/[0.03] border border-white/[0.06] text-xs text-muted-foreground hover:text-white">
+            <X className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+
+      {/* ════════════════════════════════════════════════════════════
+          INSTITUTIONAL FLOW SCREENER (Selalu tampil)
+      ════════════════════════════════════════════════════════════ */}
+      {!loading && (
         <div className="glass rounded-2xl overflow-hidden border border-border/30">
-          <div className="p-4 border-b border-white/[0.05] flex items-center gap-2 flex-wrap">
+          <div className="p-4 border-b border-white/[0.05] flex items-center gap-2">
             <Activity className="w-4 h-4 text-blue-400" />
             <h2 className="text-sm font-black text-foreground uppercase tracking-widest">
               Institutional Flow Screener (Scripless)
             </h2>
-            <span className="text-[10px] text-muted-foreground">
-              {topStocks.length} saham
+            <span className="text-[10px] text-muted-foreground ml-auto">
+              {topStocks.length} saham terdeteksi
             </span>
-            
-            {/* Search di kanan atas */}
-            <div className="ml-auto flex items-center gap-2">
-              <Search className="w-3.5 h-3.5 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Cari kode..."
-                value={searchStock}
-                onChange={(e) => setSearchStock(e.target.value.toUpperCase())}
-                onKeyDown={(e) => { if (e.key === 'Enter' && searchStock.length >= 2) setSelectedStock(searchStock) }}
-                className="w-28 bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-400/30 uppercase"
-                maxLength={4}
-              />
-              {selectedStock && (
-                <button onClick={() => { setSelectedStock(null); setSearchStock('') }}
-                  className="px-2 py-1 rounded bg-white/[0.03] border border-white/[0.06] text-xs text-muted-foreground hover:text-white">
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-            </div>
           </div>
           
           {topStocks.length > 0 ? (
@@ -482,8 +481,8 @@ export default function KSEI1PersenPage() {
                   ))}
                 </tbody>
               </table>
-      
-              {/* PAGINATION */}
+
+              {/* Pagination */}
               {totalPages > 1 && (
                 <div className="p-3 border-t border-white/[0.05] flex items-center justify-between">
                   <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
@@ -508,9 +507,8 @@ export default function KSEI1PersenPage() {
         </div>
       )}
 
-      
       {/* ════════════════════════════════════════════════════════════
-          SIGNAL DETECTION
+          SIGNAL DETECTION (Setelah pilih saham)
       ════════════════════════════════════════════════════════════ */}
       {selectedStock && signals.length > 0 && (
         <div className="glass rounded-2xl p-4 border border-blue-400/20 bg-blue-400/[0.02]">
@@ -529,6 +527,14 @@ export default function KSEI1PersenPage() {
               </span>
             ))}
           </div>
+        </div>
+      )}
+
+      {selectedStock && signals.length === 0 && currentMonthData.length > 0 && (
+        <div className="glass rounded-xl p-3 border border-white/[0.06] text-center">
+          <p className="text-xs text-muted-foreground">
+            Tidak ada sinyal institusional signifikan untuk {selectedStock} pada periode ini.
+          </p>
         </div>
       )}
 
@@ -606,7 +612,7 @@ export default function KSEI1PersenPage() {
             </div>
           </div>
 
-          {/* Scrip Table (jika ada) */}
+          {/* Scrip Table */}
           {currentScripData.length > 0 && (
             <div className="glass rounded-2xl p-5 border border-border/30 overflow-x-auto">
               <h3 className="text-sm font-black text-foreground mb-4 flex items-center gap-2">
