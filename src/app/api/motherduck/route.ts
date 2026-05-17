@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import duckdb from 'duckdb'
 
 const MOTHERDUCK_TOKEN = process.env.MOTHERDUCK_TOKEN!
+const MOTHERDUCK_API = 'https://api.motherduck.com/v1'
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,15 +11,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Query diperlukan' }, { status: 400 })
     }
 
-    const db = new duckdb.Database(`md:my_db?motherduck_token=${MOTHERDUCK_TOKEN}`)
-    const conn = db.connect()
+    // Gunakan MotherDuck REST API (bukan DuckDB package)
+    const res = await fetch(`${MOTHERDUCK_API}/query`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${MOTHERDUCK_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        database: 'my_db',
+        query: query,
+      }),
+    })
+
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(err)
+    }
+
+    const json = await res.json()
     
-    const result = conn.execute(query)
-    const rows = result.fetchall()
-    const columns = result.columns().map((c: any) => c.name)
-    
-    conn.close()
-    db.close()
+    // MotherDuck returns { results: [{ columns: [...], rows: [...] }] }
+    const result = json.results?.[0]
+    if (!result) {
+      return NextResponse.json({ data: [] })
+    }
+
+    const columns = result.columns?.map((c: any) => c.name) || []
+    const rows = result.rows || []
 
     const data = rows.map((row: any[]) => {
       const obj: Record<string, any> = {}
