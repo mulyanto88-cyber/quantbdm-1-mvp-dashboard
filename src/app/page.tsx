@@ -3,25 +3,37 @@ import { ArrowRightLeft, ShieldCheck, Zap, Globe, Target } from 'lucide-react'
 import Link from 'next/link'
 import { formatRupiah, formatNumber } from '@/lib/utils'
 import SectorRotationWidget from './_components/SectorRotationWidget'
+import { Pool } from 'pg'
 
 export const revalidate = 60
 
-// ── MotherDuck Query Helper ──────────────────────────────────────────────────
-async function motherduckQuery(query: string) {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/motherduck`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query }),
-    next: { revalidate: 60 },
-  })
-  const json = await res.json()
-  if (json.error) throw new Error(json.error)
-  return json.data || []
+// ── MotherDuck Connection Pool ──────────────────────────────────────────────
+const pool = new Pool({
+  host: 'pg.us-east-1-aws.motherduck.com',
+  port: 5432,
+  user: 'postgres',
+  password: process.env.MOTHERDUCK_TOKEN,
+  database: 'my_db',
+  ssl: { rejectUnauthorized: false },
+  max: 5,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+})
+
+// ── Query Helper ────────────────────────────────────────────────────────────
+async function mdQuery(query: string, params?: any[]) {
+  const client = await pool.connect()
+  try {
+    const result = await client.query(query, params || [])
+    return result.rows
+  } finally {
+    client.release()
+  }
 }
 
 // ── Data Fetching ──────────────────────────────────────────────────────────
 async function getMarketBreadth() {
-  const rows = await motherduckQuery(`
+  const rows = await mdQuery(`
     SELECT 
       MAX(trading_date)::VARCHAR AS date,
       SUM(total_value)::BIGINT AS total_value,
@@ -52,7 +64,7 @@ async function getMarketBreadth() {
 }
 
 async function getHighConviction() {
-  return motherduckQuery(`
+  return mdQuery(`
     SELECT 
       stock_code,
       sector,
@@ -70,10 +82,10 @@ async function getHighConviction() {
 
 async function getBigPlayerActivity() {
   const [brokers, insiders, kseiMovers] = await Promise.all([
-    motherduckQuery(`
+    mdQuery(`
       SELECT 
         broker_name AS nama_broker,
-        saham_count,
+        total_stocks AS saham_count,
         total_buy_value,
         total_sell_value,
         net_value AS total_net_value
@@ -81,13 +93,13 @@ async function getBigPlayerActivity() {
       ORDER BY ABS(net_value) DESC
       LIMIT 5
     `),
-    motherduckQuery(`
+    mdQuery(`
       SELECT * FROM ksei.vw_insider_alerts
       WHERE alert_level = 'HIGH'
       ORDER BY ABS(pct_point_change) DESC
       LIMIT 5
     `),
-    motherduckQuery(`
+    mdQuery(`
       SELECT 
         Code AS share_code,
         Top_Buyer AS investor_name,
