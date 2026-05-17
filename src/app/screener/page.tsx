@@ -57,7 +57,7 @@ export default function ScreenerPage() {
   const [filterFlag, setFilterFlag] = useState('ALL')
   const [filterSector, setFilterSector] = useState('ALL')
   const [minScore, setMinScore] = useState(40)
-  const [sortBy, setSortBy] = useState<SortField>('smart_score')
+  const [sortBy, setSortBy] = useState<SortField>('spike_count')  // dari 'smart_score'
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc')
   const [page, setPage] = useState(1)
   const pageSize = 20
@@ -65,12 +65,10 @@ export default function ScreenerPage() {
 
   // ⚡ 1 QUERY SAJA — Semua data dari vw_screener_allinone
   const fetchData = useCallback(async () => {
-    console.log('🔵 fetchData called, period:', period)
     setLoading(true)
     setError(null)
     try {
       const allData = await mdQuery(`SELECT * FROM market.vw_screener_allinone`)
-      console.log('🔵 Data returned:', allData.length, 'rows')
       
       const merged: StockRow[] = allData.map((r: any) => ({
         stock_code: r.stock_code,
@@ -79,7 +77,7 @@ export default function ScreenerPage() {
         change_percent: Number(r.change_percent || 0),
         smart_score: Number(r.smart_money_score || 0),
         net_foreign_period: Number(r[`foreign_${period}d`] || 0),
-        aov_max: Number(r.aov_max || 0),
+        aov_max: Number(r[`aov_max_${period}d`] || 0),
         spike_count: Number(r[`spike_${period}d`] || 0),
         anomaly_count: r.big_player_anomaly ? 5 : 0,
         is_stealth: Number(r.change_percent) >= -2 && Number(r.change_percent) <= 2 && Number(r.smart_money_score) >= 60,
@@ -88,10 +86,8 @@ export default function ScreenerPage() {
         signal: r.signal || '➖ NEUTRAL',
       }))
       
-      console.log('🔵 Merged data, sample foreign:', merged[0]?.net_foreign_period)
       setResults(merged)
     } catch (err: any) {
-      console.error(err)
       setError(err.message || 'Failed to fetch data')
     } finally {
       setLoading(false)
