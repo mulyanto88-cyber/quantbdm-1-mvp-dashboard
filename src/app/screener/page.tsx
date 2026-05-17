@@ -48,58 +48,58 @@ const PRESETS = [
   { id: 'big-player',    name: '⚡ Big Player',     icon: Zap,         filters: { flag: 'BIG_PLAYER',  minScore: 45 } },
 ]
 
-  // ─── API Helper ──────────────────────────────────────────────────────────────
-  async function mdQuery(query: string): Promise<any[]> {
-    const res = await fetch('/api/motherduck', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query }),
+// ─── API Helper ──────────────────────────────────────────────────────────────
+async function mdQuery(query: string): Promise<any[]> {
+  const res = await fetch('/api/motherduck', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+  })
+  const json = await res.json()
+  if (json.error) throw new Error(json.error)
+  return json.data || []
+}
+
+// Di dalam component:
+const fetchData = useCallback(async () => {
+  setLoading(true)
+  setError(null)
+
+  try {
+    // ⚡ HANYA 1 QUERY! Semua data sudah di-join di view
+    const allData = await mdQuery(`
+      SELECT * FROM market.vw_screener_allinone
+    `)
+
+    const merged: StockRow[] = allData.map((r: any) => {
+      const spikeKey = `spike_${period}d`
+      const foreignKey = `foreign_${period}d`
+
+      return {
+        stock_code: r.stock_code,
+        sector: r.sector || '—',
+        close: Number(r.close || 0),
+        change_percent: Number(r.change_percent || 0),
+        smart_score: Number(r.smart_money_score || 0),
+        net_foreign_period: Number(r[foreignKey] || 0),
+        aov_max: Number(r.aov_max || 0),
+        spike_count: Number(r[spikeKey] || 0),
+        anomaly_count: r.big_player_anomaly ? 5 : 0,
+        is_stealth: Number(r.change_percent) >= -2 && Number(r.change_percent) <= 2 && Number(r.smart_money_score) >= 60,
+        whale_signal: r.whale_signal || false,
+        big_player_anomaly: r.big_player_anomaly || false,
+        signal: r.signal || '➖ NEUTRAL',
+      }
     })
-    const json = await res.json()
-    if (json.error) throw new Error(json.error)
-    return json.data || []
+
+    setResults(merged)
+  } catch (err: any) {
+    console.error(err)
+    setError(err.message || 'Failed to fetch data')
+  } finally {
+    setLoading(false)
   }
-  
-  // Di dalam component:
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-  
-    try {
-      // ⚡ HANYA 1 QUERY! Semua data sudah di-join di view
-      const allData = await mdQuery(`
-        SELECT * FROM market.vw_screener_allinone
-      `)
-  
-      const merged: StockRow[] = allData.map((r: any) => {
-        const spikeKey = `spike_${period}d`
-        const foreignKey = `foreign_${period}d`
-  
-        return {
-          stock_code: r.stock_code,
-          sector: r.sector || '—',
-          close: Number(r.close || 0),
-          change_percent: Number(r.change_percent || 0),
-          smart_score: Number(r.smart_money_score || 0),
-          net_foreign_period: Number(r[foreignKey] || 0),
-          aov_max: Number(r.aov_max || 0),
-          spike_count: Number(r[spikeKey] || 0),
-          anomaly_count: r.big_player_anomaly ? 5 : 0,
-          is_stealth: Number(r.change_percent) >= -2 && Number(r.change_percent) <= 2 && Number(r.smart_money_score) >= 60,
-          whale_signal: r.whale_signal || false,
-          big_player_anomaly: r.big_player_anomaly || false,
-          signal: r.signal || '➖ NEUTRAL',
-        }
-      })
-  
-      setResults(merged)
-    } catch (err: any) {
-      console.error(err)
-      setError(err.message || 'Failed to fetch data')
-    } finally {
-      setLoading(false)
-    }
-  }, [period])
+}, [period])
 
   // ─── Filter & Sort ──────────────────────────────────────────────────────────
   const sectors = useMemo(() =>
