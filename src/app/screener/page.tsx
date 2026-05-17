@@ -103,7 +103,7 @@ export default function ScreenerPage() {
   const sectors = useMemo(() => ['ALL', ...Array.from(new Set(results.map(r => r.sector).filter(Boolean))).sort()], [results])
   const signals = useMemo(() => ['ALL', '🚀 STRONG BUY', '👀 WATCH', '➖ NEUTRAL'], [])
 
-  const filtered = useMemo(() => results
+  const filtered = results
     .filter(r => {
       if (filterSignal !== 'ALL' && r.signal !== filterSignal) return false
       if (filterSector !== 'ALL' && r.sector !== filterSector) return false
@@ -118,7 +118,7 @@ export default function ScreenerPage() {
       const av = a[sortBy], bv = b[sortBy]
       const cmp = typeof av === 'string' ? (av as string).localeCompare(bv as string) : Number(av) - Number(bv)
       return sortDir === 'desc' ? -cmp : cmp
-    }), [results, filterSignal, filterSector, filterFlag, minScore, sortBy, sortDir])
+    })
 
   const totalPages = Math.ceil(filtered.length / pageSize)
   const paginatedData = filtered.slice((page - 1) * pageSize, page * pageSize)
