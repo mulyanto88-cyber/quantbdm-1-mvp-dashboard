@@ -33,6 +33,8 @@ const PERIOD_OPTIONS = [
   { label: '3M', days: 90 },
   { label: '6M', days: 180 },
   { label: '1Y', days: 365 },
+  { label: '2Y', days: 730 },
+  { label: '3Y', days: 1095 },
 ]
 
 const INVESTOR_TYPE_COLORS: Record<string, string> = {
@@ -139,9 +141,9 @@ export default function StockDetailPage() {
           whale_signal, big_player_anomaly, previous
         FROM market.daily_transactions
         WHERE stock_code = $1
-        ORDER BY trading_date DESC
-        LIMIT $2
-      `, [code, Math.min(days, 500)])
+          AND trading_date >= (SELECT MAX(trading_date) FROM market.daily_transactions) - INTERVAL '${days} days'
+        ORDER BY trading_date ASC
+      `, [code])
 
       setHistoryData(histRes.reverse().map((d: any) => ({
         time: d.trading_date instanceof Date ? d.trading_date.toISOString().split('T')[0] : String(d.trading_date).split('T')[0],
@@ -186,10 +188,8 @@ export default function StockDetailPage() {
 
       // 6. Whale Movement
       const whaleRes = await mdQuery(`
-        SELECT * FROM ksei.vw_whale_timing
-        WHERE investor_name IN (
-          SELECT investor_name FROM ksei.ownership_1pct WHERE share_code = $1
-        )
+        SELECT * FROM ksei.vw_whale_timing 
+        WHERE share_code = $1
       `, [code])
       setWhaleMovement(whaleRes)
 
