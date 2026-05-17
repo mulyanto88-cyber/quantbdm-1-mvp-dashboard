@@ -81,6 +81,10 @@ export default function KSEI1PersenPage() {
   const [selectedStock, setSelectedStock] = useState<string | null>(null)
   const [searchStock, setSearchStock] = useState('')
   const [showChangeTable, setShowChangeTable] = useState(false)
+  const [sortField, setSortField] = useState<'score' | 'corpChange' | 'foreignChange' | 'indChange'>('score')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [page, setPage] = useState(1)
+  const pageSize = 20
 
   // Data states
   const [allData, setAllData] = useState<any[]>([])
@@ -105,7 +109,7 @@ export default function KSEI1PersenPage() {
         .select('date, share_code, investor_name, investor_type, local_foreign, percentage, holdings_scripless, holdings_scrip, total_holding_shares')
         .gte('date', '2026-02-01')
         .gt('holdings_scripless', 0)
-        .order('date', { ascending: false })
+        .order('date', { ascending: true })
         .limit(15000)
 
       if (fetchError) throw fetchError
@@ -320,6 +324,22 @@ export default function KSEI1PersenPage() {
     setSignals(sigs)
   }
 
+
+  // ─── Sort & Paginate Screener ────────────────────────────────────────────────
+  const sortedStocks = useMemo(() => {
+    return [...topStocks].sort((a, b) => {
+      const aVal = a[sortField] || 0
+      const bVal = b[sortField] || 0
+      const cmp = aVal - bVal
+      return sortDir === 'desc' ? -cmp : cmp
+    })
+  }, [topStocks, sortField, sortDir])
+  
+  const totalPages = Math.ceil(sortedStocks.length / pageSize)
+  const paginatedStocks = sortedStocks.slice((page - 1) * pageSize, page * pageSize)
+  
+  // Reset page when period changes
+  useEffect(() => { setPage(1) }, [periodIdx])
   // ─── Pie Chart Data ──────────────────────────────────────────────────────────
   const pieData = useMemo(() => {
     if (!currentMonthData.length) return []
@@ -368,14 +388,34 @@ export default function KSEI1PersenPage() {
       ════════════════════════════════════════════════════════════ */}
       {!selectedStock && !loading && (
         <div className="glass rounded-2xl overflow-hidden border border-border/30">
-          <div className="p-4 border-b border-white/[0.05] flex items-center gap-2">
+          <div className="p-4 border-b border-white/[0.05] flex items-center gap-2 flex-wrap">
             <Activity className="w-4 h-4 text-blue-400" />
             <h2 className="text-sm font-black text-foreground uppercase tracking-widest">
               Institutional Flow Screener (Scripless)
             </h2>
-            <span className="text-[10px] text-muted-foreground ml-auto">
-              {topStocks.length} saham terdeteksi
+            <span className="text-[10px] text-muted-foreground">
+              {topStocks.length} saham
             </span>
+            
+            {/* Search di kanan atas */}
+            <div className="ml-auto flex items-center gap-2">
+              <Search className="w-3.5 h-3.5 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Cari kode..."
+                value={searchStock}
+                onChange={(e) => setSearchStock(e.target.value.toUpperCase())}
+                onKeyDown={(e) => { if (e.key === 'Enter' && searchStock.length >= 2) setSelectedStock(searchStock) }}
+                className="w-28 bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-400/30 uppercase"
+                maxLength={4}
+              />
+              {selectedStock && (
+                <button onClick={() => { setSelectedStock(null); setSearchStock('') }}
+                  className="px-2 py-1 rounded bg-white/[0.03] border border-white/[0.06] text-xs text-muted-foreground hover:text-white">
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
           </div>
           
           {topStocks.length > 0 ? (
@@ -385,19 +425,31 @@ export default function KSEI1PersenPage() {
                   <tr className="bg-white/[0.02] border-b border-white/[0.05] text-[9px] text-muted-foreground uppercase tracking-wider">
                     <th className="p-2 text-left w-6">#</th>
                     <th className="p-2 text-left">Saham</th>
-                    <th className="p-2 text-right">Corp Δ%</th>
-                    <th className="p-2 text-right hidden sm:table-cell">Foreign Δ%</th>
-                    <th className="p-2 text-right hidden sm:table-cell">Ind Δ%</th>
-                    <th className="p-2 text-right">Score</th>
+                    <th className="p-2 text-right cursor-pointer hover:text-foreground transition-colors"
+                      onClick={() => { if (sortField === 'corpChange') setSortDir(d => d === 'desc' ? 'asc' : 'desc'); else { setSortField('corpChange'); setSortDir('desc'); } }}>
+                      Corp Δ% {sortField === 'corpChange' ? (sortDir === 'desc' ? '▼' : '▲') : ''}
+                    </th>
+                    <th className="p-2 text-right cursor-pointer hover:text-foreground transition-colors hidden sm:table-cell"
+                      onClick={() => { if (sortField === 'foreignChange') setSortDir(d => d === 'desc' ? 'asc' : 'desc'); else { setSortField('foreignChange'); setSortDir('desc'); } }}>
+                      Foreign Δ% {sortField === 'foreignChange' ? (sortDir === 'desc' ? '▼' : '▲') : ''}
+                    </th>
+                    <th className="p-2 text-right cursor-pointer hover:text-foreground transition-colors hidden sm:table-cell"
+                      onClick={() => { if (sortField === 'indChange') setSortDir(d => d === 'desc' ? 'asc' : 'desc'); else { setSortField('indChange'); setSortDir('desc'); } }}>
+                      Ind Δ% {sortField === 'indChange' ? (sortDir === 'desc' ? '▼' : '▲') : ''}
+                    </th>
+                    <th className="p-2 text-right cursor-pointer hover:text-foreground transition-colors"
+                      onClick={() => { if (sortField === 'score') setSortDir(d => d === 'desc' ? 'asc' : 'desc'); else { setSortField('score'); setSortDir('desc'); } }}>
+                      Score {sortField === 'score' ? (sortDir === 'desc' ? '▼' : '▲') : ''}
+                    </th>
                     <th className="p-2 text-left">Signals</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {topStocks.map((s, i) => (
+                  {paginatedStocks.map((s, i) => (
                     <tr key={s.code} 
                       onClick={() => setSelectedStock(s.code)}
                       className="tr-hover border-b border-white/[0.02] cursor-pointer hover:bg-blue-400/[0.03] transition-all">
-                      <td className="p-2 text-muted-foreground">{i + 1}</td>
+                      <td className="p-2 text-muted-foreground">{(page - 1) * pageSize + i + 1}</td>
                       <td className="p-2">
                         <span className="font-mono font-black text-foreground hover:text-blue-400 transition-colors">
                           {s.code}
@@ -430,6 +482,23 @@ export default function KSEI1PersenPage() {
                   ))}
                 </tbody>
               </table>
+      
+              {/* PAGINATION */}
+              {totalPages > 1 && (
+                <div className="p-3 border-t border-white/[0.05] flex items-center justify-between">
+                  <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                    className="px-3 py-1.5 rounded-lg glass border border-border/30 text-xs font-bold disabled:opacity-50 hover:border-blue-400/30 transition-all">
+                    ← Prev
+                  </button>
+                  <span className="text-xs text-muted-foreground">
+                    Page <span className="text-blue-400 font-bold">{page}</span> of {totalPages}
+                  </span>
+                  <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                    className="px-3 py-1.5 rounded-lg glass border border-border/30 text-xs font-bold disabled:opacity-50 hover:border-blue-400/30 transition-all">
+                    Next →
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="p-8 text-center text-muted-foreground text-sm">
@@ -439,32 +508,7 @@ export default function KSEI1PersenPage() {
         </div>
       )}
 
-      {/* ════════════════════════════════════════════════════════════
-          SEARCH SAHAM
-      ════════════════════════════════════════════════════════════ */}
-      <div className="glass rounded-xl p-3 border border-border/30 flex items-center gap-3">
-        <Search className="w-4 h-4 text-muted-foreground" />
-        <input
-          type="text"
-          placeholder="Cari kode saham untuk detail kepemilikan..."
-          value={searchStock}
-          onChange={(e) => setSearchStock(e.target.value.toUpperCase())}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && searchStock.length >= 2) {
-              setSelectedStock(searchStock)
-            }
-          }}
-          className="flex-1 bg-transparent text-sm focus:outline-none uppercase"
-          maxLength={4}
-        />
-        {selectedStock && (
-          <button onClick={() => { setSelectedStock(null); setSearchStock('') }}
-            className="px-3 py-1 rounded-lg bg-white/[0.03] border border-white/[0.06] text-xs text-muted-foreground hover:text-white">
-            <X className="w-3 h-3" />
-          </button>
-        )}
-      </div>
-
+      
       {/* ════════════════════════════════════════════════════════════
           SIGNAL DETECTION
       ════════════════════════════════════════════════════════════ */}
