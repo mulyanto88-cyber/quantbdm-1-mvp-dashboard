@@ -71,7 +71,7 @@ async function getHighConviction() {
       close AS price,
       change_percent AS price_chg_pct,
       smart_money_score AS conviction_score,
-      local_smart_pct + foreign_smart_pct AS institutional_flow,
+      foreign_30d + COALESCE(broker_net, 0) AS institutional_flow,
       false AS is_stealth
     FROM market.vw_smart_money_score
     WHERE signal = '🚀 STRONG BUY'
