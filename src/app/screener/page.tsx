@@ -48,102 +48,30 @@ const PRESETS = [
   { id: 'big-player',    name: '⚡ Big Player',     icon: Zap,         filters: { flag: 'BIG_PLAYER',  minScore: 45 } },
 ]
 
-// ─── API Helper (Direct MotherDuck via fetch) ─────────────────────────────────
-async function mdQuery(query: string): Promise<any[]> {
-  const res = await fetch('https://api.motherduck.com/v1/query', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.NEXT_PUBLIC_MOTHERDUCK_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      database: 'my_db',
-      query: query,
-    }),
-  })
-  
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(err)
+  // ─── API Helper ──────────────────────────────────────────────────────────────
+  async function mdQuery(query: string): Promise<any[]> {
+    const res = await fetch('/api/motherduck', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    })
+    const json = await res.json()
+    if (json.error) throw new Error(json.error)
+    return json.data || []
   }
   
-  const json = await res.json()
-  const result = json.results?.[0]
-  if (!result) return []
-  
-  const columns = result.columns?.map((c: any) => c.name) || []
-  const rows = result.rows || []
-  
-  return rows.map((row: any[]) => {
-    const obj: Record<string, any> = {}
-    columns.forEach((col: string, i: number) => {
-      obj[col] = row[i]
-    })
-    return obj
-  })
-}
-
-// ─── Component ────────────────────────────────────────────────────────────────
-export default function ScreenerPage() {
-  const router = useRouter()
-
-  // States
-  const [results, setResults] = useState<StockRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [lastDate, setLastDate] = useState('')
-  const [showFilters, setShowFilters] = useState(false)
-  const [fullscreen, setFullscreen] = useState(false)
-  const [showPresets, setShowPresets] = useState(false)
-
-  // Filter states
-  const [period, setPeriod] = useState(7)
-  const [filterSignal, setFilterSignal] = useState('ALL')
-  const [filterFlag, setFilterFlag] = useState('ALL')
-  const [filterSector, setFilterSector] = useState('ALL')
-  const [minScore, setMinScore] = useState(20)
-
-  // Sort & pagination
-  const [sortBy, setSortBy] = useState<SortField>('smart_score')
-  const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc')
-  const [page, setPage] = useState(1)
-  const pageSize = 20
-  const periodLabel = period === 30 ? '1M' : period === 90 ? '3M' : `${period}D`
-
-  // ─── Fetch Data ─────────────────────────────────────────────────────────────
+  // Di dalam component:
   const fetchData = useCallback(async () => {
     setLoading(true)
     setError(null)
   
     try {
-      // 1. Smart Money Score
-      const smData = await mdQuery(`
-        SELECT 
-          stock_code,
-          COALESCE(sector, 'Others') AS sector,
-          close,
-          change_percent,
-          smart_money_score,
-          whale_signal,
-          big_player_anomaly,
-          signal
-        FROM market.vw_smart_money_score
-        WHERE smart_money_score > 0
-        ORDER BY smart_money_score DESC
+      // ⚡ HANYA 1 QUERY! Semua data sudah di-join di view
+      const allData = await mdQuery(`
+        SELECT * FROM market.vw_screener_allinone
       `)
   
-      // 2. Period data dari tabel screener_period (1 query saja!)
-      const periodData = await mdQuery(`SELECT * FROM market.screener_period`)
-  
-      // Build map
-      const periodMap = new Map<string, any>()
-      periodData.forEach((d: any) => periodMap.set(d.stock_code, d))
-  
-      // Gabungkan
-      const merged: StockRow[] = smData.map((r: any) => {
-        const p = periodMap.get(r.stock_code) || {}
-        
-        // Pilih spike_count & foreign sesuai periode
+      const merged: StockRow[] = allData.map((r: any) => {
         const spikeKey = `spike_${period}d`
         const foreignKey = `foreign_${period}d`
   
@@ -153,9 +81,9 @@ export default function ScreenerPage() {
           close: Number(r.close || 0),
           change_percent: Number(r.change_percent || 0),
           smart_score: Number(r.smart_money_score || 0),
-          net_foreign_period: Number(p[foreignKey] || 0),
-          aov_max: Number(p.aov_max || 0),
-          spike_count: Number(p[spikeKey] || 0),
+          net_foreign_period: Number(r[foreignKey] || 0),
+          aov_max: Number(r.aov_max || 0),
+          spike_count: Number(r[spikeKey] || 0),
           anomaly_count: r.big_player_anomaly ? 5 : 0,
           is_stealth: Number(r.change_percent) >= -2 && Number(r.change_percent) <= 2 && Number(r.smart_money_score) >= 60,
           whale_signal: r.whale_signal || false,
