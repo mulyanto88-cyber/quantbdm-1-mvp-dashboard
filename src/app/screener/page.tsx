@@ -65,10 +65,13 @@ export default function ScreenerPage() {
 
   // ⚡ 1 QUERY SAJA — Semua data dari vw_screener_allinone
   const fetchData = useCallback(async () => {
+    console.log('🔵 fetchData called, period:', period)
     setLoading(true)
     setError(null)
     try {
       const allData = await mdQuery(`SELECT * FROM market.vw_screener_allinone`)
+      console.log('🔵 Data returned:', allData.length, 'rows')
+      
       const merged: StockRow[] = allData.map((r: any) => ({
         stock_code: r.stock_code,
         sector: r.sector || '—',
@@ -84,8 +87,11 @@ export default function ScreenerPage() {
         big_player_anomaly: r.big_player_anomaly || false,
         signal: r.signal || '➖ NEUTRAL',
       }))
+      
+      console.log('🔵 Merged data, sample foreign:', merged[0]?.net_foreign_period)
       setResults(merged)
     } catch (err: any) {
+      console.error(err)
       setError(err.message || 'Failed to fetch data')
     } finally {
       setLoading(false)
