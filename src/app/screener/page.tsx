@@ -13,7 +13,7 @@ interface StockRow {
   close: number
   change_percent: number
   smart_score: number
-  foreign_30d: number
+  net_foreign_period: number
   aov_max: number
   spike_count: number
   anomaly_count: number
@@ -23,7 +23,7 @@ interface StockRow {
   signal: string
 }
 
-type SortField = 'smart_score' | 'change_percent' | 'foreign_30d' | 'aov_max' | 'spike_count' | 'anomaly_count' | 'close' | 'stock_code'
+type SortField = 'smart_score' | 'change_percent' | 'net_foreign_period' | 'aov_max' | 'spike_count' | 'anomaly_count' | 'close' | 'stock_code'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const PERIOD_OPTIONS = [
@@ -38,9 +38,6 @@ const SIGNAL_STYLE: Record<string, string> = {
   '🚀 STRONG BUY': 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20',
   '👀 WATCH':      'bg-amber-500/20 text-amber-400 border border-amber-500/20',
   '➖ NEUTRAL':    'bg-slate-500/20 text-slate-400 border border-slate-500/20',
-  'Akumulasi':    'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20',
-  'Distribusi':   'bg-red-500/20 text-red-400 border border-red-500/20',
-  'Netral':       'bg-slate-500/20 text-slate-400 border border-slate-500/20',
 }
 
 const PRESETS = [
@@ -66,7 +63,6 @@ async function mdQuery(query: string): Promise<any[]> {
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function ScreenerPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
 
   // States
   const [results, setResults] = useState<StockRow[]>([])
@@ -97,7 +93,16 @@ export default function ScreenerPage() {
     setError(null)
 
     try {
-      // 1. Fetch Smart Money Score dari MotherDuck
+      // 1. Get latest trading date
+      const dateRes = await mdQuery(`
+        SELECT MAX(trading_date)::VARCHAR AS date FROM market.daily_transactions
+      `)
+      const latestDate = dateRes?.[0]?.date || ''
+      setLastDate(latestDate)
+
+      if (!latestDate) throw new Error('No trading data found')
+
+      // 2. Fetch Smart Money Score (mirip scan_smart_money_universe)
       const smData = await mdQuery(`
         SELECT 
           stock_code,
@@ -105,12 +110,9 @@ export default function ScreenerPage() {
           close,
           change_percent,
           smart_money_score,
-          foreign_30d,
-          aov_ratio_ma20,
           whale_signal,
           big_player_anomaly,
-          signal,
-          broker_net AS broker_net_value
+          signal
         FROM market.vw_smart_money_score
         WHERE smart_money_score > 0
         ORDER BY smart_money_score DESC
@@ -118,35 +120,37 @@ export default function ScreenerPage() {
 
       if (!smData.length) throw new Error('No data returned')
 
-      // Get latest date
-      const dateRes = await mdQuery(`
-        SELECT MAX(trading_date)::VARCHAR AS date FROM market.daily_transactions
+      // 3. Fetch AOV history & Foreign Flow AGREGAT sesuai PERIODE
+      const periodData = await mdQuery(`
+        SELECT 
+          stock_code,
+          aov_ratio_ma20,
+          net_foreign_value
+        FROM market.daily_transactions
+        WHERE trading_date >= '${latestDate}'::DATE - INTERVAL '${period} days'
+        ORDER BY stock_code, trading_date ASC
       `)
-      const latestDate = dateRes?.[0]?.date || ''
-      setLastDate(latestDate)
 
-      // 2. Fetch AOV history untuk spike count
-      let aovHistoryMap = new Map<string, number[]>()
-      try {
-        const aovData = await mdQuery(`
-          SELECT 
-            stock_code,
-            aov_ratio_ma20
-          FROM market.daily_transactions
-          WHERE trading_date >= (SELECT MAX(trading_date) FROM market.daily_transactions) - INTERVAL '${period} days'
-          ORDER BY stock_code, trading_date ASC
-        `)
-        aovData.forEach((d: any) => {
-          if (!aovHistoryMap.has(d.stock_code)) aovHistoryMap.set(d.stock_code, [])
-          aovHistoryMap.get(d.stock_code)!.push(Number(d.aov_ratio_ma20 || 1))
-        })
-      } catch {}
+      // Build maps
+      const aovMap = new Map<string, number[]>()
+      const foreignMap = new Map<string, number>()
 
-      // 3. Gabungkan data
+      periodData.forEach((d: any) => {
+        // AOV
+        if (!aovMap.has(d.stock_code)) aovMap.set(d.stock_code, [])
+        aovMap.get(d.stock_code)!.push(Number(d.aov_ratio_ma20 || 1))
+
+        // Foreign
+        const prev = foreignMap.get(d.stock_code) || 0
+        foreignMap.set(d.stock_code, prev + Number(d.net_foreign_value || 0))
+      })
+
+      // 4. Gabungkan data
       const merged: StockRow[] = smData.map((r: any) => {
-        const aovHistory = aovHistoryMap.get(r.stock_code) || []
+        const aovHistory = aovMap.get(r.stock_code) || []
         const spikeCount = aovHistory.filter(v => v >= 1.5).length
         const aovMax = aovHistory.length > 0 ? Math.max(...aovHistory) : 0
+        const netForeignPeriod = foreignMap.get(r.stock_code) || 0
 
         return {
           stock_code: r.stock_code,
@@ -154,7 +158,7 @@ export default function ScreenerPage() {
           close: Number(r.close || 0),
           change_percent: Number(r.change_percent || 0),
           smart_score: Number(r.smart_money_score || 0),
-          foreign_30d: Number(r.foreign_30d || 0),
+          net_foreign_period: netForeignPeriod,
           aov_max: aovMax,
           spike_count: spikeCount,
           anomaly_count: r.big_player_anomaly ? 5 : 0,
@@ -193,7 +197,7 @@ export default function ScreenerPage() {
       if (filterSector !== 'ALL' && r.sector !== filterSector) return false
       if (filterFlag === 'WHALE' && !r.whale_signal) return false
       if (filterFlag === 'BIG_PLAYER' && !r.big_player_anomaly) return false
-      if (filterFlag === 'FOREIGN_BUY' && r.foreign_30d <= 0) return false
+      if (filterFlag === 'FOREIGN_BUY' && r.net_foreign_period <= 0) return false
       if (filterFlag === 'STEALTH' && !r.is_stealth) return false
       if (r.smart_score < minScore) return false
       return true
@@ -241,7 +245,7 @@ export default function ScreenerPage() {
     const headers = ['Kode', 'Sektor', 'Close', 'Chg%', 'Score', 'Foreign', 'AOV Max', 'Spikes', 'Signal']
     const rows = filtered.map(r => [
       r.stock_code, r.sector, r.close, `${r.change_percent.toFixed(2)}%`,
-      r.smart_score, formatRupiah(r.foreign_30d), `${r.aov_max.toFixed(2)}x`,
+      r.smart_score, formatRupiah(r.net_foreign_period), `${r.aov_max.toFixed(2)}x`,
       r.spike_count, r.signal
     ])
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
@@ -425,9 +429,10 @@ export default function ScreenerPage() {
                     <th className="p-2 text-right cursor-pointer hover:text-foreground" onClick={() => toggleSort('close')}>Close<SortArrow col="close" /></th>
                     <th className="p-2 text-right cursor-pointer hover:text-foreground" onClick={() => toggleSort('change_percent')}>Chg%<SortArrow col="change_percent" /></th>
                     <th className="p-2 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('smart_score')}>Score<SortArrow col="smart_score" /></th>
-                    <th className="p-2 text-right cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('foreign_30d')}>Foreign<SortArrow col="foreign_30d" /></th>
+                    <th className="p-2 text-right cursor-pointer hover:text-foreground hidden lg:table-cell" onClick={() => toggleSort('net_foreign_period')}>Foreign ({periodLabel})<SortArrow col="net_foreign_period" /></th>
                     <th className="p-2 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('aov_max')}>AOV Max<SortArrow col="aov_max" /></th>
                     <th className="p-2 text-center cursor-pointer hover:text-foreground" onClick={() => toggleSort('spike_count')}>Spikes<SortArrow col="spike_count" /></th>
+                    <th className="p-2 text-center hidden lg:table-cell cursor-pointer hover:text-foreground" onClick={() => toggleSort('anomaly_count')}>Anomaly<SortArrow col="anomaly_count" /></th>
                     <th className="p-2 text-center">Flags</th>
                     <th className="p-2 text-center">Signal</th>
                   </tr>
@@ -451,12 +456,12 @@ export default function ScreenerPage() {
                           {Math.round(r.smart_score)}
                         </span>
                       </td>
-                      <td className={`p-2 text-right hidden lg:table-cell font-semibold ${r.foreign_30d >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {formatRupiah(r.foreign_30d)}
+                      <td className={`p-2 text-right hidden lg:table-cell font-semibold ${r.net_foreign_period >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {formatRupiah(r.net_foreign_period)}
                       </td>
                       <td className="p-2 text-center">
                         {r.aov_max > 0 ? (
-                          <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold font-mono ${r.aov_max >= 2 ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                          <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold font-mono ${r.aov_max >= 2 ? 'bg-purple-500/20 text-purple-400' : r.aov_max >= 1.5 ? 'bg-blue-500/20 text-blue-400' : 'bg-white/[0.04] text-muted-foreground'}`}>
                             {r.aov_max.toFixed(2)}x
                           </span>
                         ) : <span className="text-muted-foreground/30">—</span>}
@@ -466,11 +471,20 @@ export default function ScreenerPage() {
                           {r.spike_count}
                         </span>
                       </td>
+                      <td className="p-2 text-center hidden lg:table-cell">
+                        <span className={`font-bold ${r.anomaly_count >= 5 ? 'text-purple-400' : r.anomaly_count >= 2 ? 'text-amber-400' : r.anomaly_count > 0 ? 'text-blue-400' : 'text-muted-foreground'}`}>
+                          {r.anomaly_count}
+                        </span>
+                      </td>
                       <td className="p-2 text-center">
                         <div className="flex justify-center gap-1">
                           {r.whale_signal && <span title="Whale">🐋</span>}
                           {r.big_player_anomaly && <span title="Big Player">⚡</span>}
                           {r.is_stealth && <span title="Stealth">🕵️</span>}
+                          {r.net_foreign_period > 0 && <span title="Foreign Buy">🌏</span>}
+                          {!r.whale_signal && !r.big_player_anomaly && !r.is_stealth && r.net_foreign_period <= 0 && (
+                            <span className="text-muted-foreground/30">—</span>
+                          )}
                         </div>
                       </td>
                       <td className="p-2 text-center">
