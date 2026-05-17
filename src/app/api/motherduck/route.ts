@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Pool } from 'pg'
 
-const MOTHERDUCK_TOKEN = process.env.MOTHERDUCK_TOKEN!
-const MOTHERDUCK_API = 'https://api.motherduck.com/v1'
+const pool = new Pool({
+  host: 'pg.us-east-1-aws.motherduck.com',
+  port: 5432,
+  user: 'postgres',
+  password: process.env.MOTHERDUCK_TOKEN,
+  database: 'my_db',
+  ssl: { rejectUnauthorized: false },
+  max: 5,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+})
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,44 +21,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Query diperlukan' }, { status: 400 })
     }
 
-    // Gunakan MotherDuck REST API (bukan DuckDB package)
-    const res = await fetch(`${MOTHERDUCK_API}/query`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${MOTHERDUCK_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        database: 'my_db',
-        query: query,
-      }),
-    })
+    const client = await pool.connect()
+    const result = await client.query(query)
+    client.release()
 
-    if (!res.ok) {
-      const err = await res.text()
-      throw new Error(err)
-    }
-
-    const json = await res.json()
-    
-    // MotherDuck returns { results: [{ columns: [...], rows: [...] }] }
-    const result = json.results?.[0]
-    if (!result) {
-      return NextResponse.json({ data: [] })
-    }
-
-    const columns = result.columns?.map((c: any) => c.name) || []
-    const rows = result.rows || []
-
-    const data = rows.map((row: any[]) => {
-      const obj: Record<string, any> = {}
-      columns.forEach((col: string, i: number) => {
-        obj[col] = row[i]
-      })
-      return obj
-    })
-
-    return NextResponse.json({ data })
+    return NextResponse.json({ data: result.rows })
   } catch (error: any) {
     console.error('[motherduck]', error.message)
     return NextResponse.json(
