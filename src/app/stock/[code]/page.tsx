@@ -45,11 +45,10 @@ interface HistoryPoint {
   whale_signal: boolean; big_player_anomaly: boolean
 }
 
-// ─── Simple Pie Component (No Recharts) ──────────────────────────────────────
+// ─── Simple Pie (No Library) ─────────────────────────────────────────────────
 function SimplePie({ data }: { data: { name: string; value: number }[] }) {
   const total = data.reduce((s, d) => s + d.value, 0)
   let cumulative = 0
-  
   return (
     <div className="flex flex-col items-center gap-3">
       <svg width="160" height="160" viewBox="0 0 160 160">
@@ -60,19 +59,12 @@ function SimplePie({ data }: { data: { name: string; value: number }[] }) {
           const startRad = (startAngle - 90) * Math.PI / 180
           const endRad = (endAngle - 90) * Math.PI / 180
           const cx = 80, cy = 80, r = 60
-          const x1 = cx + r * Math.cos(startRad)
-          const y1 = cy + r * Math.sin(startRad)
-          const x2 = cx + r * Math.cos(endRad)
-          const y2 = cy + r * Math.sin(endRad)
+          const x1 = cx + r * Math.cos(startRad), y1 = cy + r * Math.sin(startRad)
+          const x2 = cx + r * Math.cos(endRad), y2 = cy + r * Math.sin(endRad)
           const largeArc = endAngle - startAngle > 180 ? 1 : 0
-          
           return (
-            <path key={i}
-              d={`M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`}
-              fill={OWN_COLORS[i % OWN_COLORS.length]}
-              stroke="#0B0F19"
-              strokeWidth="1"
-            />
+            <path key={i} d={`M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`}
+              fill={OWN_COLORS[i % OWN_COLORS.length]} stroke="#0B0F19" strokeWidth="1" />
           )
         })}
         <circle cx="80" cy="80" r="35" fill="#0B0F19" />
@@ -89,7 +81,7 @@ function SimplePie({ data }: { data: { name: string; value: number }[] }) {
   )
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
+// ─── Main Component ──────────────────────────────────────────────────────────
 export default function StockDetailPage() {
   const params = useParams()
   const stockCode = (params?.code as string)?.toUpperCase() || ''
@@ -109,7 +101,6 @@ export default function StockDetailPage() {
   const chartWrapRef = useRef<HTMLDivElement>(null)
   const [chartReady, setChartReady] = useState(false)
 
-  // ─── Load Lightweight Charts ────────────────────────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (window.LightweightCharts) { setChartReady(true); return }
@@ -118,21 +109,16 @@ export default function StockDetailPage() {
     script.async = true
     script.onload = () => setChartReady(true)
     document.body.appendChild(script)
-    return () => { script.remove() }
   }, [])
 
-  // ─── Fetch All Data ─────────────────────────────────────────────────────────
   const fetchAllData = useCallback(async (code: string, days: number) => {
     if (!code) return
-    setIsLoading(true)
-    setErrorMsg('')
+    setIsLoading(true); setErrorMsg('')
     try {
       const latestRes = await mdQuery(`
         SELECT d.*, COALESCE(s.sector, 'Others') AS sector, s.free_float
-        FROM market.daily_transactions d
-        LEFT JOIN market.sector_lookup s ON d.stock_code = s.stock_code
-        WHERE d.stock_code = $1 ORDER BY d.trading_date DESC LIMIT 1
-      `, [code])
+        FROM market.daily_transactions d LEFT JOIN market.sector_lookup s ON d.stock_code = s.stock_code
+        WHERE d.stock_code = $1 ORDER BY d.trading_date DESC LIMIT 1`, [code])
       if (!latestRes.length) { setErrorMsg(`Stock ${code} not found`); setIsLoading(false); return }
       setStockData(latestRes[0])
 
@@ -144,8 +130,7 @@ export default function StockDetailPage() {
                net_foreign_value, vwma_20d, aov_ratio_ma20, whale_signal, big_player_anomaly, previous
         FROM market.daily_transactions WHERE stock_code = $1
         AND trading_date >= (SELECT MAX(trading_date) FROM market.daily_transactions) - INTERVAL '${days} days'
-        ORDER BY trading_date ASC
-      `, [code])
+        ORDER BY trading_date ASC`, [code])
       setHistoryData(histRes.map((d: any) => ({
         time: String(d.trading_date).split('T')[0],
         open: Number(d.open_price) || Number(d.previous) || Number(d.close) || 0,
@@ -164,75 +149,51 @@ export default function StockDetailPage() {
         SELECT broker_code AS kode_broker, MAX(broker_name) AS nama_broker,
                SUM(CASE WHEN side='BUY' THEN value ELSE -value END) AS net_value
         FROM broker_activity WHERE stock_code = $1
-        GROUP BY broker_code ORDER BY ABS(SUM(CASE WHEN side='BUY' THEN value ELSE -value END)) DESC LIMIT 6
-      `, [code])
+        GROUP BY broker_code ORDER BY ABS(SUM(CASE WHEN side='BUY' THEN value ELSE -value END)) DESC LIMIT 6`, [code])
       setBrokerData(brokerRes)
 
       const ownerRes = await mdQuery(`
         SELECT investor_name, investor_type, local_foreign, percentage, total_holding_shares AS shares
         FROM ksei.ownership_1pct WHERE share_code = $1
-        AND date = (SELECT MAX(date) FROM ksei.ownership_1pct) ORDER BY percentage DESC LIMIT 100
-      `, [code])
+        AND date = (SELECT MAX(date) FROM ksei.ownership_1pct) ORDER BY percentage DESC LIMIT 100`, [code])
       setOwnershipDetails(ownerRes)
 
       const whaleRes = await mdQuery(`SELECT * FROM ksei.vw_whale_timing WHERE share_code = $1`, [code])
       setWhaleMovement(whaleRes)
-
     } catch (err: any) { setErrorMsg(err.message || 'Failed to fetch data') }
     finally { setIsLoading(false) }
   }, [])
 
   useEffect(() => { if (stockCode) fetchAllData(stockCode, period) }, [stockCode, period, fetchAllData])
 
-  // ─── Render Chart ──────────────────────────────────────────────────────────
+  // ⭐ Chart rendering — WITH FORCED RESIZE
   useEffect(() => {
     if (!chartReady || !chartContainerRef.current || historyData.length === 0) return
-    const lwc = window.LightweightCharts; if (!lwc) return
-    while (chartContainerRef.current.firstChild) {
-      chartContainerRef.current.removeChild(chartContainerRef.current.firstChild)
-    }
+    
+    const container = chartContainerRef.current
+    const lwc = window.LightweightCharts
+    if (!lwc) return
 
-    const chart = lwc.createChart(chartContainerRef.current, {
+    // Force container to have height
+    container.style.height = isFullscreen ? `${window.innerHeight - 50}px` : '600px'
+    
+    while (container.firstChild) { container.removeChild(container.firstChild) }
+
+    const chart = lwc.createChart(container, {
+      width: container.clientWidth,
       height: isFullscreen ? window.innerHeight - 50 : 600,
-      layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#94a3b8' },
+      layout: { background: { type: 'solid', color: '#0B0F19' }, textColor: '#94a3b8' },
       grid: { vertLines: { color: 'rgba(51,65,85,0.15)' }, horzLines: { color: 'rgba(51,65,85,0.15)' } },
       crosshair: { mode: 1 },
-      rightPriceScale: { borderColor: 'rgba(51,65,85,0.5)' },
       timeScale: { borderColor: 'rgba(51,65,85,0.5)', timeVisible: true },
     })
 
-    chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.05, bottom: 0.35 } })
-    const candleSeries = chart.addCandlestickSeries({
-      upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
-      wickUpColor: '#22c55e', wickDownColor: '#ef4444',
-    })
-    candleSeries.setData(historyData.map(d => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close })))
-
-    const markers: any[] = []
-    historyData.forEach(d => {
-      if (d.whale_signal || d.aov_ratio >= 1.5) markers.push({ time: d.time, position: 'aboveBar', color: '#10b981', shape: 'circle', size: 1.5, text: '★' })
-      if (d.big_player_anomaly) markers.push({ time: d.time, position: 'belowBar', color: '#ec4899', shape: 'circle', size: 1.5, text: '◆' })
-    })
-    markers.sort((a, b) => (a.time < b.time ? -1 : 1))
-    candleSeries.setMarkers(markers)
-
-    const vwmaSeries = chart.addLineSeries({ color: '#3b82f6', lineWidth: 2, lineStyle: 2, crosshairMarkerVisible: false, lastValueVisible: true, priceLineVisible: false })
-    vwmaSeries.setData(historyData.filter(d => d.vwma > 0).map(d => ({ time: d.time, value: d.vwma })))
-
-    const aovSeries = chart.addLineSeries({ color: '#8b5cf6', lineWidth: 2, priceScaleId: 'left' })
-    chart.priceScale('left').applyOptions({ scaleMargins: { top: 0.60, bottom: 0.20 } })
-    aovSeries.setData(historyData.map(d => ({ time: d.time, value: d.aov_ratio })))
-    aovSeries.createPriceLine({ price: 1.5, color: '#22c55e', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '🐋 1.5x' })
-
-    const volSeries = chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' } })
-    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.65, bottom: 0.15 } })
-    volSeries.setData(historyData.map(d => ({ time: d.time, value: d.volume, color: d.close >= d.open ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)' })))
-
-    const foreignSeries = chart.addHistogramSeries({ priceScaleId: 'foreign' })
-    chart.priceScale('foreign').applyOptions({ scaleMargins: { top: 0.88, bottom: 0 } })
-    foreignSeries.setData(historyData.map(d => ({ time: d.time, value: d.net_foreign, color: d.net_foreign >= 0 ? 'rgba(34,197,94,0.8)' : 'rgba(239,68,68,0.8)' })))
+    chart.addCandlestickSeries({
+      upColor: '#22c55e', downColor: '#ef4444', wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+    }).setData(historyData.map(d => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close })))
 
     chart.timeScale().fitContent()
+    
     return () => { try { chart.remove() } catch (e) {} }
   }, [historyData, chartReady, isFullscreen])
 
@@ -243,7 +204,6 @@ export default function StockDetailPage() {
     setIsFullscreen(f => !f)
   }
 
-  // ─── Derived ────────────────────────────────────────────────────────────────
   const smiScore = smartMoneyScore?.smart_money_score || 0
   const smiSignal = smartMoneyScore?.signal || '➖ NEUTRAL'
   const verdict = useMemo(() => {
@@ -254,59 +214,20 @@ export default function StockDetailPage() {
 
   const ownershipPieData = useMemo(() => {
     if (!ownershipDetails.length) return []
-    const groupMap: Record<string, number> = {}
-    ownershipDetails.forEach(d => {
-      const type = d.investor_type || 'Others'
-      groupMap[type] = (groupMap[type] || 0) + Number(d.percentage)
-    })
-    return Object.entries(groupMap).map(([name, value]) => ({ name, value }))
+    const g: Record<string, number> = {}
+    ownershipDetails.forEach(d => { g[d.investor_type || 'Others'] = (g[d.investor_type || 'Others'] || 0) + Number(d.percentage) })
+    return Object.entries(g).map(([k, v]) => ({ name: k, value: v }))
   }, [ownershipDetails])
 
-  // ⭐ Loading state
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-12 h-12 text-gold-400 animate-spin" />
-        <p className="ml-3 text-gold-400 font-medium">Loading {stockCode}...</p>
-      </div>
-    )
-  }
-
-  // ⭐ Error state
-  if (errorMsg) {
-    return (
-      <div className="glass rounded-xl p-12 text-center">
-        <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-        <p className="text-red-400 font-medium">{errorMsg}</p>
-      </div>
-    )
-  }
-
-  // ⭐ No data
+  if (isLoading) return <div className="flex justify-center py-20"><Loader2 className="w-10 h-10 text-gold-400 animate-spin" /></div>
+  if (errorMsg) return <div className="glass rounded-xl p-12 text-center"><AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" /><p className="text-red-400">{errorMsg}</p></div>
   if (!stockData) return null
 
   return (
     <div className="space-y-4 pb-12 animate-fade-in">
 
-      {/* ═══ CHART ═══ */}
-      <div ref={chartWrapRef} className={`glass rounded-2xl p-4 border border-white/[0.06] relative ${isFullscreen ? 'fixed inset-0 z-50 rounded-none bg-[#0b1221] flex flex-col' : ''}`}>
-        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <div className="flex items-center gap-1 bg-white/[0.04] rounded-lg p-0.5">
-            {PERIOD_OPTIONS.map(opt => (
-              <button key={opt.days} onClick={() => setPeriod(opt.days)}
-                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${period === opt.days ? 'bg-gold-400/20 text-gold-400' : 'text-muted-foreground hover:text-white'}`}>{opt.label}</button>
-            ))}
-          </div>
-          <button onClick={toggleFullscreen} className="p-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-muted-foreground hover:text-gold-400">
-            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-          </button>
-        </div>
-        <div ref={chartContainerRef} className={`w-full ${isFullscreen ? 'flex-1' : 'h-[600px]'}`} />
-      </div>
-
       {/* ═══ HEADER ═══ */}
       <div className="glass rounded-3xl p-5 lg:p-7 border border-white/[0.08] shadow-2xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-emerald-500/5 blur-[100px] rounded-full pointer-events-none" />
         <div className="flex flex-col xl:flex-row gap-6 justify-between relative z-10">
           <div>
             <div className="flex items-center gap-3 mb-2">
@@ -315,37 +236,34 @@ export default function StockDetailPage() {
             </div>
             <div className="flex items-baseline gap-4 mt-2">
               <span className="text-4xl lg:text-5xl font-black text-white">{formatRupiah(stockData.close)}</span>
-              <span className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-black text-base lg:text-lg ${stockData.change_percent >= 0 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+              <span className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-black text-base ${stockData.change_percent >= 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
                 {stockData.change_percent >= 0 ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
                 {Math.abs(stockData.change_percent).toFixed(2)}%
               </span>
             </div>
-            <div className="text-xs text-muted-foreground mt-4 flex gap-3 bg-white/[0.02] p-2 rounded-lg border border-white/[0.04] w-fit">
-              <span>H: {formatNumber(stockData.high)}</span>
-              <span>L: {formatNumber(stockData.low)}</span>
-              <span>O: {formatNumber(stockData.open_price)}</span>
-              <span className="opacity-30">|</span>
-              <span className="opacity-60 flex items-center gap-1"><Clock className="w-3 h-3" /> {String(stockData.trading_date).split('T')[0]}</span>
+            <div className="text-xs text-muted-foreground mt-4 flex gap-3 bg-white/[0.02] p-2 rounded-lg w-fit">
+              <span>H:{formatNumber(stockData.high)}</span><span>L:{formatNumber(stockData.low)}</span><span>O:{formatNumber(stockData.open_price)}</span>
+              <span className="opacity-30">|</span><span><Clock className="w-3 h-3 inline" /> {String(stockData.trading_date).split('T')[0]}</span>
             </div>
           </div>
-          <div className={`rounded-3xl p-5 ${verdict.bg} border ${verdict.border} xl:min-w-[260px] flex flex-col justify-center`}>
-            <div className="flex items-center gap-2 mb-3"><Shield className={`w-5 h-5 ${verdict.color}`} /><span className="text-[11px] font-black uppercase text-muted-foreground">Verdict</span></div>
-            <p className={`text-xl font-black ${verdict.color} mb-1`}>{verdict.label}</p>
+          <div className={`rounded-3xl p-5 ${verdict.bg} border ${verdict.border} xl:min-w-[220px] flex flex-col justify-center`}>
+            <Shield className={`w-5 h-5 ${verdict.color} mb-2`} />
+            <p className={`text-xl font-black ${verdict.color}`}>{verdict.label}</p>
             <p className="text-xs text-muted-foreground">Score: {Math.round(smiScore)}</p>
           </div>
         </div>
         <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mt-6 pt-5 border-t border-white/[0.05]">
           {[
-            { label: 'Score', value: `${Math.round(smiScore)}`, color: smiScore >= 70 ? 'text-emerald-400' : smiScore >= 45 ? 'text-amber-400' : 'text-blue-400' },
-            { label: 'Signal', value: smiSignal, color: 'text-gold-400' },
-            { label: 'Foreign Flow', value: formatRupiah(stockData.net_foreign_value), color: stockData.net_foreign_value >= 0 ? 'text-emerald-400' : 'text-red-400' },
-            { label: 'AOV Ratio', value: `${(stockData.aov_ratio_ma20 || 1).toFixed(2)}x`, color: stockData.aov_ratio_ma20 >= 1.5 ? 'text-purple-400' : 'text-muted-foreground' },
-            { label: 'Volume', value: formatShares(stockData.volume), color: 'text-orange-400' },
-            { label: 'Free Float', value: `${stockData.free_float?.toFixed(1) || '--'}%`, color: 'text-blue-400' },
+            { l: 'Score', v: Math.round(smiScore), c: smiScore >= 70 ? 'text-emerald-400' : smiScore >= 45 ? 'text-amber-400' : 'text-blue-400' },
+            { l: 'Signal', v: smiSignal, c: 'text-gold-400' },
+            { l: 'Foreign', v: formatRupiah(stockData.net_foreign_value), c: stockData.net_foreign_value >= 0 ? 'text-emerald-400' : 'text-red-400' },
+            { l: 'AOV', v: `${(stockData.aov_ratio_ma20||1).toFixed(2)}x`, c: stockData.aov_ratio_ma20 >= 1.5 ? 'text-purple-400' : '' },
+            { l: 'Volume', v: formatShares(stockData.volume), c: 'text-orange-400' },
+            { l: 'Float%', v: `${stockData.free_float?.toFixed(1)||'--'}%`, c: 'text-blue-400' },
           ].map((m, i) => (
             <div key={i} className="p-2 rounded-xl bg-white/[0.01] border border-white/[0.03] text-center">
-              <p className="text-[9px] text-muted-foreground uppercase mb-1">{m.label}</p>
-              <p className={`text-sm font-black ${m.color}`}>{m.value}</p>
+              <p className="text-[9px] text-muted-foreground uppercase">{m.l}</p>
+              <p className={`text-sm font-black ${m.c}`}>{m.v}</p>
             </div>
           ))}
         </div>
@@ -364,8 +282,7 @@ export default function StockDetailPage() {
                 { l: 'AOV', v: `${(smartMoneyScore.aov_ratio_ma20 || 1).toFixed(2)}x`, c: smartMoneyScore.aov_ratio_ma20 >= 1.5 ? 'text-purple-400' : '' },
               ].map((m, i) => (
                 <div key={i} className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
-                  <p className="text-[8px] text-muted-foreground uppercase">{m.l}</p>
-                  <p className={`text-xs font-black ${m.c}`}>{m.v}</p>
+                  <p className="text-[8px] text-muted-foreground uppercase">{m.l}</p><p className={`text-xs font-black ${m.c}`}>{m.v}</p>
                 </div>
               ))}
             </div>
@@ -375,14 +292,14 @@ export default function StockDetailPage() {
         <div className="glass rounded-xl p-4 border border-white/[0.06]">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2"><Building2 className="w-4 h-4 text-blue-400" /><h3 className="text-[10px] font-black text-blue-400 uppercase">Broker</h3></div>
-            <Link href={`/bandarmologi?code=${stockCode}`} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[9px] font-bold">Full <ExternalLink className="w-3 h-3"/></Link>
+            <Link href={`/bandarmologi?code=${stockCode}`} className="text-[9px] text-blue-400 font-bold">Full →</Link>
           </div>
           {brokerData.length > 0 ? (
             <div className="space-y-1.5">
-              {brokerData.map((b, i) => (
-                <div key={i} className="flex items-center justify-between py-1.5 border-b border-white/[0.03] last:border-0">
-                  <div className="min-w-0"><p className="text-[10px] font-bold truncate">{b.kode_broker}</p><p className="text-[8px] text-muted-foreground/50 truncate max-w-[120px]">{b.nama_broker}</p></div>
-                  <span className={`text-[10px] font-black ml-2 ${Number(b.net_value) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatRupiah(Number(b.net_value))}</span>
+              {brokerData.slice(0, 4).map((b, i) => (
+                <div key={i} className="flex justify-between py-1.5 border-b border-white/[0.03] last:border-0">
+                  <div><p className="text-[10px] font-bold truncate w-[60px]">{b.kode_broker}</p></div>
+                  <span className={`text-[10px] font-black ${Number(b.net_value) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatRupiah(Number(b.net_value))}</span>
                 </div>
               ))}
             </div>
@@ -391,10 +308,24 @@ export default function StockDetailPage() {
 
         <div className="glass rounded-xl p-4 border border-white/[0.06]">
           <div className="flex items-center gap-2 mb-3"><PieChartIcon className="w-4 h-4 text-gold-400" /><h3 className="text-[10px] font-black text-gold-400 uppercase">Ownership</h3></div>
-          {ownershipPieData.length > 0 ? (
-            <SimplePie data={ownershipPieData} />
-          ) : <p className="text-xs text-muted-foreground text-center py-8">No Ownership Data</p>}
+          {ownershipPieData.length > 0 ? <SimplePie data={ownershipPieData} /> : <p className="text-xs text-muted-foreground text-center py-8">No data</p>}
         </div>
+      </div>
+
+      {/* ═══ CHART — Pindah ke bawah ═══ */}
+      <div ref={chartWrapRef} className="glass rounded-2xl p-4 border border-white/[0.06]">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-1 bg-white/[0.04] rounded-lg p-0.5">
+            {PERIOD_OPTIONS.map(opt => (
+              <button key={opt.days} onClick={() => setPeriod(opt.days)}
+                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${period === opt.days ? 'bg-gold-400/20 text-gold-400' : 'text-muted-foreground hover:text-white'}`}>{opt.label}</button>
+            ))}
+          </div>
+          <button onClick={toggleFullscreen} className="p-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-muted-foreground hover:text-gold-400">
+            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
+        </div>
+        <div ref={chartContainerRef} style={{ height: '600px', width: '100%' }} />
       </div>
 
       {/* ═══ WHALE ═══ */}
@@ -409,10 +340,10 @@ export default function StockDetailPage() {
                 <th className="p-2 text-center">Trend</th><th className="p-2 text-center">Verdict</th>
               </tr></thead>
               <tbody>
-                {whaleMovement.map((w, i) => (
-                  <tr key={i} className="border-b border-white/[0.02] hover:bg-white/[0.02]">
-                    <td className="p-2 font-bold text-[10px]">{w.investor_name}</td>
-                    <td className="p-2 text-center"><span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${w.local_foreign === 'F' ? 'bg-blue-500/10 text-blue-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{w.local_foreign === 'F' ? 'FOREIGN' : 'LOCAL'}</span></td>
+                {whaleMovement.slice(0, 10).map((w, i) => (
+                  <tr key={i} className="border-b border-white/[0.02]">
+                    <td className="p-2 font-bold text-[10px]">{w.investor_name?.slice(0, 30)}</td>
+                    <td className="p-2 text-center"><span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${w.local_foreign === 'F' ? 'bg-blue-500/10 text-blue-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{w.local_foreign === 'F' ? 'F' : 'L'}</span></td>
                     <td className="p-2 text-right font-black">{Number(w.latest_percentage).toFixed(2)}%</td>
                     <td className="p-2 text-right text-muted-foreground">{formatShares(w.latest_shares)}</td>
                     <td className="p-2 text-right">{formatNumber(w.est_entry_price)}</td>
