@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatShares } from '@/lib/utils'
 import { 
-  Eye, AlertTriangle, Search, Building2, TrendingUp, TrendingDown, 
+  Eye, Search, TrendingUp, TrendingDown, 
   PieChart as PieChartIcon, Activity, Shield, Users,
   X, RefreshCw
 } from 'lucide-react'
@@ -19,16 +19,15 @@ interface InvestorPosition {
   investor_type: string
   local_foreign: string
   percentage: number
-  total_shares: number
-  date: string
+  shares: number
 }
 
 interface OwnershipChange {
   investor_name: string
   investor_type: string
   local_foreign: string
-  prev_percentage: number
-  curr_percentage: number
+  prev_pct: number
+  curr_pct: number
   pct_change: number
   share_change: number
   action: string
@@ -52,9 +51,8 @@ interface TopStock {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const PERIOD_OPTIONS = [
-  { label: '1M', months: 1 },
-  { label: '2M', months: 2 },
-  { label: '3M', months: 3 },
+  { label: '1M (Apr vs Mar)', months: 1, prev: '2026-03-31', curr: '2026-04-30' },
+  { label: '2M (Apr vs Feb)', months: 2, prev: '2026-02-27', curr: '2026-04-30' },
 ]
 
 const INVESTOR_TYPE_COLORS: Record<string, string> = {
@@ -65,6 +63,8 @@ const INVESTOR_TYPE_COLORS: Record<string, string> = {
   'Insurance': '#ec4899',
   'Pension Fund': '#06b6d4',
   'Securities': '#f97316',
+  'Private Equity': '#84cc16',
+  'Trustee Bank': '#6366f1',
   'Others': '#6b7280',
 }
 
@@ -77,9 +77,8 @@ const LINE_COLORS = [
 export default function KSEI1PersenPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [period, setPeriod] = useState(1)
+  const [periodIdx, setPeriodIdx] = useState(0)
   const [selectedStock, setSelectedStock] = useState<string | null>(null)
-  const [stockList, setStockList] = useState<string[]>([])
   const [searchStock, setSearchStock] = useState('')
   const [showChangeTable, setShowChangeTable] = useState(false)
 
@@ -87,10 +86,13 @@ export default function KSEI1PersenPage() {
   const [allData, setAllData] = useState<any[]>([])
   const [currentMonthData, setCurrentMonthData] = useState<InvestorPosition[]>([])
   const [previousMonthData, setPreviousMonthData] = useState<InvestorPosition[]>([])
+  const [currentScripData, setCurrentScripData] = useState<InvestorPosition[]>([])
   const [historyData, setHistoryData] = useState<any[]>([])
   const [changes, setChanges] = useState<OwnershipChange[]>([])
   const [signals, setSignals] = useState<SignalDetection[]>([])
   const [topStocks, setTopStocks] = useState<TopStock[]>([])
+
+  const period = PERIOD_OPTIONS[periodIdx]
 
   // ─── Fetch Data ──────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
@@ -100,9 +102,11 @@ export default function KSEI1PersenPage() {
     try {
       const { data, error: fetchError } = await supabase
         .from('ksei_data1persen_mutasi')
-        .select('date, share_code, investor_name, investor_type, local_foreign, percentage, total_holding_shares')
+        .select('date, share_code, investor_name, investor_type, local_foreign, percentage, holdings_scripless, holdings_scrip, total_holding_shares')
+        .gte('date', '2026-02-01')
+        .gt('holdings_scripless', 0)
         .order('date', { ascending: false })
-        .limit(10000)
+        .limit(15000)
 
       if (fetchError) throw fetchError
       if (!data || data.length === 0) {
@@ -111,12 +115,18 @@ export default function KSEI1PersenPage() {
         return
       }
 
-      setAllData(data)
+      // Bersihkan data: ganti 'nan' investor_type jadi 'Others'
+      const cleaned = data.map((d: any) => ({
+        ...d,
+        investor_type: (!d.investor_type || d.investor_type === 'nan') ? 'Others' : d.investor_type,
+        holdings_scripless: Number(d.holdings_scripless) || 0,
+        holdings_scrip: Number(d.holdings_scrip) || 0,
+        total_holding_shares: Number(d.total_holding_shares) || 0,
+        percentage: Number(d.percentage) || 0,
+      }))
 
-      const stocks = Array.from(new Set(data.map((d: any) => d.share_code))).sort()
-      setStockList(stocks)
-
-      computeTopStocks(data)
+      setAllData(cleaned)
+      computeTopStocks(cleaned)
     } catch (err) {
       console.error(err)
       setError(err instanceof Error ? err.message : 'Failed to fetch')
@@ -127,34 +137,36 @@ export default function KSEI1PersenPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // ─── Compute Top Stocks (Screener View) ──────────────────────────────────────
+  // ─── Compute Top Stocks Screener ─────────────────────────────────────────────
   const computeTopStocks = (data: any[]) => {
-    const dates = Array.from(new Set(data.map((d: any) => d.date))).sort().reverse()
-    if (dates.length < 2) return
-
-    const latest = dates[0]
-    const prev = dates[1]
+    const { prev, curr } = period
 
     const stockSignals: TopStock[] = []
-
     const stocks = Array.from(new Set(data.map((d: any) => d.share_code)))
+
     stocks.forEach(code => {
-      const currData = data.filter((d: any) => d.share_code === code && d.date === latest)
+      const currData = data.filter((d: any) => d.share_code === code && d.date === curr)
       const prevData = data.filter((d: any) => d.share_code === code && d.date === prev)
 
       if (currData.length === 0) return
 
-      let corpCurr = 0, corpPrev = 0, foreignCurr = 0, foreignPrev = 0, indCurr = 0, indPrev = 0
-      
+      let corpCurr = 0, corpPrev = 0, foreignCurr = 0, foreignPrev = 0
+      let indCurr = 0, indPrev = 0, fundCurr = 0, finCurr = 0
+
       currData.forEach((d: any) => {
-        if (d.investor_type === 'Corporate') corpCurr += Number(d.percentage)
-        if (d.local_foreign === 'F') foreignCurr += Number(d.percentage)
-        if (d.investor_type === 'Individual') indCurr += Number(d.percentage)
+        const pct = d.percentage
+        const type = d.investor_type
+        if (type === 'Corporate') corpCurr += pct
+        if (d.local_foreign === 'F') foreignCurr += pct
+        if (type === 'Individual') indCurr += pct
+        if (type === 'Fund Manager') fundCurr += pct
+        if (type === 'Financial Institutional') finCurr += pct
       })
       prevData.forEach((d: any) => {
-        if (d.investor_type === 'Corporate') corpPrev += Number(d.percentage)
-        if (d.local_foreign === 'F') foreignPrev += Number(d.percentage)
-        if (d.investor_type === 'Individual') indPrev += Number(d.percentage)
+        const pct = d.percentage
+        if (d.investor_type === 'Corporate') corpPrev += pct
+        if (d.local_foreign === 'F') foreignPrev += pct
+        if (d.investor_type === 'Individual') indPrev += pct
       })
 
       const corpChange = corpCurr - corpPrev
@@ -166,91 +178,97 @@ export default function KSEI1PersenPage() {
 
       if (corpChange > 1 && indChange < -0.5) { signals.push('🟢 Corp Acc'); score += 3 }
       if (foreignChange > 1) { signals.push('🟢 Foreign In'); score += 2 }
-      if (corpCurr + foreignCurr > 50) { signals.push('💎 Inst Dom'); score += 1 }
+      if (corpCurr + fundCurr + finCurr > 50) { signals.push('💎 Inst Dom'); score += 1 }
       if (corpChange < -1 && indChange > 0.5) { signals.push('🔴 Corp Dist'); score -= 2 }
       if (foreignChange < -1) { signals.push('🔴 Foreign Out'); score -= 2 }
       if (indChange > 1) { signals.push('🟡 Insider Buy'); score += 1 }
 
-      if (Math.abs(corpChange) >= 0.3 || Math.abs(foreignChange) >= 0.3 || Math.abs(indChange) >= 0.3) {
+      // Tampilkan semua saham yang ada perubahan minimal
+      if (Math.abs(corpChange) >= 0.1 || Math.abs(foreignChange) >= 0.1 || Math.abs(indChange) >= 0.1) {
         stockSignals.push({ code, signals, score, corpChange, foreignChange, indChange })
       }
     })
 
-    setTopStocks(stockSignals.sort((a, b) => b.score - a.score).slice(0, 50))
+    setTopStocks(stockSignals.sort((a, b) => b.score - a.score))
   }
 
   // ─── Compute Stock Detail ────────────────────────────────────────────────────
   useEffect(() => {
     if (!selectedStock || allData.length === 0) return
 
+    const { prev, curr } = period
     const stockData = allData.filter((d: any) => d.share_code === selectedStock)
-    const dates = Array.from(new Set(stockData.map((d: any) => d.date))).sort().reverse()
 
-    if (dates.length === 0) return
-
-    const latestDate = dates[0]
-    const currData = stockData.filter((d: any) => d.date === latestDate)
-    setCurrentMonthData(currData.map((d: any) => ({
+    // Current month - scripless
+    const currScripless = stockData.filter((d: any) => d.date === curr)
+    setCurrentMonthData(currScripless.map((d: any) => ({
       investor_name: d.investor_name,
       investor_type: d.investor_type,
       local_foreign: d.local_foreign,
-      percentage: Number(d.percentage),
-      total_shares: Number(d.total_holding_shares),
-      date: d.date,
+      percentage: d.percentage,
+      shares: d.holdings_scripless,
     })))
 
-    if (dates.length >= 2) {
-      const prevDate = dates[1]
-      const prevData = stockData.filter((d: any) => d.date === prevDate)
-      setPreviousMonthData(prevData.map((d: any) => ({
-        investor_name: d.investor_name,
-        investor_type: d.investor_type,
-        local_foreign: d.local_foreign,
-        percentage: Number(d.percentage),
-        total_shares: Number(d.total_holding_shares),
-        date: d.date,
-      })))
+    // Current month - scrip
+    const currScrip = stockData.filter((d: any) => d.date === curr && d.holdings_scrip > 0)
+    setCurrentScripData(currScrip.map((d: any) => ({
+      investor_name: d.investor_name,
+      investor_type: d.investor_type,
+      local_foreign: d.local_foreign,
+      percentage: 0, // percentage dari scripless, jadi untuk scrip tidak relevan
+      shares: d.holdings_scrip,
+    })))
 
-      const changeList: OwnershipChange[] = []
-      currData.forEach((curr: any) => {
-        const prev = prevData.find((p: any) => p.investor_name === curr.investor_name)
-        const currPct = Number(curr.percentage)
-        const prevPct = prev ? Number(prev.percentage) : 0
-        const currShares = Number(curr.total_holding_shares)
-        const prevShares = prev ? Number(prev.total_holding_shares) : 0
-        const pctChange = currPct - prevPct
-        const shareChange = currShares - prevShares
+    // Previous month
+    const prevScripless = stockData.filter((d: any) => d.date === prev)
+    setPreviousMonthData(prevScripless.map((d: any) => ({
+      investor_name: d.investor_name,
+      investor_type: d.investor_type,
+      local_foreign: d.local_foreign,
+      percentage: d.percentage,
+      shares: d.holdings_scripless,
+    })))
 
-        if (Math.abs(pctChange) < 0.1) return
+    // Changes
+    const changeList: OwnershipChange[] = []
+    currScripless.forEach((curr: any) => {
+      const prev = prevScripless.find((p: any) => p.investor_name === curr.investor_name)
+      const currPct = curr.percentage
+      const prevPct = prev ? prev.percentage : 0
+      const currShares = curr.holdings_scripless
+      const prevShares = prev ? prev.holdings_scripless : 0
+      const pctChange = currPct - prevPct
+      const shareChange = currShares - prevShares
 
-        const action = pctChange > 0.3 ? 'BUYING' : pctChange < -0.3 ? 'SELLING' : 'HOLDING'
-        const alertLevel = Math.abs(pctChange) >= 2 ? 'HIGH' : Math.abs(pctChange) >= 1 ? 'MEDIUM' : 'LOW'
+      if (Math.abs(pctChange) < 0.05 && Math.abs(shareChange) < 100) return
 
-        changeList.push({
-          investor_name: curr.investor_name,
-          investor_type: curr.investor_type,
-          local_foreign: curr.local_foreign,
-          prev_percentage: prevPct,
-          curr_percentage: currPct,
-          pct_change: pctChange,
-          share_change: shareChange,
-          action,
-          alert_level: alertLevel,
-        })
-      })
-      setChanges(changeList.sort((a, b) => Math.abs(b.pct_change) - Math.abs(a.pct_change)))
-    }
+      const action = pctChange > 0.3 ? 'BUYING' : pctChange < -0.3 ? 'SELLING' : 'HOLDING'
+      const alertLevel = Math.abs(pctChange) >= 2 ? 'HIGH' : Math.abs(pctChange) >= 1 ? 'MEDIUM' : 'LOW'
 
-    // History for line chart
-    const historyDates = dates.slice(0, 6).reverse()
-    const historyMap: Record<string, any[]> = {}
-    historyDates.forEach(date => {
-      stockData.filter((d: any) => d.date === date).forEach((d: any) => {
-        if (!historyMap[d.investor_name]) historyMap[d.investor_name] = []
-        historyMap[d.investor_name].push({ date, shares: Number(d.total_holding_shares) })
+      changeList.push({
+        investor_name: curr.investor_name,
+        investor_type: curr.investor_type,
+        local_foreign: curr.local_foreign,
+        prev_pct: prevPct,
+        curr_pct: currPct,
+        pct_change: pctChange,
+        share_change: shareChange,
+        action,
+        alert_level: alertLevel,
       })
     })
-    setHistoryData(historyDates.map(date => {
+    setChanges(changeList.sort((a, b) => Math.abs(b.pct_change) - Math.abs(a.pct_change)))
+
+    // History for line chart
+    const allDates = Array.from(new Set(stockData.map((d: any) => d.date))).sort()
+    const historyMap: Record<string, any[]> = {}
+    allDates.forEach(date => {
+      stockData.filter((d: any) => d.date === date && d.holdings_scripless > 0).forEach((d: any) => {
+        if (!historyMap[d.investor_name]) historyMap[d.investor_name] = []
+        historyMap[d.investor_name].push({ date, shares: d.holdings_scripless })
+      })
+    })
+    setHistoryData(allDates.map(date => {
       const point: any = { date }
       Object.entries(historyMap).forEach(([name, entries]) => {
         const entry = entries.find((e: any) => e.date === date)
@@ -259,27 +277,29 @@ export default function KSEI1PersenPage() {
       return point
     }))
 
-    computeSignals(currData, dates.length >= 2 ? stockData.filter((d: any) => d.date === dates[1]) : [])
-  }, [selectedStock, allData])
+    // Signals
+    computeSignals(currScripless, prevScripless)
+  }, [selectedStock, allData, period])
 
   // ─── Compute Signals ─────────────────────────────────────────────────────────
   const computeSignals = (currData: any[], prevData: any[]) => {
     const sigs: SignalDetection[] = []
-
     let corpCurr = 0, corpPrev = 0, foreignCurr = 0, foreignPrev = 0
     let indCurr = 0, indPrev = 0, fundCurr = 0, finCurr = 0
 
     currData.forEach((d: any) => {
-      if (d.investor_type === 'Corporate') corpCurr += Number(d.percentage)
-      if (d.local_foreign === 'F') foreignCurr += Number(d.percentage)
-      if (d.investor_type === 'Individual') indCurr += Number(d.percentage)
-      if (d.investor_type === 'Fund Manager') fundCurr += Number(d.percentage)
-      if (d.investor_type === 'Financial Institutional') finCurr += Number(d.percentage)
+      const pct = d.percentage
+      if (d.investor_type === 'Corporate') corpCurr += pct
+      if (d.local_foreign === 'F') foreignCurr += pct
+      if (d.investor_type === 'Individual') indCurr += pct
+      if (d.investor_type === 'Fund Manager') fundCurr += pct
+      if (d.investor_type === 'Financial Institutional') finCurr += pct
     })
     prevData.forEach((d: any) => {
-      if (d.investor_type === 'Corporate') corpPrev += Number(d.percentage)
-      if (d.local_foreign === 'F') foreignPrev += Number(d.percentage)
-      if (d.investor_type === 'Individual') indPrev += Number(d.percentage)
+      const pct = d.percentage
+      if (d.investor_type === 'Corporate') corpPrev += pct
+      if (d.local_foreign === 'F') foreignPrev += pct
+      if (d.investor_type === 'Individual') indPrev += pct
     })
 
     if (corpCurr - corpPrev > 1 && indCurr - indPrev < -0.5) 
@@ -305,7 +325,8 @@ export default function KSEI1PersenPage() {
     if (!currentMonthData.length) return []
     const grouped: Record<string, number> = {}
     currentMonthData.forEach(d => {
-      grouped[d.investor_type] = (grouped[d.investor_type] || 0) + d.percentage
+      const type = d.investor_type || 'Others'
+      grouped[type] = (grouped[type] || 0) + d.percentage
     })
     return Object.entries(grouped).map(([name, value]) => ({ name, value }))
   }, [currentMonthData])
@@ -325,72 +346,35 @@ export default function KSEI1PersenPage() {
             <span className="text-foreground"> Ownership Intelligence</span>
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            Monthly ownership data · Detect institutional accumulation & distribution
+            Monthly scripless ownership data · Detect institutional accumulation & distribution
           </p>
         </div>
       </div>
 
       {/* ════════════════════════════════════════════════════════════
-          FILTERS
+          PERIOD TOGGLE
       ════════════════════════════════════════════════════════════ */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1 bg-white/[0.03] rounded-lg p-0.5 border border-white/[0.06]">
-          {PERIOD_OPTIONS.map(opt => (
-            <button key={opt.months} onClick={() => setPeriod(opt.months)}
-              className={`px-3 py-1.5 text-[10px] font-bold rounded-md transition-all ${
-                period === opt.months ? 'bg-blue-400/20 text-blue-400' : 'text-muted-foreground hover:text-white'
-              }`}>{opt.label}</button>
-          ))}
-        </div>
-
-        {/* Global Search */}
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Cari kode saham..."
-            value={searchStock}
-            onChange={(e) => setSearchStock(e.target.value.toUpperCase())}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && searchStock.length >= 2) {
-                if (stockList.includes(searchStock)) {
-                  setSelectedStock(searchStock)
-                }
-              }
-            }}
-            className="w-full pl-9 pr-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm focus:outline-none focus:border-blue-400/30 uppercase"
-            maxLength={4}
-          />
-          {searchStock && stockList.includes(searchStock) && (
-            <button
-              onClick={() => setSelectedStock(searchStock)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded bg-blue-400/20 text-blue-400 text-[10px] font-bold hover:bg-blue-400/30"
-            >
-              Go
-            </button>
-          )}
-        </div>
-
-        {selectedStock && (
-          <button onClick={() => { setSelectedStock(null); setSearchStock('') }}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.06] text-xs text-muted-foreground hover:text-white">
-            <X className="w-3 h-3" /> Clear
-          </button>
-        )}
+      <div className="flex items-center gap-1 bg-white/[0.03] rounded-lg p-0.5 border border-white/[0.06] w-fit">
+        {PERIOD_OPTIONS.map((opt, i) => (
+          <button key={opt.months} onClick={() => setPeriodIdx(i)}
+            className={`px-3 py-1.5 text-[10px] font-bold rounded-md transition-all ${
+              periodIdx === i ? 'bg-blue-400/20 text-blue-400' : 'text-muted-foreground hover:text-white'
+            }`}>{opt.label}</button>
+        ))}
       </div>
 
       {/* ════════════════════════════════════════════════════════════
-          INSTITUTIONAL FLOW SCREENER (Default View)
+          INSTITUTIONAL FLOW SCREENER
       ════════════════════════════════════════════════════════════ */}
       {!selectedStock && !loading && (
         <div className="glass rounded-2xl overflow-hidden border border-border/30">
           <div className="p-4 border-b border-white/[0.05] flex items-center gap-2">
             <Activity className="w-4 h-4 text-blue-400" />
             <h2 className="text-sm font-black text-foreground uppercase tracking-widest">
-              Institutional Flow Screener
+              Institutional Flow Screener (Scripless)
             </h2>
             <span className="text-[10px] text-muted-foreground ml-auto">
-              {topStocks.length} saham dengan perubahan signifikan
+              {topStocks.length} saham terdeteksi
             </span>
           </div>
           
@@ -456,13 +440,39 @@ export default function KSEI1PersenPage() {
       )}
 
       {/* ════════════════════════════════════════════════════════════
-          SIGNAL DETECTION (Setelah pilih saham)
+          SEARCH SAHAM
+      ════════════════════════════════════════════════════════════ */}
+      <div className="glass rounded-xl p-3 border border-border/30 flex items-center gap-3">
+        <Search className="w-4 h-4 text-muted-foreground" />
+        <input
+          type="text"
+          placeholder="Cari kode saham untuk detail kepemilikan..."
+          value={searchStock}
+          onChange={(e) => setSearchStock(e.target.value.toUpperCase())}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && searchStock.length >= 2) {
+              setSelectedStock(searchStock)
+            }
+          }}
+          className="flex-1 bg-transparent text-sm focus:outline-none uppercase"
+          maxLength={4}
+        />
+        {selectedStock && (
+          <button onClick={() => { setSelectedStock(null); setSearchStock('') }}
+            className="px-3 py-1 rounded-lg bg-white/[0.03] border border-white/[0.06] text-xs text-muted-foreground hover:text-white">
+            <X className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+
+      {/* ════════════════════════════════════════════════════════════
+          SIGNAL DETECTION
       ════════════════════════════════════════════════════════════ */}
       {selectedStock && signals.length > 0 && (
         <div className="glass rounded-2xl p-4 border border-blue-400/20 bg-blue-400/[0.02]">
           <h3 className="text-xs font-black text-foreground uppercase tracking-widest mb-3 flex items-center gap-2">
             <Shield className="w-4 h-4 text-blue-400" />
-            Institutional Signal Detection — {selectedStock}
+            Signal Detection — {selectedStock}
           </h3>
           <div className="flex flex-wrap gap-2">
             {signals.map((sig, i) => (
@@ -478,25 +488,17 @@ export default function KSEI1PersenPage() {
         </div>
       )}
 
-      {selectedStock && signals.length === 0 && currentMonthData.length > 0 && (
-        <div className="glass rounded-xl p-3 border border-white/[0.06] text-center">
-          <p className="text-xs text-muted-foreground">
-            Tidak ada sinyal institusional signifikan terdeteksi untuk {selectedStock} pada periode ini.
-          </p>
-        </div>
-      )}
-
       {/* ════════════════════════════════════════════════════════════
           STOCK DETAIL VIEW
       ════════════════════════════════════════════════════════════ */}
       {selectedStock && (
         <>
-          {/* Pie Chart + Table */}
+          {/* Pie Chart + Scripless Table */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="glass rounded-2xl p-5 border border-border/30">
               <h3 className="text-sm font-black text-foreground mb-4 flex items-center gap-2">
                 <PieChartIcon className="w-4 h-4 text-blue-400" />
-                Ownership by Investor Type
+                Scripless Ownership by Type
               </h3>
               {pieData.length > 0 ? (
                 <div className="flex flex-col items-center">
@@ -525,10 +527,11 @@ export default function KSEI1PersenPage() {
               ) : <p className="text-center py-8 text-muted-foreground">No data</p>}
             </div>
 
+            {/* Scripless Table */}
             <div className="glass rounded-2xl p-5 border border-border/30 overflow-x-auto">
               <h3 className="text-sm font-black text-foreground mb-4 flex items-center gap-2">
                 <Users className="w-4 h-4 text-blue-400" />
-                Current Positions
+                Scripless Positions
               </h3>
               <table className="w-full text-xs">
                 <thead>
@@ -537,7 +540,7 @@ export default function KSEI1PersenPage() {
                     <th className="p-2 text-left hidden md:table-cell">Type</th>
                     <th className="p-2 text-center">L/F</th>
                     <th className="p-2 text-right">%</th>
-                    <th className="p-2 text-right hidden lg:table-cell">Shares</th>
+                    <th className="p-2 text-right">Shares</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -551,7 +554,7 @@ export default function KSEI1PersenPage() {
                         </span>
                       </td>
                       <td className="p-2 text-right font-black">{d.percentage.toFixed(2)}%</td>
-                      <td className="p-2 text-right text-muted-foreground hidden lg:table-cell">{formatShares(d.total_shares)}</td>
+                      <td className="p-2 text-right text-muted-foreground">{formatShares(d.shares)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -559,12 +562,46 @@ export default function KSEI1PersenPage() {
             </div>
           </div>
 
+          {/* Scrip Table (jika ada) */}
+          {currentScripData.length > 0 && (
+            <div className="glass rounded-2xl p-5 border border-border/30 overflow-x-auto">
+              <h3 className="text-sm font-black text-foreground mb-4 flex items-center gap-2">
+                <Users className="w-4 h-4 text-amber-400" />
+                Scrip Holdings (Physical)
+              </h3>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-[9px] text-muted-foreground uppercase border-b border-white/[0.05]">
+                    <th className="p-2 text-left">Investor</th>
+                    <th className="p-2 text-left hidden md:table-cell">Type</th>
+                    <th className="p-2 text-center">L/F</th>
+                    <th className="p-2 text-right">Shares</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentScripData.map((d, i) => (
+                    <tr key={i} className="border-b border-white/[0.02] hover:bg-white/[0.02]">
+                      <td className="p-2 font-bold text-[10px] truncate max-w-[120px]">{d.investor_name}</td>
+                      <td className="p-2 text-[10px] text-muted-foreground hidden md:table-cell">{d.investor_type}</td>
+                      <td className="p-2 text-center">
+                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${d.local_foreign === 'F' ? 'bg-blue-500/10 text-blue-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                          {d.local_foreign === 'F' ? 'F' : 'L'}
+                        </span>
+                      </td>
+                      <td className="p-2 text-right text-muted-foreground">{formatShares(d.shares)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           {/* Line Chart */}
           {historyData.length > 0 && (
             <div className="glass rounded-2xl p-5 border border-border/30">
               <h3 className="text-sm font-black text-foreground mb-4 flex items-center gap-2">
                 <Activity className="w-4 h-4 text-blue-400" />
-                Ownership History — Total Shares per Investor
+                Scripless Ownership History
               </h3>
               <div className="h-[400px]">
                 <ResponsiveContainer>
@@ -574,7 +611,7 @@ export default function KSEI1PersenPage() {
                     <YAxis tickFormatter={v => formatShares(v)} tick={{ fontSize: 10, fill: '#6b7280' }} />
                     <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }} formatter={(v: any) => formatShares(v)} />
                     <Legend wrapperStyle={{ fontSize: '9px' }} />
-                    {currentMonthData.map((d, i) => (
+                    {currentMonthData.slice(0, 10).map((d, i) => (
                       <Line key={d.investor_name} type="monotone" dataKey={d.investor_name}
                         stroke={LINE_COLORS[i % LINE_COLORS.length]} strokeWidth={1.5}
                         dot={false} activeDot={{ r: 3 }} connectNulls />
@@ -585,14 +622,14 @@ export default function KSEI1PersenPage() {
             </div>
           )}
 
-          {/* Changes Table Toggle */}
+          {/* Changes Table */}
           {changes.length > 0 && (
             <div className="glass rounded-2xl border border-border/30 overflow-hidden">
               <button onClick={() => setShowChangeTable(!showChangeTable)}
                 className="w-full p-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
                 <h3 className="text-sm font-black text-foreground flex items-center gap-2">
                   <TrendingUp className="w-4 h-4 text-blue-400" />
-                  Ownership Changes ({changes.length} detected)
+                  Ownership Changes ({changes.length})
                 </h3>
                 <span className={`text-xs text-muted-foreground transition-transform ${showChangeTable ? 'rotate-180' : ''}`}>▼</span>
               </button>
@@ -614,15 +651,15 @@ export default function KSEI1PersenPage() {
                       {changes.map((c, i) => (
                         <tr key={i} className="border-b border-white/[0.02] hover:bg-white/[0.02]">
                           <td className="p-2 font-bold text-[10px] truncate max-w-[120px]">{c.investor_name}</td>
-                          <td className="p-2 text-right">{c.prev_percentage.toFixed(2)}%</td>
-                          <td className="p-2 text-right">{c.curr_percentage.toFixed(2)}%</td>
+                          <td className="p-2 text-right">{c.prev_pct.toFixed(2)}%</td>
+                          <td className="p-2 text-right">{c.curr_pct.toFixed(2)}%</td>
                           <td className={`p-2 text-right font-bold ${c.pct_change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                             {c.pct_change >= 0 ? '+' : ''}{c.pct_change.toFixed(2)}%
                           </td>
                           <td className="p-2 text-right hidden md:table-cell">{formatShares(c.share_change)}</td>
                           <td className="p-2 text-center">
                             <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                              c.action === 'BUYING' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+                              c.action === 'BUYING' ? 'bg-emerald-500/20 text-emerald-400' : c.action === 'SELLING' ? 'bg-red-500/20 text-red-400' : 'bg-slate-500/20 text-slate-400'
                             }`}>{c.action}</span>
                           </td>
                           <td className="p-2 text-center">
