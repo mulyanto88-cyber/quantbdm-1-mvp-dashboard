@@ -91,18 +91,9 @@ export default function ScreenerPage() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     setError(null)
-
+  
     try {
-      // 1. Get latest trading date
-      const dateRes = await mdQuery(`
-        SELECT MAX(trading_date)::VARCHAR AS date FROM market.daily_transactions
-      `)
-      const latestDate = dateRes?.[0]?.date || ''
-      setLastDate(latestDate)
-
-      if (!latestDate) throw new Error('No trading data found')
-
-      // 2. Fetch Smart Money Score (mirip scan_smart_money_universe)
+      // 1. Smart Money Score
       const smData = await mdQuery(`
         SELECT 
           stock_code,
@@ -117,50 +108,31 @@ export default function ScreenerPage() {
         WHERE smart_money_score > 0
         ORDER BY smart_money_score DESC
       `)
-
-      if (!smData.length) throw new Error('No data returned')
-
-      // 3. Fetch AOV history & Foreign Flow AGREGAT sesuai PERIODE
-      const periodData = await mdQuery(`
-        SELECT 
-          stock_code,
-          aov_ratio_ma20,
-          net_foreign_value
-        FROM market.daily_transactions
-        WHERE CAST(trading_date AS DATE) >= '${latestDate}'::DATE - INTERVAL '${period} days'
-        ORDER BY stock_code, trading_date ASC
-      `)
-
-      // Build maps
-      const aovMap = new Map<string, number[]>()
-      const foreignMap = new Map<string, number>()
-
-      periodData.forEach((d: any) => {
-        // AOV
-        if (!aovMap.has(d.stock_code)) aovMap.set(d.stock_code, [])
-        aovMap.get(d.stock_code)!.push(Number(d.aov_ratio_ma20 || 1))
-
-        // Foreign
-        const prev = foreignMap.get(d.stock_code) || 0
-        foreignMap.set(d.stock_code, prev + Number(d.net_foreign_value || 0))
-      })
-
-      // 4. Gabungkan data
+  
+      // 2. Period data dari tabel screener_period (1 query saja!)
+      const periodData = await mdQuery(`SELECT * FROM market.screener_period`)
+  
+      // Build map
+      const periodMap = new Map<string, any>()
+      periodData.forEach((d: any) => periodMap.set(d.stock_code, d))
+  
+      // Gabungkan
       const merged: StockRow[] = smData.map((r: any) => {
-        const aovHistory = aovMap.get(r.stock_code) || []
-        const spikeCount = aovHistory.filter(v => v >= 1.5).length
-        const aovMax = aovHistory.length > 0 ? Math.max(...aovHistory) : 0
-        const netForeignPeriod = foreignMap.get(r.stock_code) || 0
-
+        const p = periodMap.get(r.stock_code) || {}
+        
+        // Pilih spike_count & foreign sesuai periode
+        const spikeKey = `spike_${period}d`
+        const foreignKey = `foreign_${period}d`
+  
         return {
           stock_code: r.stock_code,
           sector: r.sector || '—',
           close: Number(r.close || 0),
           change_percent: Number(r.change_percent || 0),
           smart_score: Number(r.smart_money_score || 0),
-          net_foreign_period: netForeignPeriod,
-          aov_max: aovMax,
-          spike_count: spikeCount,
+          net_foreign_period: Number(p[foreignKey] || 0),
+          aov_max: Number(p.aov_max || 0),
+          spike_count: Number(p[spikeKey] || 0),
           anomaly_count: r.big_player_anomaly ? 5 : 0,
           is_stealth: Number(r.change_percent) >= -2 && Number(r.change_percent) <= 2 && Number(r.smart_money_score) >= 60,
           whale_signal: r.whale_signal || false,
@@ -168,7 +140,7 @@ export default function ScreenerPage() {
           signal: r.signal || '➖ NEUTRAL',
         }
       })
-
+  
       setResults(merged)
     } catch (err: any) {
       console.error(err)
@@ -177,8 +149,6 @@ export default function ScreenerPage() {
       setLoading(false)
     }
   }, [period])
-
-  useEffect(() => { fetchData() }, [fetchData])
 
   // ─── Filter & Sort ──────────────────────────────────────────────────────────
   const sectors = useMemo(() =>
