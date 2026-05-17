@@ -145,8 +145,8 @@ export default function StockDetailPage() {
         ORDER BY trading_date ASC
       `, [code])
 
-      setHistoryData(histRes.reverse().map((d: any) => ({
-        time: d.trading_date instanceof Date ? d.trading_date.toISOString().split('T')[0] : String(d.trading_date).split('T')[0],
+      setHistoryData(histRes.map((d: any) => ({
+        time: String(d.trading_date).split('T')[0],
         open: Number(d.open_price) || Number(d.previous) || Number(d.close) || 0,
         high: Number(d.high) || Number(d.close) || 0,
         low: Number(d.low) || Number(d.close) || 0,
