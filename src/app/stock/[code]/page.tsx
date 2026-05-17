@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { formatRupiah, formatNumber, formatShares } from '@/lib/utils'
 import {
-  TrendingUp, TrendingDown, Clock, Target, DollarSign, PieChart as PieChartIcon,
+  TrendingUp, TrendingDown, Clock, Target, PieChart as PieChartIcon,
   Building2, Shield, Maximize2, Minimize2, ExternalLink, Users, Loader2, AlertTriangle
 } from 'lucide-react'
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts'
@@ -89,7 +89,6 @@ export default function StockDetailPage() {
     setErrorMsg('')
 
     try {
-      // 1. Latest stock data + sector
       const latestRes = await mdQuery(`
         SELECT d.*, COALESCE(s.sector, 'Others') AS sector, s.free_float
         FROM market.daily_transactions d
@@ -100,11 +99,9 @@ export default function StockDetailPage() {
       if (!latestRes.length) { setErrorMsg(`Stock ${code} not found`); setIsLoading(false); return }
       setStockData(latestRes[0])
 
-      // 2. Smart Money Score
       const smRes = await mdQuery(`SELECT * FROM market.vw_smart_money_score WHERE stock_code = $1`, [code])
       if (smRes.length) setSmartMoneyScore(smRes[0])
 
-      // 3. Chart history
       const histRes = await mdQuery(`
         SELECT trading_date, open_price, high, low, close, volume,
                net_foreign_value, vwma_20d, aov_ratio_ma20,
@@ -129,7 +126,6 @@ export default function StockDetailPage() {
         big_player_anomaly: d.big_player_anomaly || false,
       })))
 
-      // 4. Broker Activity
       const brokerRes = await mdQuery(`
         SELECT broker_code AS kode_broker, MAX(broker_name) AS nama_broker,
                SUM(CASE WHEN side='BUY' THEN value ELSE -value END) AS net_value
@@ -138,7 +134,6 @@ export default function StockDetailPage() {
       `, [code])
       setBrokerData(brokerRes)
 
-      // 5. Ownership
       const ownerRes = await mdQuery(`
         SELECT investor_name, investor_type, local_foreign, percentage, total_holding_shares AS shares
         FROM ksei.ownership_1pct WHERE share_code = $1
@@ -146,7 +141,6 @@ export default function StockDetailPage() {
       `, [code])
       setOwnershipDetails(ownerRes)
 
-      // 6. Whale Movement
       const whaleRes = await mdQuery(`SELECT * FROM ksei.vw_whale_timing WHERE share_code = $1`, [code])
       setWhaleMovement(whaleRes)
 
@@ -160,7 +154,11 @@ export default function StockDetailPage() {
   useEffect(() => {
     if (!chartReady || !chartContainerRef.current || historyData.length === 0) return
     const lwc = window.LightweightCharts; if (!lwc) return
-    chartContainerRef.current.innerHTML = ''
+
+    // Safe cleanup
+    while (chartContainerRef.current.firstChild) {
+      chartContainerRef.current.removeChild(chartContainerRef.current.firstChild)
+    }
 
     const chart = lwc.createChart(chartContainerRef.current, {
       height: isFullscreen ? window.innerHeight - 50 : 600,
@@ -204,7 +202,7 @@ export default function StockDetailPage() {
     foreignSeries.setData(historyData.map(d => ({ time: d.time, value: d.net_foreign, color: d.net_foreign >= 0 ? 'rgba(34,197,94,0.8)' : 'rgba(239,68,68,0.8)' })))
 
     chart.timeScale().fitContent()
-    return () => chart.remove()
+    return () => { try { chart.remove() } catch (e) {} }
   }, [historyData, chartReady, isFullscreen])
 
   const toggleFullscreen = () => {
@@ -236,11 +234,11 @@ export default function StockDetailPage() {
     return Object.entries(groupMap).map(([name, data]) => ({ name, value: data.totalPct, shares: data.totalShares, count: data.count }))
   }, [ownershipDetails])
 
-  // ⭐ Kunci fix: Chart div SELALU render
+  // ─── RENDER ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4 pb-12 animate-fade-in">
-      
-      {/* ═══ CHART — Always rendered so ref is bound ═══ */}
+
+      {/* ═══ CHART — Always rendered ═══ */}
       <div ref={chartWrapRef} className={`glass rounded-2xl p-4 border border-white/[0.06] relative ${isFullscreen ? 'fixed inset-0 z-50 rounded-none bg-[#0b1221] flex flex-col' : ''}`}>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <div className="flex items-center gap-1 bg-white/[0.04] rounded-lg p-0.5">
@@ -266,7 +264,7 @@ export default function StockDetailPage() {
         </div>
       )}
 
-      {/* ═══ Content — only when loaded ═══ */}
+      {/* ═══ Content ═══ */}
       {!isLoading && !errorMsg && stockData && (
         <>
           {/* HEADER */}
@@ -318,7 +316,6 @@ export default function StockDetailPage() {
 
           {/* 3 KOLOM */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Smart Money */}
             <div className="glass rounded-xl p-4 border border-white/[0.06]">
               <div className="flex items-center gap-2 mb-3"><Target className="w-4 h-4 text-gold-400" /><h3 className="text-[10px] font-black text-gold-400 uppercase">Smart Money</h3></div>
               {smartMoneyScore ? (
@@ -338,7 +335,6 @@ export default function StockDetailPage() {
               ) : <p className="text-xs text-muted-foreground text-center py-4">No data</p>}
             </div>
 
-            {/* Broker */}
             <div className="glass rounded-xl p-4 border border-white/[0.06]">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2"><Building2 className="w-4 h-4 text-blue-400" /><h3 className="text-[10px] font-black text-blue-400 uppercase">Broker</h3></div>
@@ -356,7 +352,6 @@ export default function StockDetailPage() {
               ) : <p className="text-xs text-muted-foreground text-center py-8">No Broker Data</p>}
             </div>
 
-            {/* Ownership Pie */}
             <div className="glass rounded-xl p-4 border border-white/[0.06]">
               <div className="flex items-center gap-2 mb-3"><PieChartIcon className="w-4 h-4 text-gold-400" /><h3 className="text-[10px] font-black text-gold-400 uppercase">Ownership</h3></div>
               {ownershipPieData.length > 0 ? (
