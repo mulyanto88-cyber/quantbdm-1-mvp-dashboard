@@ -13,6 +13,11 @@ const pool = new Pool({
   connectionTimeoutMillis: 10000,
 })
 
+// ⭐ Tambah GET handler untuk health check
+export async function GET() {
+  return NextResponse.json({ status: 'ok', message: 'MotherDuck API is running' })
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { query } = await req.json()
