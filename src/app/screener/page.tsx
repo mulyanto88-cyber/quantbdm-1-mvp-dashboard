@@ -48,16 +48,39 @@ const PRESETS = [
   { id: 'big-player',    name: '⚡ Big Player',     icon: Zap,         filters: { flag: 'BIG_PLAYER',  minScore: 45 } },
 ]
 
-// ─── API Helper ──────────────────────────────────────────────────────────────
+// ─── API Helper (Direct MotherDuck via fetch) ─────────────────────────────────
 async function mdQuery(query: string): Promise<any[]> {
-  const res = await fetch('/api/motherduck', {
+  const res = await fetch('https://api.motherduck.com/v1/query', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query }),
+    headers: {
+      'Authorization': `Bearer ${process.env.NEXT_PUBLIC_MOTHERDUCK_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      database: 'my_db',
+      query: query,
+    }),
   })
+  
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(err)
+  }
+  
   const json = await res.json()
-  if (json.error) throw new Error(json.error)
-  return json.data || []
+  const result = json.results?.[0]
+  if (!result) return []
+  
+  const columns = result.columns?.map((c: any) => c.name) || []
+  const rows = result.rows || []
+  
+  return rows.map((row: any[]) => {
+    const obj: Record<string, any> = {}
+    columns.forEach((col: string, i: number) => {
+      obj[col] = row[i]
+    })
+    return obj
+  })
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
