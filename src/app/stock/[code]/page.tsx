@@ -14,8 +14,7 @@ import {
 } from 'recharts'
 import Link from 'next/link'
 
-// ─── MotherDuck Connection ────────────────────────────────────────────────────
-
+// ─── API Helper ──────────────────────────────────────────────────────────────
 async function mdQuery(query: string, params?: any[]): Promise<any[]> {
   const res = await fetch('/api/motherduck', {
     method: 'POST',
@@ -82,12 +81,20 @@ export default function StockDetailPage() {
 
   // ─── Lightweight Charts ─────────────────────────────────────────────────────
   useEffect(() => {
+    console.log('🔵 Loading Lightweight Charts script...')
     if (typeof window === 'undefined') return
-    if (window.LightweightCharts) { setChartReady(true); return }
+    if (window.LightweightCharts) { 
+      console.log('🔵 Already loaded')
+      setChartReady(true)
+      return 
+    }
     const script = document.createElement('script')
     script.src = 'https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js'
     script.async = true
-    script.onload = () => setChartReady(true)
+    script.onload = () => {
+      console.log('🔵 Script loaded!')
+      setChartReady(true)
+    }
     document.body.appendChild(script)
     return () => { script.remove() }
   }, [])
@@ -107,6 +114,7 @@ export default function StockDetailPage() {
     if (!code) return
     setIsLoading(true)
     setErrorMsg('')
+    console.log('🔵 fetchAllData called:', code, 'days:', days)
 
     try {
       // 1. Latest stock data + sector
@@ -126,6 +134,7 @@ export default function StockDetailPage() {
         return
       }
       setStockData(latestRes[0])
+      console.log('🔵 Stock data OK:', latestRes[0].close)
 
       // 2. Smart Money Score
       const smRes = await mdQuery(`
@@ -134,6 +143,7 @@ export default function StockDetailPage() {
       if (smRes.length) setSmartMoneyScore(smRes[0])
 
       // 3. Chart history
+      console.log('🔵 Fetching chart history...')
       const histRes = await mdQuery(`
         SELECT 
           trading_date, open_price, high, low, close, volume,
@@ -145,7 +155,14 @@ export default function StockDetailPage() {
         ORDER BY trading_date ASC
       `, [code])
 
-      setHistoryData(histRes.map((d: any) => ({
+      console.log('🔵 History rows:', histRes.length)
+      if (histRes.length > 0) {
+        console.log('🔵 First row sample:', { date: histRes[0].trading_date, close: histRes[0].close })
+      } else {
+        console.log('🔴 WARNING: NO HISTORY DATA!')
+      }
+
+      const mapped = histRes.map((d: any) => ({
         time: String(d.trading_date).split('T')[0],
         open: Number(d.open_price) || Number(d.previous) || Number(d.close) || 0,
         high: Number(d.high) || Number(d.close) || 0,
@@ -157,7 +174,10 @@ export default function StockDetailPage() {
         vwma: Number(d.vwma_20d) || 0,
         whale_signal: d.whale_signal || false,
         big_player_anomaly: d.big_player_anomaly || false,
-      })))
+      }))
+
+      console.log('🔵 Mapped data, first time:', mapped[0]?.time, 'last time:', mapped[mapped.length-1]?.time)
+      setHistoryData(mapped)
 
       // 4. Broker Activity
       const brokerRes = await mdQuery(`
@@ -194,7 +214,7 @@ export default function StockDetailPage() {
       setWhaleMovement(whaleRes)
 
     } catch (err: any) {
-      console.error(err)
+      console.error('🔴 Error:', err)
       setErrorMsg(err.message || 'Failed to fetch data')
     } finally {
       setIsLoading(false)
@@ -207,9 +227,26 @@ export default function StockDetailPage() {
 
   // ─── Render Chart ──────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!chartReady || !chartContainerRef.current || historyData.length === 0) return
+    console.log('🔵 Chart useEffect - ready:', chartReady, 'data:', historyData.length, 'container:', !!chartContainerRef.current)
+    
+    if (!chartReady) {
+      console.log('🔴 Chart not ready yet')
+      return
+    }
+    if (!chartContainerRef.current) {
+      console.log('🔴 No container ref')
+      return
+    }
+    if (historyData.length === 0) {
+      console.log('🔴 No history data')
+      return
+    }
+
+    console.log('🟢 Rendering chart with', historyData.length, 'points')
+    
     const lwc = window.LightweightCharts
     if (!lwc) return
+    
     chartContainerRef.current.innerHTML = ''
 
     const chart = lwc.createChart(chartContainerRef.current, {
@@ -230,7 +267,6 @@ export default function StockDetailPage() {
       time: d.time, open: d.open, high: d.high, low: d.low, close: d.close,
     })))
 
-    // Markers
     const markers: any[] = []
     historyData.forEach(d => {
       if (d.whale_signal || d.aov_ratio >= 1.5) {
@@ -273,6 +309,8 @@ export default function StockDetailPage() {
     })))
 
     chart.timeScale().fitContent()
+    console.log('🟢 Chart rendered!')
+    
     return () => chart.remove()
   }, [historyData, chartReady, isFullscreen])
 
@@ -328,7 +366,7 @@ export default function StockDetailPage() {
 
   return (
     <div className="space-y-4 pb-12 animate-fade-in">
-      {/* HEADER + VERDICT */}
+      {/* HEADER */}
       <div className="glass rounded-3xl p-5 lg:p-7 border border-white/[0.08] shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-emerald-500/5 blur-[100px] rounded-full pointer-events-none" />
         <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-64 h-64 bg-blue-500/5 blur-[100px] rounded-full pointer-events-none" />
@@ -417,9 +455,8 @@ export default function StockDetailPage() {
         <div ref={chartContainerRef} className={`w-full ${isFullscreen ? 'flex-1' : 'h-[600px]'}`} />
       </div>
 
-      {/* 3 KOLOM: Smart Money + Broker + Ownership */}
+      {/* 3 KOLOM */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Smart Money */}
         <div className="glass rounded-xl p-4 border border-white/[0.06]">
           <div className="flex items-center gap-2 mb-3">
             <Target className="w-4 h-4 text-gold-400" />
@@ -444,7 +481,6 @@ export default function StockDetailPage() {
           ) : <p className="text-xs text-muted-foreground text-center py-4">No data</p>}
         </div>
 
-        {/* Broker */}
         <div className="glass rounded-xl p-4 border border-white/[0.06]">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -475,7 +511,6 @@ export default function StockDetailPage() {
           )}
         </div>
 
-        {/* Ownership Pie */}
         <div className="glass rounded-xl p-4 border border-white/[0.06]">
           <div className="flex items-center gap-2 mb-3">
             <PieChartIcon className="w-4 h-4 text-gold-400" />
@@ -492,14 +527,6 @@ export default function StockDetailPage() {
                     <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '11px' }} formatter={(v: any) => [`${Number(v).toFixed(1)}%`]} />
                   </PieChart>
                 </ResponsiveContainer>
-              </div>
-              <div className="flex flex-wrap gap-2 mt-2 justify-center text-[9px]">
-                {ownershipPieData.slice(0, 4).map((e, i) => (
-                  <span key={i} className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-sm" style={{ backgroundColor: INVESTOR_TYPE_COLORS[e.name] || '#6b7280' }} />
-                    {e.name} {e.value.toFixed(1)}%
-                  </span>
-                ))}
               </div>
             </div>
           ) : (
