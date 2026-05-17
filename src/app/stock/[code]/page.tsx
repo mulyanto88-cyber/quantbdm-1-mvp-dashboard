@@ -2,14 +2,17 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
-import { formatRupiah, formatNumber, formatShares } from '@/lib/utils'
+import { formatRupiah, formatPercent, formatNumber, formatShares } from '@/lib/utils'
 import {
-  TrendingUp, TrendingDown, Clock, Target, PieChart as PieChartIcon,
-  Building2, Shield, Maximize2, Minimize2, ExternalLink, Users, Loader2, AlertTriangle
+  TrendingUp, TrendingDown, Activity, Clock,
+  Zap, Target, DollarSign, PieChart as PieChartIcon, ArrowRightLeft, Building2,
+  Flame, Globe, Eye, Shield, Maximize2, Minimize2, ExternalLink, BarChart3,
+  Users, Loader2, AlertTriangle
 } from 'lucide-react'
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts'
 import Link from 'next/link'
 
-// ─── API Helper ──────────────────────────────────────────────────────────────
+// ─── API ─────────────────────────────────────────────────────────────────────
 async function mdQuery(query: string, params?: any[]): Promise<any[]> {
   const res = await fetch('/api/motherduck', {
     method: 'POST',
@@ -27,69 +30,21 @@ const PERIOD_OPTIONS = [
   { label: '1Y', days: 365 }, { label: '2Y', days: 730 }, { label: '3Y', days: 1095 },
 ]
 
-const OWN_COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#6b7280']
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-interface StockData {
-  stock_code: string; close: number; change_percent: number
-  high: number; low: number; open_price: number
-  volume: number; value: number; net_foreign_value: number
-  vwma_20d: number; aov_ratio_ma20: number; whale_signal: boolean
-  big_player_anomaly: boolean; signal: string; sector: string
-  free_float: number; tradeable_shares: number; trading_date: string
+const INVESTOR_TYPE_COLORS: Record<string, string> = {
+  'Corporate': '#10b981', 'Individual': '#3b82f6', 'Fund Manager': '#f59e0b',
+  'Financial Institutional': '#8b5cf6', 'Insurance': '#ec4899',
+  'Pension Fund': '#06b6d4', 'Securities': '#f97316', 'Others': '#6b7280',
 }
 
-interface HistoryPoint {
-  time: string; open: number; high: number; low: number; close: number
-  volume: number; net_foreign: number; aov_ratio: number; vwma: number
-  whale_signal: boolean; big_player_anomaly: boolean
-}
-
-// ─── Simple Pie (No Library) ─────────────────────────────────────────────────
-function SimplePie({ data }: { data: { name: string; value: number }[] }) {
-  const total = data.reduce((s, d) => s + d.value, 0)
-  let cumulative = 0
-  return (
-    <div className="flex flex-col items-center gap-3">
-      <svg width="160" height="160" viewBox="0 0 160 160">
-        {data.map((d, i) => {
-          const startAngle = (cumulative / total) * 360
-          cumulative += d.value
-          const endAngle = (cumulative / total) * 360
-          const startRad = (startAngle - 90) * Math.PI / 180
-          const endRad = (endAngle - 90) * Math.PI / 180
-          const cx = 80, cy = 80, r = 60
-          const x1 = cx + r * Math.cos(startRad), y1 = cy + r * Math.sin(startRad)
-          const x2 = cx + r * Math.cos(endRad), y2 = cy + r * Math.sin(endRad)
-          const largeArc = endAngle - startAngle > 180 ? 1 : 0
-          return (
-            <path key={i} d={`M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`}
-              fill={OWN_COLORS[i % OWN_COLORS.length]} stroke="#0B0F19" strokeWidth="1" />
-          )
-        })}
-        <circle cx="80" cy="80" r="35" fill="#0B0F19" />
-      </svg>
-      <div className="flex flex-wrap gap-2 justify-center text-[9px]">
-        {data.slice(0, 5).map((d, i) => (
-          <span key={i} className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-sm" style={{ backgroundColor: OWN_COLORS[i % OWN_COLORS.length] }} />
-            {d.name} {((d.value / total) * 100).toFixed(1)}%
-          </span>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// ─── Main Component ──────────────────────────────────────────────────────────
+// ─── Component ────────────────────────────────────────────────────────────────
 export default function StockDetailPage() {
   const params = useParams()
   const stockCode = (params?.code as string)?.toUpperCase() || ''
 
   const [period, setPeriod] = useState(90)
-  const [stockData, setStockData] = useState<StockData | null>(null)
-  const [historyData, setHistoryData] = useState<HistoryPoint[]>([])
-  const [smartMoneyScore, setSmartMoneyScore] = useState<any>(null)
+  const [stockData, setStockData] = useState<any>(null)
+  const [historyData, setHistoryData] = useState<any[]>([])
+  const [smartMoneyIndex, setSmartMoneyIndex] = useState<any>(null)
   const [brokerData, setBrokerData] = useState<any[]>([])
   const [ownershipDetails, setOwnershipDetails] = useState<any[]>([])
   const [whaleMovement, setWhaleMovement] = useState<any[]>([])
@@ -101,6 +56,7 @@ export default function StockDetailPage() {
   const chartWrapRef = useRef<HTMLDivElement>(null)
   const [chartReady, setChartReady] = useState(false)
 
+  // ─── Load Lightweight Charts ────────────────────────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (window.LightweightCharts) { setChartReady(true); return }
@@ -111,26 +67,34 @@ export default function StockDetailPage() {
     document.body.appendChild(script)
   }, [])
 
+  // ─── Fetch All Data ─────────────────────────────────────────────────────────
   const fetchAllData = useCallback(async (code: string, days: number) => {
     if (!code) return
-    setIsLoading(true); setErrorMsg('')
+    setIsLoading(true)
+    setErrorMsg('')
+
     try {
-      const latestRes = await mdQuery(`
-        SELECT d.*, COALESCE(s.sector, 'Others') AS sector, s.free_float
-        FROM market.daily_transactions d LEFT JOIN market.sector_lookup s ON d.stock_code = s.stock_code
-        WHERE d.stock_code = $1 ORDER BY d.trading_date DESC LIMIT 1`, [code])
+      // 1. Latest stock data
+      const latestRes = await mdQuery(
+        `SELECT * FROM market.vw_stock_detail WHERE stock_code = $1 ORDER BY trading_date DESC LIMIT 1`,
+        [code]
+      )
       if (!latestRes.length) { setErrorMsg(`Stock ${code} not found`); setIsLoading(false); return }
       setStockData(latestRes[0])
 
+      // 2. Smart Money Score
       const smRes = await mdQuery(`SELECT * FROM market.vw_smart_money_score WHERE stock_code = $1`, [code])
-      if (smRes.length) setSmartMoneyScore(smRes[0])
+      if (smRes.length) setSmartMoneyIndex(smRes[0])
 
+      // 3. Chart history
       const histRes = await mdQuery(`
         SELECT trading_date, open_price, high, low, close, volume,
                net_foreign_value, vwma_20d, aov_ratio_ma20, whale_signal, big_player_anomaly, previous
         FROM market.daily_transactions WHERE stock_code = $1
         AND trading_date >= (SELECT MAX(trading_date) FROM market.daily_transactions) - INTERVAL '${days} days'
-        ORDER BY trading_date ASC`, [code])
+        ORDER BY trading_date ASC
+      `, [code])
+      
       setHistoryData(histRes.map((d: any) => ({
         time: String(d.trading_date).split('T')[0],
         open: Number(d.open_price) || Number(d.previous) || Number(d.close) || 0,
@@ -145,90 +109,127 @@ export default function StockDetailPage() {
         big_player_anomaly: d.big_player_anomaly || false,
       })))
 
+      // 4. Broker Activity
       const brokerRes = await mdQuery(`
         SELECT broker_code AS kode_broker, MAX(broker_name) AS nama_broker,
                SUM(CASE WHEN side='BUY' THEN value ELSE -value END) AS net_value
         FROM broker_activity WHERE stock_code = $1
-        GROUP BY broker_code ORDER BY ABS(SUM(CASE WHEN side='BUY' THEN value ELSE -value END)) DESC LIMIT 6`, [code])
+        GROUP BY broker_code ORDER BY ABS(SUM(CASE WHEN side='BUY' THEN value ELSE -value END)) DESC LIMIT 6
+      `, [code])
       setBrokerData(brokerRes)
 
+      // 5. Ownership Details
       const ownerRes = await mdQuery(`
-        SELECT investor_name, investor_type, local_foreign, percentage, total_holding_shares AS shares
+        SELECT investor_name, investor_type, local_foreign, percentage, total_holding_shares
         FROM ksei.ownership_1pct WHERE share_code = $1
-        AND date = (SELECT MAX(date) FROM ksei.ownership_1pct) ORDER BY percentage DESC LIMIT 100`, [code])
-      setOwnershipDetails(ownerRes)
+        AND date = (SELECT MAX(date) FROM ksei.ownership_1pct) ORDER BY percentage DESC LIMIT 100
+      `, [code])
+      setOwnershipDetails(ownerRes.map((d: any) => ({
+        investor_name: d.investor_name,
+        investor_type: d.investor_type,
+        local_foreign: d.local_foreign,
+        percentage: Number(d.percentage),
+        shares: Number(d.total_holding_shares),
+      })))
 
+      // 6. Whale Movement
       const whaleRes = await mdQuery(`SELECT * FROM ksei.vw_whale_timing WHERE share_code = $1`, [code])
       setWhaleMovement(whaleRes)
-    } catch (err: any) { setErrorMsg(err.message || 'Failed to fetch data') }
+
+    } catch (err: any) { setErrorMsg(err.message || 'Failed') }
     finally { setIsLoading(false) }
   }, [])
 
   useEffect(() => { if (stockCode) fetchAllData(stockCode, period) }, [stockCode, period, fetchAllData])
 
-  // ⭐ Chart rendering — WITH FORCED RESIZE
+  // ─── Render Chart ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!chartReady || !chartContainerRef.current || historyData.length === 0) return
+    const lwc = window.LightweightCharts; if (!lwc) return
     
-    const container = chartContainerRef.current
-    const lwc = window.LightweightCharts
-    if (!lwc) return
+    chartContainerRef.current.innerHTML = ''
 
-    // Force container to have height
-    container.style.height = isFullscreen ? `${window.innerHeight - 50}px` : '600px'
-    
-    while (container.firstChild) { container.removeChild(container.firstChild) }
-
-    const chart = lwc.createChart(container, {
-      width: container.clientWidth,
-      height: isFullscreen ? window.innerHeight - 50 : 600,
-      layout: { background: { type: 'solid', color: '#0B0F19' }, textColor: '#94a3b8' },
+    const chart = lwc.createChart(chartContainerRef.current, {
+      height: 600,
+      layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#94a3b8' },
       grid: { vertLines: { color: 'rgba(51,65,85,0.15)' }, horzLines: { color: 'rgba(51,65,85,0.15)' } },
       crosshair: { mode: 1 },
+      rightPriceScale: { borderColor: 'rgba(51,65,85,0.5)' },
       timeScale: { borderColor: 'rgba(51,65,85,0.5)', timeVisible: true },
     })
 
-    chart.addCandlestickSeries({
-      upColor: '#22c55e', downColor: '#ef4444', wickUpColor: '#22c55e', wickDownColor: '#ef4444',
-    }).setData(historyData.map(d => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close })))
+    chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.05, bottom: 0.35 } })
+    const candleSeries = chart.addCandlestickSeries({
+      upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
+      wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+    })
+    candleSeries.setData(historyData.map(d => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close })))
+
+    const markers: any[] = []
+    historyData.forEach(d => {
+      if (d.whale_signal || d.aov_ratio >= 1.5) markers.push({ time: d.time, position: 'aboveBar', color: '#10b981', shape: 'circle', size: 1.5, text: '★' })
+      if (d.big_player_anomaly) markers.push({ time: d.time, position: 'belowBar', color: '#ec4899', shape: 'circle', size: 1.5, text: '◆' })
+    })
+    markers.sort((a, b) => (a.time < b.time ? -1 : 1))
+    candleSeries.setMarkers(markers)
+
+    const vwmaSeries = chart.addLineSeries({ color: '#3b82f6', lineWidth: 2, lineStyle: 2, crosshairMarkerVisible: false, lastValueVisible: true, priceLineVisible: false })
+    vwmaSeries.setData(historyData.filter(d => d.vwma > 0).map(d => ({ time: d.time, value: d.vwma })))
+
+    const aovSeries = chart.addLineSeries({ color: '#8b5cf6', lineWidth: 2, priceScaleId: 'left' })
+    chart.priceScale('left').applyOptions({ scaleMargins: { top: 0.60, bottom: 0.20 } })
+    aovSeries.setData(historyData.map(d => ({ time: d.time, value: d.aov_ratio })))
+    aovSeries.createPriceLine({ price: 1.5, color: '#22c55e', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '🐋 1.5x' })
+
+    const volSeries = chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' } })
+    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.65, bottom: 0.15 } })
+    volSeries.setData(historyData.map(d => ({ time: d.time, value: d.volume, color: d.close >= d.open ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)' })))
+
+    const foreignSeries = chart.addHistogramSeries({ priceScaleId: 'foreign' })
+    chart.priceScale('foreign').applyOptions({ scaleMargins: { top: 0.88, bottom: 0 } })
+    foreignSeries.setData(historyData.map(d => ({ time: d.time, value: d.net_foreign, color: d.net_foreign >= 0 ? 'rgba(34,197,94,0.8)' : 'rgba(239,68,68,0.8)' })))
 
     chart.timeScale().fitContent()
-    
-    return () => { try { chart.remove() } catch (e) {} }
-  }, [historyData, chartReady, isFullscreen])
+    return () => chart.remove()
+  }, [historyData, chartReady])
 
-  const toggleFullscreen = () => {
-    if (!chartWrapRef.current) return
-    if (!isFullscreen) chartWrapRef.current.requestFullscreen?.().catch(() => {})
-    else document.exitFullscreen?.().catch(() => {})
-    setIsFullscreen(f => !f)
-  }
+  // ─── Derived ────────────────────────────────────────────────────────────────
+  const smiScore = smartMoneyIndex?.smart_money_score || 0
+  const convictionScore = smartMoneyIndex?.conviction_score || smiScore
 
-  const smiScore = smartMoneyScore?.smart_money_score || 0
-  const smiSignal = smartMoneyScore?.signal || '➖ NEUTRAL'
   const verdict = useMemo(() => {
     if (smiScore >= 70) return { label: 'STRONG BUY', color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30' }
-    if (smiScore >= 45) return { label: 'WATCH', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30' }
-    return { label: 'NEUTRAL', color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30' }
+    if (smiScore >= 45) return { label: 'WATCH / ACCUMULATE', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30' }
+    return { label: 'HOLD / MONITOR', color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30' }
   }, [smiScore])
 
   const ownershipPieData = useMemo(() => {
     if (!ownershipDetails.length) return []
-    const g: Record<string, number> = {}
-    ownershipDetails.forEach(d => { g[d.investor_type || 'Others'] = (g[d.investor_type || 'Others'] || 0) + Number(d.percentage) })
-    return Object.entries(g).map(([k, v]) => ({ name: k, value: v }))
+    const groupMap: Record<string, { totalPct: number; totalShares: number; count: number }> = {}
+    ownershipDetails.forEach((d: any) => {
+      const type = d.investor_type || 'Others'
+      if (!groupMap[type]) groupMap[type] = { totalPct: 0, totalShares: 0, count: 0 }
+      groupMap[type].totalPct += d.percentage
+      groupMap[type].totalShares += d.shares
+      groupMap[type].count += 1
+    })
+    return Object.entries(groupMap).map(([name, data]) => ({ name, value: data.totalPct, shares: data.totalShares, count: data.count }))
   }, [ownershipDetails])
 
   if (isLoading) return <div className="flex justify-center py-20"><Loader2 className="w-10 h-10 text-gold-400 animate-spin" /></div>
   if (errorMsg) return <div className="glass rounded-xl p-12 text-center"><AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" /><p className="text-red-400">{errorMsg}</p></div>
   if (!stockData) return null
 
+  const publicShares = (stockData.tradeable_shares || 0) * ((stockData.free_float || 0) / 100)
+  const floatCap = publicShares * stockData.close
+  const dailyTurnover = publicShares > 0 ? ((stockData.volume || 0) / publicShares) * 100 : 0
+  const marketCap = (stockData.tradeable_shares || 0) * stockData.close
+
   return (
     <div className="space-y-4 pb-12 animate-fade-in">
-
       {/* ═══ HEADER ═══ */}
-      <div className="glass rounded-3xl p-5 lg:p-7 border border-white/[0.08] shadow-2xl relative overflow-hidden">
-        <div className="flex flex-col xl:flex-row gap-6 justify-between relative z-10">
+      <div className="glass rounded-3xl p-5 lg:p-7 border border-white/[0.08] shadow-2xl">
+        <div className="flex flex-col xl:flex-row gap-6 justify-between">
           <div>
             <div className="flex items-center gap-3 mb-2">
               <h1 className="text-3xl lg:text-4xl font-black text-white">{stockCode}</h1>
@@ -242,11 +243,25 @@ export default function StockDetailPage() {
               </span>
             </div>
             <div className="text-xs text-muted-foreground mt-4 flex gap-3 bg-white/[0.02] p-2 rounded-lg w-fit">
-              <span>H:{formatNumber(stockData.high)}</span><span>L:{formatNumber(stockData.low)}</span><span>O:{formatNumber(stockData.open_price)}</span>
+              <span>H: {formatNumber(stockData.high)}</span><span>L: {formatNumber(stockData.low)}</span><span>O: {formatNumber(stockData.open_price)}</span>
               <span className="opacity-30">|</span><span><Clock className="w-3 h-3 inline" /> {String(stockData.trading_date).split('T')[0]}</span>
             </div>
           </div>
-          <div className={`rounded-3xl p-5 ${verdict.bg} border ${verdict.border} xl:min-w-[220px] flex flex-col justify-center`}>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 flex-1 xl:max-w-[440px]">
+            {[
+              { l: 'Market Cap', v: formatRupiah(marketCap), c: 'text-gold-400' },
+              { l: 'Float Cap', v: formatRupiah(floatCap), c: 'text-gold-400' },
+              { l: 'Public Shares', v: formatShares(publicShares), c: 'text-cyan-400' },
+              { l: 'Volume', v: formatShares(stockData.volume), c: 'text-orange-400' },
+              { l: 'Value', v: formatRupiah(stockData.value), c: 'text-blue-400' },
+            ].map((m, i) => (
+              <div key={i} className="p-3 rounded-2xl bg-white/[0.02] border border-white/[0.04]">
+                <p className="text-[10px] text-muted-foreground uppercase mb-2">{m.l}</p>
+                <p className={`text-base font-black ${m.c}`}>{m.v}</p>
+              </div>
+            ))}
+          </div>
+          <div className={`rounded-3xl p-5 ${verdict.bg} border ${verdict.border} xl:min-w-[260px] flex flex-col justify-center`}>
             <Shield className={`w-5 h-5 ${verdict.color} mb-2`} />
             <p className={`text-xl font-black ${verdict.color}`}>{verdict.label}</p>
             <p className="text-xs text-muted-foreground">Score: {Math.round(smiScore)}</p>
@@ -254,65 +269,22 @@ export default function StockDetailPage() {
         </div>
         <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mt-6 pt-5 border-t border-white/[0.05]">
           {[
-            { l: 'Score', v: Math.round(smiScore), c: smiScore >= 70 ? 'text-emerald-400' : smiScore >= 45 ? 'text-amber-400' : 'text-blue-400' },
-            { l: 'Signal', v: smiSignal, c: 'text-gold-400' },
-            { l: 'Foreign', v: formatRupiah(stockData.net_foreign_value), c: stockData.net_foreign_value >= 0 ? 'text-emerald-400' : 'text-red-400' },
-            { l: 'AOV', v: `${(stockData.aov_ratio_ma20||1).toFixed(2)}x`, c: stockData.aov_ratio_ma20 >= 1.5 ? 'text-purple-400' : '' },
-            { l: 'Volume', v: formatShares(stockData.volume), c: 'text-orange-400' },
-            { l: 'Float%', v: `${stockData.free_float?.toFixed(1)||'--'}%`, c: 'text-blue-400' },
+            { l: 'Conviction', v: `${Math.round(convictionScore)}`, c: convictionScore >= 70 ? 'text-emerald-400' : convictionScore >= 45 ? 'text-amber-400' : 'text-red-400' },
+            { l: 'Smart Money', v: `${Math.round(smiScore)}`, c: smiScore >= 70 ? 'text-emerald-400' : smiScore >= 45 ? 'text-amber-400' : 'text-red-400' },
+            { l: 'Foreign Flow', v: formatRupiah(stockData.net_foreign_value), c: stockData.net_foreign_value >= 0 ? 'text-emerald-400' : 'text-red-400' },
+            { l: 'AOV Ratio', v: `${(stockData.aov_ratio_ma20||1).toFixed(2)}x`, c: stockData.aov_ratio_ma20 >= 1.5 ? 'text-purple-400' : '' },
+            { l: 'Turnover', v: `${dailyTurnover.toFixed(2)}%`, c: dailyTurnover > 5 ? 'text-emerald-400' : 'text-amber-400' },
+            { l: 'Free Float', v: `${stockData.free_float?.toFixed(1)||'--'}%`, c: 'text-blue-400' },
           ].map((m, i) => (
             <div key={i} className="p-2 rounded-xl bg-white/[0.01] border border-white/[0.03] text-center">
-              <p className="text-[9px] text-muted-foreground uppercase">{m.l}</p>
+              <p className="text-[9px] text-muted-foreground uppercase mb-1">{m.l}</p>
               <p className={`text-sm font-black ${m.c}`}>{m.v}</p>
             </div>
           ))}
         </div>
       </div>
 
-      {/* ═══ 3 KOLOM ═══ */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="glass rounded-xl p-4 border border-white/[0.06]">
-          <div className="flex items-center gap-2 mb-3"><Target className="w-4 h-4 text-gold-400" /><h3 className="text-[10px] font-black text-gold-400 uppercase">Smart Money</h3></div>
-          {smartMoneyScore ? (
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { l: 'Score', v: Math.round(smiScore), c: 'text-emerald-400' },
-                { l: 'Foreign 30D', v: formatRupiah(smartMoneyScore.foreign_30d || 0), c: (smartMoneyScore.foreign_30d || 0) >= 0 ? 'text-emerald-400' : 'text-red-400' },
-                { l: 'Broker Net', v: formatRupiah(smartMoneyScore.broker_net || 0), c: (smartMoneyScore.broker_net || 0) >= 0 ? 'text-emerald-400' : 'text-red-400' },
-                { l: 'AOV', v: `${(smartMoneyScore.aov_ratio_ma20 || 1).toFixed(2)}x`, c: smartMoneyScore.aov_ratio_ma20 >= 1.5 ? 'text-purple-400' : '' },
-              ].map((m, i) => (
-                <div key={i} className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
-                  <p className="text-[8px] text-muted-foreground uppercase">{m.l}</p><p className={`text-xs font-black ${m.c}`}>{m.v}</p>
-                </div>
-              ))}
-            </div>
-          ) : <p className="text-xs text-muted-foreground text-center py-4">No data</p>}
-        </div>
-
-        <div className="glass rounded-xl p-4 border border-white/[0.06]">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2"><Building2 className="w-4 h-4 text-blue-400" /><h3 className="text-[10px] font-black text-blue-400 uppercase">Broker</h3></div>
-            <Link href={`/bandarmologi?code=${stockCode}`} className="text-[9px] text-blue-400 font-bold">Full →</Link>
-          </div>
-          {brokerData.length > 0 ? (
-            <div className="space-y-1.5">
-              {brokerData.slice(0, 4).map((b, i) => (
-                <div key={i} className="flex justify-between py-1.5 border-b border-white/[0.03] last:border-0">
-                  <div><p className="text-[10px] font-bold truncate w-[60px]">{b.kode_broker}</p></div>
-                  <span className={`text-[10px] font-black ${Number(b.net_value) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatRupiah(Number(b.net_value))}</span>
-                </div>
-              ))}
-            </div>
-          ) : <p className="text-xs text-muted-foreground text-center py-8">No Broker Data</p>}
-        </div>
-
-        <div className="glass rounded-xl p-4 border border-white/[0.06]">
-          <div className="flex items-center gap-2 mb-3"><PieChartIcon className="w-4 h-4 text-gold-400" /><h3 className="text-[10px] font-black text-gold-400 uppercase">Ownership</h3></div>
-          {ownershipPieData.length > 0 ? <SimplePie data={ownershipPieData} /> : <p className="text-xs text-muted-foreground text-center py-8">No data</p>}
-        </div>
-      </div>
-
-      {/* ═══ CHART — Pindah ke bawah ═══ */}
+      {/* ═══ CHART ═══ */}
       <div ref={chartWrapRef} className="glass rounded-2xl p-4 border border-white/[0.06]">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-1 bg-white/[0.04] rounded-lg p-0.5">
@@ -321,11 +293,104 @@ export default function StockDetailPage() {
                 className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${period === opt.days ? 'bg-gold-400/20 text-gold-400' : 'text-muted-foreground hover:text-white'}`}>{opt.label}</button>
             ))}
           </div>
-          <button onClick={toggleFullscreen} className="p-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-muted-foreground hover:text-gold-400">
+          <button onClick={() => {
+            if (!chartWrapRef.current) return
+            if (!isFullscreen) chartWrapRef.current.requestFullscreen?.().catch(() => {})
+            else document.exitFullscreen?.().catch(() => {})
+            setIsFullscreen(f => !f)
+          }} className="p-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-muted-foreground hover:text-gold-400">
             {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </button>
         </div>
-        <div ref={chartContainerRef} style={{ height: '600px', width: '100%' }} />
+        <div ref={chartContainerRef} style={{ width: '100%', minHeight: '600px' }} />
+      </div>
+
+      {/* ═══ 3 KOLOM ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="glass rounded-xl p-4 border border-white/[0.06]">
+          <div className="flex items-center gap-2 mb-3"><Target className="w-4 h-4 text-gold-400" /><h3 className="text-[10px] font-black text-gold-400 uppercase">Smart Money Index</h3></div>
+          {smartMoneyIndex ? (
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { l: 'Score', v: Math.round(smiScore), c: 'text-emerald-400' },
+                  { l: 'Foreign 30D', v: formatRupiah(smartMoneyIndex.foreign_30d || 0), c: (smartMoneyIndex.foreign_30d || 0) >= 0 ? 'text-emerald-400' : 'text-red-400' },
+                  { l: 'Broker Net', v: formatRupiah(smartMoneyIndex.broker_net || 0), c: (smartMoneyIndex.broker_net || 0) >= 0 ? 'text-emerald-400' : 'text-red-400' },
+                  { l: 'AOV', v: `${(smartMoneyIndex.aov_ratio_ma20 || 1).toFixed(2)}x`, c: (smartMoneyIndex.aov_ratio_ma20 || 0) >= 1.5 ? 'text-purple-400' : '' },
+                ].map((m, i) => (
+                  <div key={i} className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                    <p className="text-[8px] text-muted-foreground uppercase">{m.l}</p><p className={`text-xs font-black ${m.c}`}>{m.v}</p>
+                  </div>
+                ))}
+              </div>
+              {smartMoneyIndex.score_breakdown && <p className="text-[9px] text-muted-foreground font-mono">{smartMoneyIndex.score_breakdown}</p>}
+            </div>
+          ) : <p className="text-xs text-muted-foreground text-center py-4">No data</p>}
+        </div>
+
+        <div className="glass rounded-xl p-4 border border-white/[0.06]">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2"><Building2 className="w-4 h-4 text-blue-400" /><h3 className="text-[10px] font-black text-blue-400 uppercase">Broker Activity</h3></div>
+            <Link href={`/bandarmologi?code=${stockCode}`} className="text-[9px] text-blue-400 font-bold">Full →</Link>
+          </div>
+          {brokerData.length > 0 ? (
+            <div className="space-y-1.5">
+              {brokerData.map((b, i) => (
+                <div key={i} className="flex justify-between py-1.5 border-b border-white/[0.03] last:border-0">
+                  <div><p className="text-[10px] font-bold">{b.kode_broker}</p><p className="text-[8px] text-muted-foreground/50 truncate max-w-[100px]">{b.nama_broker}</p></div>
+                  <span className={`text-[10px] font-black ${Number(b.net_value) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatRupiah(Number(b.net_value))}</span>
+                </div>
+              ))}
+            </div>
+          ) : <p className="text-xs text-muted-foreground text-center py-8">No Broker Data</p>}
+        </div>
+
+        <div className="glass rounded-xl p-4 border border-white/[0.06]">
+          <div className="flex items-center gap-2 mb-3"><Globe className="w-4 h-4 text-emerald-400" /><h3 className="text-[10px] font-black text-emerald-400 uppercase">Foreign Flow</h3></div>
+          <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+            <span className={`text-sm font-black ${stockData.net_foreign_value >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              {stockData.net_foreign_value >= 0 ? '+' : ''}{formatRupiah(stockData.net_foreign_value)}
+            </span>
+            <p className="text-[8px] text-muted-foreground mt-1">Latest trading day</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ═══ OWNERSHIP ═══ */}
+      <div className="glass rounded-2xl p-5 border border-white/[0.06]">
+        <div className="flex items-center gap-2 mb-4"><PieChartIcon className="w-4 h-4 text-gold-400" /><h2 className="text-sm font-black text-white uppercase">Ownership Structure</h2></div>
+        {ownershipPieData.length > 0 ? (
+          <div className="flex flex-col lg:flex-row gap-6">
+            <div className="w-64 h-64 mx-auto">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={ownershipPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={3} stroke="none">
+                    {ownershipPieData.map((_, i) => <Cell key={i} fill={INVESTOR_TYPE_COLORS[ownershipPieData[i].name] || '#6b7280'} />)}
+                  </Pie>
+                  <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }} formatter={(v: any) => [`${Number(v).toFixed(1)}%`]} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex-1 overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="text-[9px] text-muted-foreground uppercase border-b border-white/[0.05]">
+                  <th className="p-2 text-left">Investor</th><th className="p-2 text-left">Type</th><th className="p-2 text-center">L/F</th><th className="p-2 text-right">%</th><th className="p-2 text-right">Shares</th>
+                </tr></thead>
+                <tbody>
+                  {ownershipDetails.slice(0, 10).map((d: any, i: number) => (
+                    <tr key={i} className="border-b border-white/[0.02]">
+                      <td className="p-2 font-bold text-[10px] truncate max-w-[120px]">{d.investor_name}</td>
+                      <td className="p-2 text-[10px] text-muted-foreground">{d.investor_type}</td>
+                      <td className="p-2 text-center"><span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${d.local_foreign === 'F' ? 'bg-blue-500/10 text-blue-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{d.local_foreign === 'F' ? 'F' : 'L'}</span></td>
+                      <td className="p-2 text-right font-black">{d.percentage.toFixed(2)}%</td>
+                      <td className="p-2 text-right">{formatShares(d.shares)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : <p className="text-center py-8 text-muted-foreground text-sm">No ownership data</p>}
       </div>
 
       {/* ═══ WHALE ═══ */}
@@ -340,7 +405,7 @@ export default function StockDetailPage() {
                 <th className="p-2 text-center">Trend</th><th className="p-2 text-center">Verdict</th>
               </tr></thead>
               <tbody>
-                {whaleMovement.slice(0, 10).map((w, i) => (
+                {whaleMovement.slice(0, 10).map((w: any, i: number) => (
                   <tr key={i} className="border-b border-white/[0.02]">
                     <td className="p-2 font-bold text-[10px]">{w.investor_name?.slice(0, 30)}</td>
                     <td className="p-2 text-center"><span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${w.local_foreign === 'F' ? 'bg-blue-500/10 text-blue-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{w.local_foreign === 'F' ? 'F' : 'L'}</span></td>
