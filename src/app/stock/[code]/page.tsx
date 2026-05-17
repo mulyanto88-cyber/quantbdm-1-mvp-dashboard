@@ -13,29 +13,18 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip
 } from 'recharts'
 import Link from 'next/link'
-import { Pool } from 'pg'
 
 // ─── MotherDuck Connection ────────────────────────────────────────────────────
-const pool = new Pool({
-  host: 'pg.us-east-1-aws.motherduck.com',
-  port: 5432,
-  user: 'postgres',
-  password: process.env.MOTHERDUCK_TOKEN,
-  database: 'my_db',
-  ssl: { rejectUnauthorized: false },
-  max: 5,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
-})
 
 async function mdQuery(query: string, params?: any[]): Promise<any[]> {
-  const client = await pool.connect()
-  try {
-    const result = await client.query(query, params || [])
-    return result.rows
-  } finally {
-    client.release()
-  }
+  const res = await fetch('/api/motherduck', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, params }),
+  })
+  const json = await res.json()
+  if (json.error) throw new Error(json.error)
+  return json.data || []
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
