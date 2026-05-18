@@ -55,6 +55,9 @@ export default function SectorPage() {
   const [sectorStocks, setSectorStocks] = useState<any[]>([])
   const [stocksLoading, setStocksLoading] = useState(false)
 
+  // ⭐ NEW: Sector KPI state
+  const [sectorKPI, setSectorKPI] = useState<any>(null)
+
   const fetchSectors = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -91,7 +94,28 @@ export default function SectorPage() {
     }
   }, [])
 
-  useEffect(() => { fetchSectors() }, [fetchSectors])
+  // ⭐ NEW: Fetch Sector KPI
+  const fetchSectorKPI = useCallback(async () => {
+    try {
+      const data = await mdQuery(`
+        SELECT 
+          SUM(CASE WHEN foreign_flow > 0 THEN foreign_flow ELSE 0 END) AS total_inflow,
+          SUM(CASE WHEN foreign_flow < 0 THEN ABS(foreign_flow) ELSE 0 END) AS total_outflow,
+          COUNT(CASE WHEN signal LIKE '%BULLISH%' THEN 1 END) AS strong_inflow_count,
+          COUNT(CASE WHEN signal LIKE '%BEARISH%' THEN 1 END) AS strong_outflow_count,
+          COUNT(*) AS total_sectors
+        FROM market.vw_sector_analytics
+      `)
+      if (data.length > 0) setSectorKPI(data[0])
+    } catch (err: any) {
+      console.error('KPI fetch error:', err)
+    }
+  }, [])
+
+  useEffect(() => { 
+    fetchSectors()
+    fetchSectorKPI()
+  }, [fetchSectors, fetchSectorKPI])
 
   const fetchSectorStocks = useCallback(async (sector: string) => {
     setStocksLoading(true)
@@ -116,7 +140,6 @@ export default function SectorPage() {
   const totalStocks = sectors.reduce((s, sec) => s + sec.stock_count, 0)
   const totalFlow = sectors.reduce((s, sec) => s + sec.foreign_flow, 0)
   const totalValue = sectors.reduce((s, sec) => s + sec.total_value, 0)
-  const bullishSectors = sectors.filter(s => s.momentum_score >= 50).length
 
   return (
     <div className="space-y-5 animate-fade-in pb-10">
@@ -139,13 +162,15 @@ export default function SectorPage() {
         </button>
       </div>
 
-      {/* KPI Cards */}
+      {/* ════════════════════════════════════════════════════════════
+          ⭐ KPI CARDS — TOP ROW
+          ════════════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'Bullish Sectors', value: `${bullishSectors}/${sectors.length}`, color: 'text-emerald-400', icon: TrendingUp },
           { label: 'Total Value', value: formatRupiah(totalValue), color: 'text-gold-400', icon: BarChart3 },
           { label: 'Net Foreign', value: formatRupiah(totalFlow), color: totalFlow >= 0 ? 'text-emerald-400' : 'text-red-400', icon: Globe },
           { label: 'Total Stocks', value: totalStocks.toString(), color: 'text-blue-400', icon: Target },
+          { label: 'Sectors', value: sectors.length.toString(), color: 'text-purple-400', icon: Building2 },
         ].map((m, i) => {
           const Icon = m.icon
           return (
@@ -157,6 +182,29 @@ export default function SectorPage() {
           )
         })}
       </div>
+
+      {/* ════════════════════════════════════════════════════════════
+          ⭐ KPI CARDS — FOREIGN FLOW SUMMARY
+          ════════════════════════════════════════════════════════════ */}
+      {sectorKPI && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: 'Total Inflow', value: formatRupiah(Number(sectorKPI.total_inflow)), color: 'text-emerald-400', icon: TrendingUp },
+            { label: 'Total Outflow', value: formatRupiah(Number(sectorKPI.total_outflow)), color: 'text-red-400', icon: TrendingDown },
+            { label: 'Strong Inflow', value: `${sectorKPI.strong_inflow_count}/${sectorKPI.total_sectors} sectors`, color: 'text-emerald-400', icon: ArrowUp },
+            { label: 'Strong Outflow', value: `${sectorKPI.strong_outflow_count}/${sectorKPI.total_sectors} sectors`, color: 'text-red-400', icon: ArrowDown },
+          ].map((m, i) => {
+            const Icon = m.icon
+            return (
+              <div key={i} className="glass rounded-xl p-4 border border-border/30 card-hover">
+                <Icon className={`w-4 h-4 ${m.color} mb-2`} />
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{m.label}</p>
+                <p className={`text-lg font-black mt-1 ${m.color}`}>{m.value}</p>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Error */}
       {error && (
