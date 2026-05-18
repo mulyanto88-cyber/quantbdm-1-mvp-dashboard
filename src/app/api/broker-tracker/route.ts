@@ -7,14 +7,14 @@ function buildDateFilter(days: string | null, startDate: string | null, endDate:
     if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) {
       throw new Error('Format tanggal tidak valid. Gunakan YYYY-MM-DD')
     }
-    return { clause: `date BETWEEN $1::DATE AND $2::DATE`, params: [startDate, endDate] }
+    return { clause: `CAST(date AS DATE) BETWEEN $1::DATE AND $2::DATE`, params: [startDate, endDate] }
   }
   const d = parseInt(days || '5')
   if (isNaN(d) || d < 0) throw new Error('Parameter days harus angka positif')
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - d)
   const cutoffStr = cutoff.toISOString().split('T')[0]
-  return { clause: `date >= $1::DATE`, params: [cutoffStr] }
+  return { clause: `CAST(date AS DATE) >= $1::DATE`, params: [cutoffStr] }
 }
 
 function validateStockCode(code: string): string {
