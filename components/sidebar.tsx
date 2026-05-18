@@ -105,15 +105,14 @@ const navGroups = [
   {
     title: 'Flow & Ownership',
     items: [
-      { href: '/stock/BBRI', label: 'Stock Terminal',    icon: icons.search },
-      { href: '/ksei1persen',    label: 'KSEI >1% Ownership',     icon: icons.eye,        badge: 'PRO' },
-      { href: '/broker-tracker', label: 'Broker Tracker',  icon: icons.flow, badge: 'PRO' },
+      { href: '/ksei1persen',    label: 'KSEI >1%',     icon: icons.eye,        badge: 'PRO' },
+      { href: '/broker-tracker', label: 'Broker Tracker',  icon: icons.flow,       badge: 'PRO' },
     ]
   },
   {
     title: 'Tools',
     items: [
-      { href: '/backtest',  label: 'Backtest Lab',       icon: icons.lab,        badge: 'PRO' },
+      { href: '/backtest',  label: 'Backtest Lab',       icon: icons.lab,        badge: 'BETA' },
     ]
   }
 ]
