@@ -98,30 +98,22 @@ const navGroups = [
     title: 'Market Intelligence',
     items: [
       { href: '/',          label: 'Market Overview',    icon: icons.dashboard },
-      { href: '/stocks',    label: 'Stock Terminal',     icon: icons.search },
-      { href: '/sector',    label: 'Sector Heatmap',     icon: icons.sector },
-    ]
-  },
-  {
-    title: 'Signals & Screeners',
-    items: [
       { href: '/screener',  label: 'Screener Pro',       icon: icons.crosshair,  badge: 'PRO' },
-      { href: '/ksei1persen', label: 'KSEI >1%', icon: icons.eye },
+      { href: '/sector',    label: 'Sector Analytics',   icon: icons.sector,     badge: 'NEW' },
     ]
   },
   {
-    title: 'Flow & Institutional',
+    title: 'Flow & Ownership',
     items: [
-      { href: '/bandarmologi', label: 'Broker Summary',  icon: icons.flow, badge: 'NEW' },
-      { href: '/flow',         label: 'Whale & KSEI',    icon: icons.building, badge: 'PRO' },
-      { href: '/konlo',        label: 'Konglomerasi',    icon: icons.target },
+      { href: '/stock/BBRI', label: 'Stock Terminal',    icon: icons.search },
+      { href: '/insider',    label: 'Insider Alerts',     icon: icons.eye,        badge: 'LIVE' },
+      { href: '/bandarmologi', label: 'Broker Tracker',  icon: icons.flow,       badge: 'PRO' },
     ]
   },
   {
-    title: 'Tools & Settings',
+    title: 'Tools',
     items: [
-      { href: '/backtest',  label: 'Backtest Lab',       icon: icons.lab,        badge: 'NEW' },
-      { href: '/pricing',   label: 'Pricing',            icon: icons.crown },
+      { href: '/backtest',  label: 'Backtest Lab',       icon: icons.lab,        badge: 'SOON' },
     ]
   }
 ]
