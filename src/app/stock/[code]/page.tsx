@@ -38,7 +38,7 @@ export default function StockDetailPage() {
   const params = useParams()
   const stockCode = (params?.code as string)?.toUpperCase() || ''
 
-  const [period, setPeriod] = useState(90)
+  const [period, setPeriod] = useState(365)
   const [stockData, setStockData] = useState<any>(null)
   const [historyData, setHistoryData] = useState<any[]>([])
   const [smartMoneyIndex, setSmartMoneyIndex] = useState<any>(null)
