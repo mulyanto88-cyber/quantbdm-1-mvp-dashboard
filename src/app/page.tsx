@@ -7,33 +7,10 @@ import { run } from '@/lib/db'
 
 export const revalidate = 60
 
-// ── MotherDuck Connection Pool ──────────────────────────────────────────────
-const pool = new Pool({
-  host: 'pg.us-east-1-aws.motherduck.com',
-  port: 5432,
-  user: 'postgres',
-  password: process.env.MOTHERDUCK_TOKEN,
-  database: 'my_db',
-  ssl: { rejectUnauthorized: false },
-  max: 5,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
-})
-
-// ── Query Helper ────────────────────────────────────────────────────────────
-async function mdQuery(query: string, params?: any[]) {
-  const client = await pool.connect()
-  try {
-    const result = await client.query(query, params || [])
-    return result.rows
-  } finally {
-    client.release()
-  }
-}
 
 // ── Data Fetching ──────────────────────────────────────────────────────────
 async function getMarketBreadth() {
-  const rows = await mdQuery(`
+  const rows = await run(`
     SELECT 
       MAX(trading_date)::VARCHAR AS date,
       SUM(total_value)::BIGINT AS total_value,
@@ -64,7 +41,7 @@ async function getMarketBreadth() {
 }
 
 async function getHighConviction() {
-  return mdQuery(`
+  return run(`
     SELECT 
       stock_code,
       sector,
@@ -82,7 +59,7 @@ async function getHighConviction() {
 
 async function getBigPlayerActivity() {
   const [brokers, insiders, kseiMovers] = await Promise.all([
-    mdQuery(`
+    run(`
       SELECT 
         broker_name AS nama_broker,
         total_stocks AS saham_count,
@@ -93,13 +70,13 @@ async function getBigPlayerActivity() {
       ORDER BY ABS(net_value) DESC
       LIMIT 5
     `),
-    mdQuery(`
+    run(`
       SELECT * FROM ksei.vw_insider_alerts
       WHERE alert_level = 'HIGH'
       ORDER BY ABS(pct_point_change) DESC
       LIMIT 5
     `),
-    mdQuery(`
+    run(`
       SELECT 
         Code AS share_code,
         Top_Buyer AS investor_name,
