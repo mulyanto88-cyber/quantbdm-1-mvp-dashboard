@@ -112,9 +112,9 @@ export async function GET(req: NextRequest) {
         LIMIT 100
       `, [code]),
 
-      // 6. Whale timing — dari pre-built view (sudah computed)
+      // 6. Whale timing — dari snapshot table (lebih cepat)
       run(
-        `SELECT * FROM ksei.vw_whale_timing WHERE share_code = $1`,
+        `SELECT * FROM ksei.whale_timing_snapshot WHERE share_code = $1`,
         [code]
       ),
 
