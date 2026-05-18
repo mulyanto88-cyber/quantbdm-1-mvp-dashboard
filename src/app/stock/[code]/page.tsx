@@ -143,8 +143,10 @@ export default function StockDetailPage() {
   
     chartContainerRef.current.innerHTML = ''
     const chart = lwc.createChart(chartContainerRef.current, {
-      height: isFullscreen ? window.innerHeight - 50 : 600,
-      autoSize: true,
+      height: 600,
+      localization: {
+        priceFormatter: (price: number) => Math.round(price).toLocaleString('id-ID'),
+      },
       layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#94a3b8' },
       grid: { vertLines: { color: 'rgba(51,65,85,0.15)' }, horzLines: { color: 'rgba(51,65,85,0.15)' } },
       crosshair: { mode: 1 },
