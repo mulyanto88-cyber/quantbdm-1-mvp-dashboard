@@ -106,7 +106,7 @@ const navGroups = [
     title: 'Flow & Ownership',
     items: [
       { href: '/stock/BBRI', label: 'Stock Terminal',    icon: icons.search },
-      { href: '/ksei1persen',    label: 'KSEI >1% Ownership Intelligence',     icon: icons.eye,        badge: 'PRO' },
+      { href: '/ksei1persen',    label: 'KSEI >1% Ownership',     icon: icons.eye,        badge: 'PRO' },
       { href: '/broker-tracker', label: 'Broker Tracker',  icon: icons.flow, badge: 'PRO' },
     ]
   },
