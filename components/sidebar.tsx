@@ -113,7 +113,7 @@ const navGroups = [
   {
     title: 'Tools',
     items: [
-      { href: '/backtest',  label: 'Backtest Lab',       icon: icons.lab,        badge: 'SOON' },
+      { href: '/backtest',  label: 'Backtest Lab',       icon: icons.lab,        badge: 'PRO' },
     ]
   }
 ]
