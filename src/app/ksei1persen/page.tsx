@@ -149,7 +149,7 @@ export default function InsiderPage() {
         <div>
           <h1 className="text-3xl md:text-4xl font-black tracking-tight">
             <Eye className="w-8 h-8 text-red-400 inline mr-2" />
-            <span className="bg-gradient-to-r from-red-400 to-amber-400 bg-clip-text text-transparent">Insider Alerts</span>
+            <span className="bg-gradient-to-r from-red-400 to-amber-400 bg-clip-text text-transparent">KSEI >1% Ownership Intelligence</span>
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
             Track insider & institutional ownership changes · Monthly KSEI data
