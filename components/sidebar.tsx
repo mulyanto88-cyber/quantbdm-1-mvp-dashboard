@@ -107,7 +107,7 @@ const navGroups = [
     items: [
       { href: '/stock/BBRI', label: 'Stock Terminal',    icon: icons.search },
       { href: '/insider',    label: 'Insider Alerts',     icon: icons.eye,        badge: 'LIVE' },
-      { href: '/bandarmologi', label: 'Broker Tracker',  icon: icons.flow,       badge: 'PRO' },
+      { href: '/broker-tracker', label: 'Broker Tracker',  icon: icons.flow, badge: 'PRO' },
     ]
   },
   {
