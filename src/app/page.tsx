@@ -3,7 +3,7 @@ import { ArrowRightLeft, ShieldCheck, Zap, Globe, Target } from 'lucide-react'
 import Link from 'next/link'
 import { formatRupiah, formatNumber } from '@/lib/utils'
 import SectorRotationWidget from './_components/SectorRotationWidget'
-import { Pool } from 'pg'
+import { run } from '@/lib/db'
 
 export const revalidate = 60
 
