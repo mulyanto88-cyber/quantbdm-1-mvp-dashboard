@@ -1,12 +1,11 @@
 import React from 'react'
-import { ArrowRightLeft, ShieldCheck, Zap, Globe, Target } from 'lucide-react'
+import { ArrowRightLeft, ShieldCheck, Zap, Globe, Target, Shield } from 'lucide-react'
 import Link from 'next/link'
 import { formatRupiah, formatNumber } from '@/lib/utils'
 import SectorRotationWidget from './_components/SectorRotationWidget'
 import { run } from '@/lib/db'
 
 export const revalidate = 60
-
 
 // ── Data Fetching ──────────────────────────────────────────────────────────
 async function getMarketBreadth() {
@@ -88,7 +87,6 @@ async function getBigPlayerActivity() {
       LIMIT 5
     `),
   ])
-
   return { brokers, insiders, kseiAlerts: kseiMovers }
 }
 
@@ -111,12 +109,29 @@ function ScoreRing({ score, size = 48 }: { score: number; size?: number }) {
   )
 }
 
+// ── Stealth Radar Client Component ─────────────────────────────────────────
+async function getStealthRadarData() {
+  return run(`
+    SELECT 
+      Code AS stock_code,
+      Price,
+      CP_Flow_Miliar,
+      Price_Chg_Pct,
+      Signal
+    FROM ksei.vw_stealth_accumulation
+    WHERE Signal != 'NORMAL'
+    ORDER BY ABS(CP_Flow_Miliar) DESC
+    LIMIT 8
+  `)
+}
+
 // ── Page Component ─────────────────────────────────────────────────────────
 export default async function MarketOverview() {
-  const [breadth, highConviction, bigPlayers] = await Promise.all([
+  const [breadth, highConviction, bigPlayers, stealthData] = await Promise.all([
     getMarketBreadth(),
     getHighConviction(),
     getBigPlayerActivity(),
+    getStealthRadarData(),
   ])
 
   if (!breadth) {
@@ -235,10 +250,48 @@ export default async function MarketOverview() {
       </div>
 
       {/* ════════════════════════════════════════════════════════════
+          BLOK 3.5: 🕵️ STEALTH RADAR (PREMIUM)
+          ════════════════════════════════════════════════════════════ */}
+      {stealthData.length > 0 && (
+        <div className="glass rounded-2xl p-5 border border-purple-500/20">
+          <div className="flex items-center gap-2 mb-4">
+            <Shield className="w-4 h-4 text-purple-400" />
+            <h2 className="text-sm font-black text-white uppercase tracking-widest">🕵️ Stealth Radar</h2>
+            <span className="text-[9px] text-muted-foreground/40 hidden sm:inline">· Monthly KSEI</span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {stealthData.map((s: any, i: number) => (
+              <Link key={i} href={`/stock/${s.stock_code}`}
+                className={`glass rounded-xl p-4 border transition-all hover:scale-[1.02] ${
+                  s.Signal.includes('STEALTH') ? 'border-purple-500/30 hover:border-purple-400/50' :
+                  s.Signal.includes('DIP') ? 'border-emerald-500/30 hover:border-emerald-400/50' :
+                  'border-red-500/30 hover:border-red-400/50'
+                }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-mono font-black text-sm">{s.stock_code}</span>
+                  <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-bold ${
+                    s.Signal.includes('STEALTH') ? 'bg-purple-500/20 text-purple-400' :
+                    s.Signal.includes('DIP') ? 'bg-emerald-500/20 text-emerald-400' :
+                    'bg-red-500/20 text-red-400'
+                  }`}>{s.Signal}</span>
+                </div>
+                <p className="text-lg font-black">{formatRupiah(s.Price)}</p>
+                <div className="flex justify-between text-[10px] mt-2">
+                  <span className="text-muted-foreground">CP Flow: <span className="text-purple-400 font-bold">{Number(s.CP_Flow_Miliar).toFixed(1)}M</span></span>
+                  <span className={Number(s.Price_Chg_Pct) >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                    {Number(s.Price_Chg_Pct) >= 0 ? '+' : ''}{Number(s.Price_Chg_Pct).toFixed(1)}%
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════
           BLOK 4: BIG PLAYER ACTIVITY
           ════════════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        {/* Broker Top Movers */}
         <div className="glass rounded-xl p-4 border border-white/[0.06]">
           <div className="flex items-center gap-1.5 mb-3">
             <ArrowRightLeft className="w-3.5 h-3.5 text-blue-400" />
@@ -260,7 +313,6 @@ export default async function MarketOverview() {
           </div>
         </div>
 
-        {/* Insider Alerts */}
         <div className="glass rounded-xl p-4 border border-white/[0.06]">
           <div className="flex items-center gap-1.5 mb-3">
             <ShieldCheck className="w-3.5 h-3.5 text-red-400" />
@@ -286,7 +338,6 @@ export default async function MarketOverview() {
           </div>
         </div>
 
-        {/* KSEI Movers */}
         <div className="glass rounded-xl p-4 border border-white/[0.06]">
           <div className="flex items-center gap-1.5 mb-3">
             <Globe className="w-3.5 h-3.5 text-purple-400" />
