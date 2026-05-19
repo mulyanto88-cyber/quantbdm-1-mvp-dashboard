@@ -26,43 +26,64 @@ export default function SmartMoneyMatrix() {
   const [tacticalList, setTacticalList] = useState<any[]>([])
   const [strategicList, setStrategicList] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // ⭐ Filter states
-  const [foreignDays, setForeignDays] = useState(5)
   const [threshold, setThreshold] = useState(10)
 
   // ─── Data Fetching ─────────────────────────────────────────────────────────
-  const fetchLeaderboards = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+  
+  // 1. Fetch Strategic (Hanya dipanggil 1 kali saat pertama buka halaman)
+  const fetchStrategic = useCallback(async () => {
     try {
-      const tacticalData = await mdQuery(`
-        SELECT * FROM market.vw_tactical_momentum_smart_money 
-        WHERE ABS(net_foreign_5d) > ${threshold * 1000000000}
-           OR ABS(broker_net_5d) > ${threshold * 1000000000}
-        ORDER BY ABS(net_foreign_5d) DESC, ABS(broker_net_5d) DESC 
-        LIMIT 30
-      `)
-      setTacticalList(tacticalData)
-
       const strategicData = await mdQuery(`
         SELECT * FROM ksei.vw_strategic_positioning_whale_movement_tracker 
         ORDER BY mom_change_pct DESC 
         LIMIT 30
       `)
       setStrategicList(strategicData)
+    } catch (err: any) {
+      console.error('Strategic Error:', err)
+    }
+  }, [])
+
+  // 2. Fetch Tactical (Dipanggil tiap kali filter 'threshold' berubah)
+  const fetchTactical = useCallback(async () => {
+    // Jika data sudah ada, gunakan 'isRefreshing' agar tabel tidak hilang/lompat
+    if (tacticalList.length > 0) setIsRefreshing(true)
+    else setLoading(true)
+    
+    setError(null)
+    try {
+      // Security Improvement: Menggunakan parameterized query ($1) untuk threshold
+      const tacticalData = await mdQuery(`
+        SELECT * FROM market.vw_tactical_momentum_smart_money 
+        WHERE ABS(net_foreign_5d) > $1 * 1000000000
+           OR ABS(broker_net_5d) > $1 * 1000000000
+        ORDER BY ABS(net_foreign_5d) DESC, ABS(broker_net_5d) DESC 
+        LIMIT 30
+      `, [threshold])
       
+      setTacticalList(tacticalData)
     } catch (err: any) {
       setError(err.message || 'Failed to fetch data')
     } finally {
       setLoading(false)
+      setIsRefreshing(false)
     }
-  }, [threshold])
+  }, [threshold, tacticalList.length]) // strategic tidak di-fetch ulang!
 
+  // Panggil saat halaman pertama di-load
   useEffect(() => {
-    fetchLeaderboards()
-  }, [fetchLeaderboards])
+    fetchStrategic()
+  }, [fetchStrategic])
+
+  // Panggil saat halaman di-load ATAU threshold berubah
+  useEffect(() => {
+    fetchTactical()
+  }, [fetchTactical])
+
 
   // ─── Single Stock Search ───────────────────────────────────────────────────
   const handleSearch = async (e: React.FormEvent) => {
@@ -269,7 +290,7 @@ export default function SmartMoneyMatrix() {
       ) : error ? (
         <div className="p-4 bg-red-500/10 text-red-400 rounded-xl">{error}</div>
       ) : (
-        <div className="glass rounded-2xl border border-border/30 overflow-hidden">
+        <div className={`glass rounded-2xl border border-border/30 overflow-hidden transition-opacity duration-300 ${isRefreshing ? 'opacity-40 pointer-events-none' : 'opacity-100'}`}>
           
           {/* TACTICAL TABLE */}
           {activeTab === 'TACTICAL' && (
