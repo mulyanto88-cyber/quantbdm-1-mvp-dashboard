@@ -153,13 +153,13 @@ export default function SmartMoneyMatrix() {
                   <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/5">
                     <div>
                       <p className="text-[9px] text-muted-foreground uppercase">Net Foreign (1D)</p>
-                      <p className={\`text-sm font-bold \${Number(searchedStock.tactical.net_foreign_value) >= 0 ? 'text-emerald-400' : 'text-red-400'}\`}>
+                      <p className={`text-sm font-bold ${Number(searchedStock.tactical.net_foreign_value) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {formatRupiah(Number(searchedStock.tactical.net_foreign_value))}
                       </p>
                     </div>
                     <div>
                       <p className="text-[9px] text-muted-foreground uppercase">Broker Net (5D)</p>
-                      <p className={\`text-sm font-bold \${Number(searchedStock.tactical.broker_net_5d) >= 0 ? 'text-emerald-400' : 'text-red-400'}\`}>
+                      <p className={`text-sm font-bold ${Number(searchedStock.tactical.broker_net_5d) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {formatRupiah(Number(searchedStock.tactical.broker_net_5d))}
                       </p>
                     </div>
@@ -199,7 +199,7 @@ export default function SmartMoneyMatrix() {
                     </div>
                     <div>
                       <p className="text-[9px] text-muted-foreground uppercase">MoM Change</p>
-                      <p className={\`text-sm font-bold \${Number(searchedStock.strategic.mom_change_pct) >= 0 ? 'text-emerald-400' : 'text-red-400'}\`}>
+                      <p className={`text-sm font-bold ${Number(searchedStock.strategic.mom_change_pct) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {Number(searchedStock.strategic.mom_change_pct) > 0 ? '+' : ''}{Number(searchedStock.strategic.mom_change_pct).toFixed(2)}%
                       </p>
                     </div>
@@ -222,18 +222,18 @@ export default function SmartMoneyMatrix() {
       <div className="flex items-center gap-2 border-b border-border/50">
         <button
           onClick={() => setActiveTab('TACTICAL')}
-          className={\`px-6 py-3 text-sm font-bold uppercase tracking-wider transition-all relative \${
+          className={`px-6 py-3 text-sm font-bold uppercase tracking-wider transition-all relative ${
             activeTab === 'TACTICAL' ? 'text-blue-400' : 'text-muted-foreground hover:text-white'
-          }\`}
+          }`}
         >
           ⚡ Tactical (Daily)
           {activeTab === 'TACTICAL' && <span className="absolute bottom-[-1px] left-0 w-full h-0.5 bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.8)]" />}
         </button>
         <button
           onClick={() => setActiveTab('STRATEGIC')}
-          className={\`px-6 py-3 text-sm font-bold uppercase tracking-wider transition-all relative \${
+          className={`px-6 py-3 text-sm font-bold uppercase tracking-wider transition-all relative ${
             activeTab === 'STRATEGIC' ? 'text-purple-400' : 'text-muted-foreground hover:text-white'
-          }\`}
+          }`}
         >
           🛡️ Strategic (Monthly)
           {activeTab === 'STRATEGIC' && <span className="absolute bottom-[-1px] left-0 w-full h-0.5 bg-purple-400 shadow-[0_0_8px_rgba(192,132,252,0.8)]" />}
@@ -268,7 +268,7 @@ export default function SmartMoneyMatrix() {
                   {tacticalList.map((row, i) => (
                     <tr key={i} className="hover:bg-white/[0.02] transition-colors group">
                       <td className="px-4 py-3">
-                        <Link href={\`/stock/\${row.stock_code}\`} className="font-mono font-black text-blue-400 hover:text-blue-300">
+                        <Link href={`/stock/${row.stock_code}`} className="font-mono font-black text-blue-400 hover:text-blue-300">
                           {row.stock_code}
                         </Link>
                       </td>
@@ -276,13 +276,13 @@ export default function SmartMoneyMatrix() {
                         <span className="font-bold text-xs">{row.tactical_signal}</span>
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-xs">{formatRupiah(Number(row.close))}</td>
-                      <td className={\`px-4 py-3 text-right text-xs font-bold \${Number(row.change_percent) >= 0 ? 'text-emerald-400' : 'text-red-400'}\`}>
+                      <td className={`px-4 py-3 text-right text-xs font-bold ${Number(row.change_percent) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {Number(row.change_percent) > 0 ? '+' : ''}{Number(row.change_percent).toFixed(2)}%
                       </td>
-                      <td className={\`px-4 py-3 text-right font-mono text-xs \${Number(row.net_foreign_value) >= 0 ? 'text-emerald-400' : 'text-red-400'}\`}>
+                      <td className={`px-4 py-3 text-right font-mono text-xs ${Number(row.net_foreign_value) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {formatRupiah(Number(row.net_foreign_value))}
                       </td>
-                      <td className={\`px-4 py-3 text-right font-mono text-xs \${Number(row.broker_net_5d) >= 0 ? 'text-emerald-400' : 'text-red-400'}\`}>
+                      <td className={`px-4 py-3 text-right font-mono text-xs ${Number(row.broker_net_5d) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {formatRupiah(Number(row.broker_net_5d))}
                       </td>
                     </tr>
@@ -310,7 +310,7 @@ export default function SmartMoneyMatrix() {
                   {strategicList.map((row, i) => (
                     <tr key={i} className="hover:bg-white/[0.02] transition-colors group">
                       <td className="px-4 py-3">
-                        <Link href={\`/stock/\${row.stock_code}\`} className="font-mono font-black text-purple-400 hover:text-purple-300">
+                        <Link href={`/stock/${row.stock_code}`} className="font-mono font-black text-purple-400 hover:text-purple-300">
                           {row.stock_code}
                         </Link>
                       </td>
@@ -323,7 +323,7 @@ export default function SmartMoneyMatrix() {
                       <td className="px-4 py-3 text-right font-mono text-xs text-slate-300">
                         {Number(row.prev_inst_pct).toFixed(2)}%
                       </td>
-                      <td className={\`px-4 py-3 text-right font-mono text-xs font-bold \${Number(row.mom_change_pct) >= 0 ? 'text-emerald-400' : 'text-red-400'}\`}>
+                      <td className={`px-4 py-3 text-right font-mono text-xs font-bold ${Number(row.mom_change_pct) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {Number(row.mom_change_pct) > 0 ? '+' : ''}{Number(row.mom_change_pct).toFixed(2)}%
                       </td>
                     </tr>
