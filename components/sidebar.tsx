@@ -98,8 +98,10 @@ const navGroups = [
     title: 'Market Intelligence',
     items: [
       { href: '/',          label: 'Market Overview',    icon: icons.dashboard },
-      { href: '/screener',  label: 'Screener Pro',       icon: icons.crosshair,  badge: 'PRO' },
       { href: '/sector',    label: 'Sector Analytics',   icon: icons.sector,     badge: 'NEW' },
+      { href: '/screener',  label: 'Screener Pro',       icon: icons.crosshair,  badge: 'PRO' },
+      { href: '/smart-money', label: 'Smart Money Matrix', icon: icons.crown, badge: 'NEW' },
+      
     ]
   },
   {
