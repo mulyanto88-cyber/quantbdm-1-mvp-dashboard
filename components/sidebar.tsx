@@ -101,6 +101,7 @@ const navGroups = [
       { href: '/sector',    label: 'Sector Analytics',   icon: icons.sector,     badge: 'NEW' },
       { href: '/screener',  label: 'Screener Pro',       icon: icons.crosshair,  badge: 'PRO' },
       { href: '/smart-money', label: 'Smart Money Matrix', icon: icons.crown, badge: 'NEW' },
+      { href: '/groups',    label: 'Group Intelligence', icon: icons.building,  badge: 'NEW' },
       
     ]
   },
