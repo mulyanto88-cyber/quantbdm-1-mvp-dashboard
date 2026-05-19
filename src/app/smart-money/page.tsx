@@ -56,14 +56,13 @@ export default function SmartMoneyMatrix() {
     
     setError(null)
     try {
-      // Security Improvement: Menggunakan parameterized query ($1) untuk threshold
       const tacticalData = await mdQuery(`
         SELECT * FROM market.vw_tactical_momentum_smart_money 
-        WHERE ABS(net_foreign_5d) > $1 * 1000000000
-           OR ABS(broker_net_5d) > $1 * 1000000000
+        WHERE ABS(net_foreign_5d) > CAST($1 AS BIGINT)
+           OR ABS(broker_net_5d) > CAST($1 AS BIGINT)
         ORDER BY ABS(net_foreign_5d) DESC, ABS(broker_net_5d) DESC 
         LIMIT 30
-      `, [threshold])
+      `, [threshold * 1000000000])
       
       setTacticalList(tacticalData)
     } catch (err: any) {
