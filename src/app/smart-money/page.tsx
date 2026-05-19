@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { formatRupiah } from '@/lib/utils'
-import { Search, Crown, Activity, Shield, Filter } from 'lucide-react'
+import { Search, Crown, Activity, Shield, Filter, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import Link from 'next/link'
 
 // ─── API Helper ──────────────────────────────────────────────────────────────
@@ -17,6 +17,10 @@ async function mdQuery(query: string, params?: any[]): Promise<any[]> {
   return json.data || []
 }
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+type SortField = 'close' | 'change_percent' | 'net_foreign_1d' | 'net_foreign_5d' | 'broker_net_5d'
+type SortDir = 'asc' | 'desc'
+
 export default function SmartMoneyMatrix() {
   const [activeTab, setActiveTab] = useState<'TACTICAL' | 'STRATEGIC'>('TACTICAL')
   const [searchQuery, setSearchQuery] = useState('')
@@ -26,15 +30,15 @@ export default function SmartMoneyMatrix() {
   const [tacticalList, setTacticalList] = useState<any[]>([])
   const [strategicList, setStrategicList] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [isRefreshing, setIsRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // ⭐ Filter states
+  // ⭐ Filter + Sort states
   const [threshold, setThreshold] = useState(10)
+  const [foreignDays, setForeignDays] = useState(5)
+  const [sortBy, setSortBy] = useState<SortField>('net_foreign_5d')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
 
-  // ─── Data Fetching ─────────────────────────────────────────────────────────
-  
-  // 1. Fetch Strategic (Hanya dipanggil 1 kali saat pertama buka halaman)
+  // ─── Fetch Strategic (1x) ──────────────────────────────────────────────────
   const fetchStrategic = useCallback(async () => {
     try {
       const strategicData = await mdQuery(`
@@ -48,20 +52,20 @@ export default function SmartMoneyMatrix() {
     }
   }, [])
 
-  // 2. Fetch Tactical (Dipanggil tiap kali filter 'threshold' berubah)
+  // ─── Fetch Tactical ────────────────────────────────────────────────────────
   const fetchTactical = useCallback(async () => {
-    // Jika data sudah ada, gunakan 'isRefreshing' agar tabel tidak hilang/lompat
-    if (tacticalList.length > 0) setIsRefreshing(true)
-    else setLoading(true)
-    
+    setLoading(true)
     setError(null)
     try {
+      // Konversi days ke interval (5 hari bursa = 7 hari kalender)
+      const intervalDays = foreignDays === 1 ? 1 : foreignDays === 3 ? 5 : foreignDays === 5 ? 7 : 14
+      
       const tacticalData = await mdQuery(`
         SELECT * FROM market.vw_tactical_momentum_smart_money 
         WHERE ABS(net_foreign_5d) > CAST($1 AS BIGINT)
            OR ABS(broker_net_5d) > CAST($1 AS BIGINT)
         ORDER BY ABS(net_foreign_5d) DESC, ABS(broker_net_5d) DESC 
-        LIMIT 30
+        LIMIT 50
       `, [threshold * 1000000000])
       
       setTacticalList(tacticalData)
@@ -69,20 +73,40 @@ export default function SmartMoneyMatrix() {
       setError(err.message || 'Failed to fetch data')
     } finally {
       setLoading(false)
-      setIsRefreshing(false)
     }
-  }, [threshold, tacticalList.length]) // strategic tidak di-fetch ulang!
+  }, [threshold, foreignDays])
 
-  // Panggil saat halaman pertama di-load
   useEffect(() => {
     fetchStrategic()
   }, [fetchStrategic])
 
-  // Panggil saat halaman di-load ATAU threshold berubah
   useEffect(() => {
     fetchTactical()
   }, [fetchTactical])
 
+  // ─── SORTED DATA ───────────────────────────────────────────────────────────
+  const sortedTactical = useMemo(() => {
+    return [...tacticalList].sort((a, b) => {
+      const aVal = Number(a[sortBy]) || 0
+      const bVal = Number(b[sortBy]) || 0
+      return sortDir === 'desc' ? bVal - aVal : aVal - bVal
+    })
+  }, [tacticalList, sortBy, sortDir])
+
+  // ─── SORT HANDLER ──────────────────────────────────────────────────────────
+  const toggleSort = (field: SortField) => {
+    if (sortBy === field) {
+      setSortDir(prev => prev === 'desc' ? 'asc' : 'desc')
+    } else {
+      setSortBy(field)
+      setSortDir('desc')
+    }
+  }
+
+  const SortArrow = ({ field }: { field: SortField }) => {
+    if (sortBy !== field) return <ArrowUpDown className="w-3 h-3 opacity-20" />
+    return sortDir === 'desc' ? <ArrowDown className="w-3 h-3 text-gold-400" /> : <ArrowUp className="w-3 h-3 text-gold-400" />
+  }
 
   // ─── Single Stock Search ───────────────────────────────────────────────────
   const handleSearch = async (e: React.FormEvent) => {
@@ -153,14 +177,12 @@ export default function SmartMoneyMatrix() {
         
         {searchedStock && !searchLoading && !searchedStock.notFound && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in">
-            
             {/* Tactical Card */}
             <div className="bg-gradient-to-br from-blue-900/20 to-black/40 p-5 rounded-xl border border-blue-500/20">
               <div className="flex items-center gap-2 mb-4">
                 <Activity className="w-5 h-5 text-blue-400" />
                 <h3 className="font-bold text-blue-400">Tactical Momentum (Daily)</h3>
               </div>
-              
               {searchedStock.tactical ? (
                 <div className="space-y-4">
                   <div className="flex justify-between items-end">
@@ -173,7 +195,6 @@ export default function SmartMoneyMatrix() {
                       <p className="font-mono font-bold text-white">{formatRupiah(Number(searchedStock.tactical.close))}</p>
                     </div>
                   </div>
-                  
                   <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/5">
                     <div>
                       <p className="text-[9px] text-muted-foreground uppercase">Foreign (1D)</p>
@@ -206,7 +227,6 @@ export default function SmartMoneyMatrix() {
                 <Shield className="w-5 h-5 text-purple-400" />
                 <h3 className="font-bold text-purple-400">Strategic Positioning (Monthly)</h3>
               </div>
-              
               {searchedStock.strategic ? (
                 <div className="space-y-4">
                   <div className="flex justify-between items-end">
@@ -219,7 +239,6 @@ export default function SmartMoneyMatrix() {
                       <p className="font-mono font-bold text-white">{Number(searchedStock.strategic.total_inst_pct).toFixed(2)}%</p>
                     </div>
                   </div>
-                  
                   <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/5">
                     <div>
                       <p className="text-[9px] text-muted-foreground uppercase">Previous</p>
@@ -252,23 +271,42 @@ export default function SmartMoneyMatrix() {
             activeTab === 'TACTICAL' ? 'text-blue-400' : 'text-muted-foreground hover:text-white'
           }`}>
           ⚡ Tactical (Daily)
-          {activeTab === 'TACTICAL' && <span className="absolute bottom-[-1px] left-0 w-full h-0.5 bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.8)]" />}
+          {activeTab === 'TACTICAL' && <span className="absolute bottom-[-1px] left-0 w-full h-0.5 bg-blue-400" />}
         </button>
         <button onClick={() => setActiveTab('STRATEGIC')}
           className={`px-6 py-3 text-sm font-bold uppercase tracking-wider transition-all relative ${
             activeTab === 'STRATEGIC' ? 'text-purple-400' : 'text-muted-foreground hover:text-white'
           }`}>
           🛡️ Strategic (Monthly)
-          {activeTab === 'STRATEGIC' && <span className="absolute bottom-[-1px] left-0 w-full h-0.5 bg-purple-400 shadow-[0_0_8px_rgba(192,132,252,0.8)]" />}
+          {activeTab === 'STRATEGIC' && <span className="absolute bottom-[-1px] left-0 w-full h-0.5 bg-purple-400" />}
         </button>
       </div>
 
       {/* ─── FILTER BAR (TACTICAL ONLY) ─── */}
       {activeTab === 'TACTICAL' && (
         <div className="flex items-center gap-4 flex-wrap">
+          {/* Period Filter */}
           <div className="flex items-center gap-2 text-xs">
             <Filter className="w-3.5 h-3.5 text-muted-foreground" />
-            <span className="text-muted-foreground">Min Flow:</span>
+            <span className="text-muted-foreground">Period:</span>
+            {[
+              { label: '1D', value: 1 },
+              { label: '3D', value: 3 },
+              { label: '5D', value: 5 },
+              { label: '10D', value: 10 },
+            ].map(p => (
+              <button key={p.value} onClick={() => setForeignDays(p.value)}
+                className={`px-3 py-1 rounded-lg font-bold transition-all ${
+                  foreignDays === p.value ? 'bg-blue-400/20 text-blue-400 border border-blue-400/30' : 'text-muted-foreground hover:text-white bg-white/[0.03] border border-white/[0.06]'
+                }`}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Threshold Filter */}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-muted-foreground">Min:</span>
             {[1, 5, 10, 50, 100].map(t => (
               <button key={t} onClick={() => setThreshold(t)}
                 className={`px-3 py-1 rounded-lg font-bold transition-all ${
@@ -289,7 +327,7 @@ export default function SmartMoneyMatrix() {
       ) : error ? (
         <div className="p-4 bg-red-500/10 text-red-400 rounded-xl">{error}</div>
       ) : (
-        <div className={`glass rounded-2xl border border-border/30 overflow-hidden transition-opacity duration-300 ${isRefreshing ? 'opacity-40 pointer-events-none' : 'opacity-100'}`}>
+        <div className="glass rounded-2xl border border-border/30 overflow-hidden">
           
           {/* TACTICAL TABLE */}
           {activeTab === 'TACTICAL' && (
@@ -299,15 +337,25 @@ export default function SmartMoneyMatrix() {
                   <tr>
                     <th className="px-4 py-3 font-medium">Stock</th>
                     <th className="px-4 py-3 font-medium">Signal</th>
-                    <th className="px-4 py-3 font-medium text-right">Price</th>
-                    <th className="px-4 py-3 font-medium text-right">Change</th>
-                    <th className="px-4 py-3 font-medium text-right">Foreign (1D)</th>
-                    <th className="px-4 py-3 font-medium text-right">Foreign (5D)</th>
-                    <th className="px-4 py-3 font-medium text-right">Broker Net (5D)</th>
+                    <th className="px-4 py-3 font-medium text-right cursor-pointer hover:text-white transition-colors" onClick={() => toggleSort('close')}>
+                      <span className="flex items-center justify-end gap-1">Price <SortArrow field="close" /></span>
+                    </th>
+                    <th className="px-4 py-3 font-medium text-right cursor-pointer hover:text-white transition-colors" onClick={() => toggleSort('change_percent')}>
+                      <span className="flex items-center justify-end gap-1">Change <SortArrow field="change_percent" /></span>
+                    </th>
+                    <th className="px-4 py-3 font-medium text-right cursor-pointer hover:text-white transition-colors" onClick={() => toggleSort('net_foreign_1d')}>
+                      <span className="flex items-center justify-end gap-1">Foreign (1D) <SortArrow field="net_foreign_1d" /></span>
+                    </th>
+                    <th className="px-4 py-3 font-medium text-right cursor-pointer hover:text-white transition-colors" onClick={() => toggleSort('net_foreign_5d')}>
+                      <span className="flex items-center justify-end gap-1">Foreign ({foreignDays}D) <SortArrow field="net_foreign_5d" /></span>
+                    </th>
+                    <th className="px-4 py-3 font-medium text-right cursor-pointer hover:text-white transition-colors" onClick={() => toggleSort('broker_net_5d')}>
+                      <span className="flex items-center justify-end gap-1">Broker Net ({foreignDays}D) <SortArrow field="broker_net_5d" /></span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/30">
-                  {tacticalList.map((row, i) => (
+                  {sortedTactical.map((row, i) => (
                     <tr key={i} className="hover:bg-white/[0.02] transition-colors group">
                       <td className="px-4 py-3">
                         <Link href={`/stock/${row.stock_code}`} className="font-mono font-black text-blue-400 hover:text-blue-300">
@@ -334,8 +382,8 @@ export default function SmartMoneyMatrix() {
                   ))}
                 </tbody>
               </table>
-              {tacticalList.length === 0 && (
-                <div className="p-8 text-center text-muted-foreground">No signals match the current filter. Try lowering the threshold.</div>
+              {sortedTactical.length === 0 && (
+                <div className="p-8 text-center text-muted-foreground">No signals match. Try lowering threshold.</div>
               )}
             </div>
           )}
