@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { formatRupiah } from '@/lib/utils'
-import { Search, Crown, Activity, Shield, ArrowUp, ArrowDown, Zap, BarChart3, TrendingUp, Filter } from 'lucide-react'
+import { Search, Crown, Activity, Shield, Filter } from 'lucide-react'
 import Link from 'next/link'
 
 // ─── API Helper ──────────────────────────────────────────────────────────────
@@ -28,24 +28,28 @@ export default function SmartMoneyMatrix() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // ⭐ Filter states
+  const [foreignDays, setForeignDays] = useState(5)
+  const [threshold, setThreshold] = useState(10)
+
   // ─── Data Fetching ─────────────────────────────────────────────────────────
   const fetchLeaderboards = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      // 1. Fetch Tactical Momentum
       const tacticalData = await mdQuery(`
         SELECT * FROM market.vw_tactical_momentum_smart_money 
-        ORDER BY net_foreign_value DESC, broker_net_5d DESC 
-        LIMIT 20
+        WHERE ABS(net_foreign_5d) > ${threshold * 1000000000}
+           OR ABS(broker_net_5d) > ${threshold * 1000000000}
+        ORDER BY ABS(net_foreign_5d) DESC, ABS(broker_net_5d) DESC 
+        LIMIT 30
       `)
       setTacticalList(tacticalData)
 
-      // 2. Fetch Strategic Positioning
       const strategicData = await mdQuery(`
         SELECT * FROM ksei.vw_strategic_positioning_whale_movement_tracker 
         ORDER BY mom_change_pct DESC 
-        LIMIT 20
+        LIMIT 30
       `)
       setStrategicList(strategicData)
       
@@ -54,7 +58,7 @@ export default function SmartMoneyMatrix() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [threshold])
 
   useEffect(() => {
     fetchLeaderboards()
@@ -87,7 +91,7 @@ export default function SmartMoneyMatrix() {
     }
   }
 
-  // ─── Renderers ─────────────────────────────────────────────────────────────
+  // ─── RENDER ────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6 animate-fade-in pb-10 max-w-6xl mx-auto">
       
@@ -99,13 +103,13 @@ export default function SmartMoneyMatrix() {
             <span className="bg-gradient-to-r from-gold-400 to-amber-500 bg-clip-text text-transparent">Smart Money Matrix</span>
           </h1>
           <p className="text-muted-foreground mt-1 text-sm max-w-xl">
-            Institutional command center combining Daily Tactical Momentum and Monthly Strategic Positioning to detect whale footprints.
+            Institutional command center — Tactical (Daily) + Strategic (Monthly)
           </p>
         </div>
       </div>
 
-      {/* ─── STOCK VALIDATOR (SEARCH) ─── */}
-      <div className="glass rounded-2xl p-6 border border-border/30 shadow-lg shadow-black/20">
+      {/* ─── STOCK VALIDATOR ─── */}
+      <div className="glass rounded-2xl p-6 border border-border/30">
         <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-2">
           <Search className="w-4 h-4" /> Stock Validator
         </h2>
@@ -152,9 +156,15 @@ export default function SmartMoneyMatrix() {
                   
                   <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/5">
                     <div>
-                      <p className="text-[9px] text-muted-foreground uppercase">Net Foreign (1D)</p>
-                      <p className={`text-sm font-bold ${Number(searchedStock.tactical.net_foreign_value) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {formatRupiah(Number(searchedStock.tactical.net_foreign_value))}
+                      <p className="text-[9px] text-muted-foreground uppercase">Foreign (1D)</p>
+                      <p className={`text-sm font-bold ${Number(searchedStock.tactical.net_foreign_1d) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {formatRupiah(Number(searchedStock.tactical.net_foreign_1d))}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] text-muted-foreground uppercase">Foreign (5D)</p>
+                      <p className={`text-sm font-bold ${Number(searchedStock.tactical.net_foreign_5d) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {formatRupiah(Number(searchedStock.tactical.net_foreign_5d))}
                       </p>
                     </div>
                     <div>
@@ -185,17 +195,15 @@ export default function SmartMoneyMatrix() {
                       <p className="text-lg font-black">{searchedStock.strategic.strategic_signal}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-[10px] text-muted-foreground uppercase">Inst. Ownership</p>
+                      <p className="text-[10px] text-muted-foreground uppercase">Inst. Own</p>
                       <p className="font-mono font-bold text-white">{Number(searchedStock.strategic.total_inst_pct).toFixed(2)}%</p>
                     </div>
                   </div>
                   
                   <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/5">
                     <div>
-                      <p className="text-[9px] text-muted-foreground uppercase">Previous Month</p>
-                      <p className="text-sm font-bold text-slate-300">
-                        {Number(searchedStock.strategic.prev_inst_pct).toFixed(2)}%
-                      </p>
+                      <p className="text-[9px] text-muted-foreground uppercase">Previous</p>
+                      <p className="text-sm font-bold text-slate-300">{Number(searchedStock.strategic.prev_inst_pct).toFixed(2)}%</p>
                     </div>
                     <div>
                       <p className="text-[9px] text-muted-foreground uppercase">MoM Change</p>
@@ -206,41 +214,54 @@ export default function SmartMoneyMatrix() {
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">No institutional ownership data found.</p>
+                <p className="text-sm text-muted-foreground">No institutional data found.</p>
               )}
             </div>
-            
           </div>
         )}
         
         {searchedStock?.notFound && (
-          <p className="text-sm text-amber-400">Stock {searchedStock.code} not found or has no relevant data.</p>
+          <p className="text-sm text-amber-400">Stock {searchedStock.code} not found.</p>
         )}
       </div>
 
-      {/* ─── TABS: TACTICAL vs STRATEGIC ─── */}
+      {/* ─── TABS ─── */}
       <div className="flex items-center gap-2 border-b border-border/50">
-        <button
-          onClick={() => setActiveTab('TACTICAL')}
+        <button onClick={() => setActiveTab('TACTICAL')}
           className={`px-6 py-3 text-sm font-bold uppercase tracking-wider transition-all relative ${
             activeTab === 'TACTICAL' ? 'text-blue-400' : 'text-muted-foreground hover:text-white'
-          }`}
-        >
+          }`}>
           ⚡ Tactical (Daily)
           {activeTab === 'TACTICAL' && <span className="absolute bottom-[-1px] left-0 w-full h-0.5 bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.8)]" />}
         </button>
-        <button
-          onClick={() => setActiveTab('STRATEGIC')}
+        <button onClick={() => setActiveTab('STRATEGIC')}
           className={`px-6 py-3 text-sm font-bold uppercase tracking-wider transition-all relative ${
             activeTab === 'STRATEGIC' ? 'text-purple-400' : 'text-muted-foreground hover:text-white'
-          }`}
-        >
+          }`}>
           🛡️ Strategic (Monthly)
           {activeTab === 'STRATEGIC' && <span className="absolute bottom-[-1px] left-0 w-full h-0.5 bg-purple-400 shadow-[0_0_8px_rgba(192,132,252,0.8)]" />}
         </button>
       </div>
 
-      {/* ─── LEADERBOARD TABLES ─── */}
+      {/* ─── FILTER BAR (TACTICAL ONLY) ─── */}
+      {activeTab === 'TACTICAL' && (
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2 text-xs">
+            <Filter className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="text-muted-foreground">Min Flow:</span>
+            {[1, 5, 10, 50, 100].map(t => (
+              <button key={t} onClick={() => setThreshold(t)}
+                className={`px-3 py-1 rounded-lg font-bold transition-all ${
+                  threshold === t ? 'bg-gold-400/20 text-gold-400 border border-gold-400/30' : 'text-muted-foreground hover:text-white bg-white/[0.03] border border-white/[0.06]'
+                }`}>
+                {t}M
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ─── TABLES ─── */}
       {loading ? (
         <div className="space-y-3">
           {Array.from({ length: 10 }).map((_, i) => <div key={i} className="shimmer h-14 rounded-xl" />)}
@@ -248,7 +269,7 @@ export default function SmartMoneyMatrix() {
       ) : error ? (
         <div className="p-4 bg-red-500/10 text-red-400 rounded-xl">{error}</div>
       ) : (
-        <div className="glass rounded-2xl border border-border/30 overflow-hidden shadow-lg">
+        <div className="glass rounded-2xl border border-border/30 overflow-hidden">
           
           {/* TACTICAL TABLE */}
           {activeTab === 'TACTICAL' && (
@@ -261,6 +282,7 @@ export default function SmartMoneyMatrix() {
                     <th className="px-4 py-3 font-medium text-right">Price</th>
                     <th className="px-4 py-3 font-medium text-right">Change</th>
                     <th className="px-4 py-3 font-medium text-right">Foreign (1D)</th>
+                    <th className="px-4 py-3 font-medium text-right">Foreign (5D)</th>
                     <th className="px-4 py-3 font-medium text-right">Broker Net (5D)</th>
                   </tr>
                 </thead>
@@ -279,8 +301,11 @@ export default function SmartMoneyMatrix() {
                       <td className={`px-4 py-3 text-right text-xs font-bold ${Number(row.change_percent) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {Number(row.change_percent) > 0 ? '+' : ''}{Number(row.change_percent).toFixed(2)}%
                       </td>
-                      <td className={`px-4 py-3 text-right font-mono text-xs ${Number(row.net_foreign_value) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {formatRupiah(Number(row.net_foreign_value))}
+                      <td className={`px-4 py-3 text-right font-mono text-xs ${Number(row.net_foreign_1d) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {formatRupiah(Number(row.net_foreign_1d))}
+                      </td>
+                      <td className={`px-4 py-3 text-right font-mono text-xs ${Number(row.net_foreign_5d) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {formatRupiah(Number(row.net_foreign_5d))}
                       </td>
                       <td className={`px-4 py-3 text-right font-mono text-xs ${Number(row.broker_net_5d) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {formatRupiah(Number(row.broker_net_5d))}
@@ -289,7 +314,9 @@ export default function SmartMoneyMatrix() {
                   ))}
                 </tbody>
               </table>
-              {tacticalList.length === 0 && <div className="p-8 text-center text-muted-foreground">No tactical signals found for today.</div>}
+              {tacticalList.length === 0 && (
+                <div className="p-8 text-center text-muted-foreground">No signals match the current filter. Try lowering the threshold.</div>
+              )}
             </div>
           )}
 
@@ -330,7 +357,9 @@ export default function SmartMoneyMatrix() {
                   ))}
                 </tbody>
               </table>
-              {strategicList.length === 0 && <div className="p-8 text-center text-muted-foreground">No strategic signals found.</div>}
+              {strategicList.length === 0 && (
+                <div className="p-8 text-center text-muted-foreground">No strategic signals found.</div>
+              )}
             </div>
           )}
 
