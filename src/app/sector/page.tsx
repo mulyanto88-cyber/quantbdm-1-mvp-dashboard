@@ -1,250 +1,371 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
-import { supabase } from '@/lib/supabase'
+import { useState, useEffect, useCallback } from 'react'
 import { formatRupiah, formatNumber } from '@/lib/utils'
-import { BarChart2, RefreshCw, TrendingUp, TrendingDown, Globe, Zap } from 'lucide-react'
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell, ScatterChart, Scatter, ZAxis
-} from 'recharts'
+import { 
+  Activity, Building2, RefreshCw, TrendingUp, TrendingDown, 
+  AlertTriangle, X, Zap, BarChart3, Globe, Target, ArrowUp, ArrowDown
+} from 'lucide-react'
+import Link from 'next/link'
 
-const MOMENTUM_CONFIG: Record<string, { color: string; bg: string; label: string }> = {
-  STRONG_INFLOW:   { color: '#22c55e', bg: 'bg-emerald-500/15 border-emerald-500/30', label: '🔥 Strong In' },
-  MILD_INFLOW:     { color: '#86efac', bg: 'bg-emerald-500/8 border-emerald-500/20',  label: '↑ Mild In' },
-  NEUTRAL:         { color: '#94a3b8', bg: 'bg-slate-500/10 border-slate-500/20',      label: '→ Neutral' },
-  MILD_OUTFLOW:    { color: '#fca5a5', bg: 'bg-red-500/8 border-red-500/20',           label: '↓ Mild Out' },
-  STRONG_OUTFLOW:  { color: '#ef4444', bg: 'bg-red-500/15 border-red-500/30',          label: '❄️ Strong Out' },
+// ─── API Helper ──────────────────────────────────────────────────────────────
+async function mdQuery(query: string, params?: any[]): Promise<any[]> {
+  const res = await fetch('/api/motherduck', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, params }),
+  })
+  const json = await res.json()
+  if (json.error) throw new Error(json.error)
+  return json.data || []
 }
 
-export default function SectorRotationPage() {
-  const [data, setData]     = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [windowDays, setWindowDays]   = useState(20)
-  const [sortBy, setSortBy]   = useState<'foreign' | 'delta' | 'value'>('foreign')
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => { setMounted(true) }, [])
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface SectorData {
+  sector: string
+  stock_count: number
+  avg_change_pct: number
+  total_value: number
+  total_volume: number
+  foreign_flow: number
+  foreign_30d: number
+  avg_aov: number
+  max_aov: number
+  aov_spike_count: number
+  whale_count: number
+  anomaly_count: number
+  above_vwma_count: number
+  volume_spike_count: number
+  gainers: number
+  losers: number
+  momentum_score: number
+  signal: string
+  flow_intensity: string
+  top_stock_code: string
+  top_stock_price: number
+  top_stock_change: number
+}
 
-  const fetchData = useCallback(async () => {
+// ─── Component ────────────────────────────────────────────────────────────────
+export default function SectorPage() {
+  const [sectors, setSectors] = useState<SectorData[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [selectedSector, setSelectedSector] = useState<string | null>(null)
+  const [sectorStocks, setSectorStocks] = useState<any[]>([])
+  const [stocksLoading, setStocksLoading] = useState(false)
+
+  // ⭐ NEW: Sector KPI state
+  const [sectorKPI, setSectorKPI] = useState<any>(null)
+
+  const fetchSectors = useCallback(async () => {
     setLoading(true)
+    setError(null)
     try {
-      const { data: rpcData, error } = await supabase.rpc('get_sector_rotation', {
-        p_date:   new Date().toISOString().split('T')[0],
-        p_window: windowDays,
-      })
-      if (error) throw error
-      setData(rpcData || [])
-    } catch (err) {
-      console.error(err)
+      const data = await mdQuery(`SELECT * FROM market.vw_sector_analytics ORDER BY momentum_score DESC`)
+      setSectors(data.map((d: any) => ({
+        sector: d.sector,
+        stock_count: Number(d.stock_count || 0),
+        avg_change_pct: Number(d.avg_change_pct || 0),
+        total_value: Number(d.total_value || 0),
+        total_volume: Number(d.total_volume || 0),
+        foreign_flow: Number(d.foreign_flow || 0),
+        foreign_30d: Number(d.foreign_30d || 0),
+        avg_aov: Number(d.avg_aov || 0),
+        max_aov: Number(d.max_aov || 0),
+        aov_spike_count: Number(d.aov_spike_count || 0),
+        whale_count: Number(d.whale_count || 0),
+        anomaly_count: Number(d.anomaly_count || 0),
+        above_vwma_count: Number(d.above_vwma_count || 0),
+        volume_spike_count: Number(d.volume_spike_count || 0),
+        gainers: Number(d.gainers || 0),
+        losers: Number(d.losers || 0),
+        momentum_score: Number(d.momentum_score || 0),
+        signal: d.signal || 'NEUTRAL',
+        flow_intensity: d.flow_intensity || 'LOW',
+        top_stock_code: d.top_stock_code || '',
+        top_stock_price: Number(d.top_stock_price || 0),
+        top_stock_change: Number(d.top_stock_change || 0),
+      })))
+    } catch (err: any) {
+      setError(err.message || 'Failed to fetch')
     } finally {
       setLoading(false)
     }
-  }, [windowDays])
+  }, [])
 
-  useEffect(() => { fetchData() }, [fetchData])
+  // ⭐ NEW: Fetch Sector KPI
+  const fetchSectorKPI = useCallback(async () => {
+    try {
+      const data = await mdQuery(`
+        SELECT 
+          SUM(CASE WHEN foreign_flow > 0 THEN foreign_flow ELSE 0 END) AS total_inflow,
+          SUM(CASE WHEN foreign_flow < 0 THEN ABS(foreign_flow) ELSE 0 END) AS total_outflow,
+          COUNT(CASE WHEN signal LIKE '%BULLISH%' THEN 1 END) AS strong_inflow_count,
+          COUNT(CASE WHEN signal LIKE '%BEARISH%' THEN 1 END) AS strong_outflow_count,
+          COUNT(*) AS total_sectors
+        FROM market.vw_sector_analytics
+      `)
+      if (data.length > 0) setSectorKPI(data[0])
+    } catch (err: any) {
+      console.error('KPI fetch error:', err)
+    }
+  }, [])
 
-  const sorted = [...data].sort((a, b) => {
-    if (sortBy === 'foreign') return Number(b.total_net_foreign) - Number(a.total_net_foreign)
-    if (sortBy === 'delta')   return Number(b.flow_delta) - Number(a.flow_delta)
-    return Number(b.total_value) - Number(a.total_value)
-  })
+  useEffect(() => { 
+    fetchSectors()
+    fetchSectorKPI()
+  }, [fetchSectors, fetchSectorKPI])
 
-  const maxAbsForeign = Math.max(...data.map(d => Math.abs(Number(d.total_net_foreign))), 1)
-  const totalInflow  = data.filter(d => Number(d.total_net_foreign) > 0).reduce((s, d) => s + Number(d.total_net_foreign), 0)
-  const totalOutflow = data.filter(d => Number(d.total_net_foreign) < 0).reduce((s, d) => s + Number(d.total_net_foreign), 0)
-  const strongIn     = data.filter(d => d.momentum === 'STRONG_INFLOW').length
-  const strongOut    = data.filter(d => d.momentum === 'STRONG_OUTFLOW').length
+  const fetchSectorStocks = useCallback(async (sector: string) => {
+    setStocksLoading(true)
+    try {
+      const data = await mdQuery(`
+        SELECT 
+          stock_code, close, change_percent, net_foreign_value, value,
+          whale_signal, big_player_anomaly, aov_ratio_ma20, volume, ma20_volume
+        FROM market.vw_stock_latest
+        WHERE sector = $1
+        ORDER BY value DESC LIMIT 50
+      `, [sector])
+      setSectorStocks(data)
+    } catch (err: any) {
+      console.error(err)
+    } finally {
+      setStocksLoading(false)
+    }
+  }, [])
 
-  const barData = sorted
-    .filter(d => d.sector !== 'No Sector')
-    .slice(0, 12)
-    .map(d => ({
-      sector: (d.sector as string).replace('Properties & Real Estate', 'Properties').slice(0, 14),
-      foreign: Number(d.total_net_foreign),
-      delta:   Number(d.flow_delta),
-      value:   Number(d.total_value),
-    }))
+  // ─── Stats ──────────────────────────────────────────────────────────────────
+  const totalStocks = sectors.reduce((s, sec) => s + sec.stock_count, 0)
+  const totalFlow = sectors.reduce((s, sec) => s + sec.foreign_flow, 0)
+  const totalValue = sectors.reduce((s, sec) => s + sec.total_value, 0)
 
   return (
-    <div className="space-y-6 animate-fade-in pb-10">
+    <div className="space-y-5 animate-fade-in pb-10">
 
-      {/* HEADER */}
+      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl md:text-4xl font-black text-foreground">
-            <BarChart2 className="w-8 h-8 text-gold-400 inline mr-2" />
-            <span className="gradient-gold">Sector Rotation</span>
+          <h1 className="text-3xl md:text-4xl font-black tracking-tight">
+            <Building2 className="w-8 h-8 text-purple-400 inline mr-2" />
+            <span className="bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">Sector Analytics</span>
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            Foreign flow heatmap & momentum sektor IDX
+            {sectors.length} sectors · {totalStocks} stocks · Net Foreign: {formatRupiah(totalFlow)}
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <select value={windowDays} onChange={e => setWindowDays(Number(e.target.value))}
-            className="bg-white/[0.03] border border-white/[0.08] rounded-xl px-3 py-2 text-sm">
-            <option value={10}>10 Hari</option>
-            <option value={20}>20 Hari</option>
-            <option value={30}>30 Hari</option>
-          </select>
-          <button onClick={fetchData} disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gold-400/10 border border-gold-400/30 text-gold-400 text-sm font-bold">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-        </div>
+        <button onClick={fetchSectors} disabled={loading}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-400/10 border border-purple-400/30 text-purple-400 text-sm font-bold hover:bg-purple-400/20 transition-all">
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
       </div>
 
-      {/* STATS */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* ════════════════════════════════════════════════════════════
+          ⭐ KPI CARDS — TOP ROW
+          ════════════════════════════════════════════════════════════ */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'Total Inflow',  value: formatRupiah(totalInflow),   icon: TrendingUp,   color: 'text-emerald-400' },
-          { label: 'Total Outflow', value: formatRupiah(Math.abs(totalOutflow)), icon: TrendingDown, color: 'text-red-400' },
-          { label: 'Strong Inflow', value: `${strongIn} sektor`,  icon: Zap,    color: 'text-emerald-400' },
-          { label: 'Strong Outflow',value: `${strongOut} sektor`, icon: Globe,  color: 'text-red-400' },
+          { label: 'Total Value', value: formatRupiah(totalValue), color: 'text-gold-400', icon: BarChart3 },
+          { label: 'Net Foreign', value: formatRupiah(totalFlow), color: totalFlow >= 0 ? 'text-emerald-400' : 'text-red-400', icon: Globe },
+          { label: 'Total Stocks', value: totalStocks.toString(), color: 'text-blue-400', icon: Target },
+          { label: 'Sectors', value: sectors.length.toString(), color: 'text-purple-400', icon: Building2 },
         ].map((m, i) => {
           const Icon = m.icon
           return (
-            <div key={i} className="glass rounded-2xl p-5 border border-border/30 card-hover">
-              <Icon className={`w-5 h-5 ${m.color} mb-3`} />
-              <p className="text-xs text-muted-foreground uppercase">{m.label}</p>
+            <div key={i} className="glass rounded-2xl p-4 border border-border/30 card-hover">
+              <Icon className={`w-4 h-4 ${m.color} mb-2`} />
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{m.label}</p>
               <p className={`text-xl font-black mt-1 ${m.color}`}>{m.value}</p>
             </div>
           )
         })}
       </div>
 
-      {/* BAR CHART */}
-      <div className="glass rounded-2xl p-6 border border-border/30">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-bold flex items-center gap-2">
-            <Globe className="w-5 h-5 text-blue-400" />
-            Net Foreign per Sektor ({windowDays} hari)
-          </h3>
-          <div className="flex gap-2">
-            {[
-              { key: 'foreign', label: 'Net Foreign' },
-              { key: 'delta',   label: 'Flow Delta' },
-              { key: 'value',   label: 'Total Value' },
-            ].map(s => (
-              <button key={s.key} onClick={() => setSortBy(s.key as any)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  sortBy === s.key ? 'bg-gold-400/20 text-gold-400 border border-gold-400/30'
-                    : 'bg-white/[0.03] text-muted-foreground border border-white/[0.06]'
-                }`}>
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        {loading ? (
-          <div className="h-[300px] flex items-center justify-center">
-            <RefreshCw className="w-8 h-8 text-gold-400 animate-spin" />
-          </div>
-        ) : !mounted ? (
-          <div className="shimmer h-[300px] rounded-xl" />
-        ) : (
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={barData} margin={{ bottom: 60 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.08} />
-              <XAxis dataKey="sector" tick={{ fill: '#94a3b8', fontSize: 10 }} angle={-30} textAnchor="end" />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} />
-              <Tooltip
-                formatter={(v: any, name: string) => [
-                  name === 'value' ? formatRupiah(Number(v)) : formatRupiah(Number(v)),
-                  name === 'foreign' ? 'Net Foreign' : name === 'delta' ? 'Flow Delta' : 'Total Value'
-                ]}
-                contentStyle={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }}
-              />
-              <Bar dataKey={sortBy} radius={[4, 4, 0, 0]}>
-                {barData.map((d, i) => (
-                  <Cell key={i}
-                    fill={Number(d[sortBy as keyof typeof d]) >= 0 ? '#22c55e' : '#ef4444'}
-                    opacity={0.85}
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </div>
-
-      {/* HEATMAP GRID */}
-      <div>
-        <h3 className="font-bold text-foreground mb-4 flex items-center gap-2">
-          <BarChart2 className="w-5 h-5 text-gold-400" /> Sector Heatmap
-        </h3>
-        {loading ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {Array.from({ length: 12 }).map((_, i) => (
-              <div key={i} className="glass rounded-xl p-4 border border-border/30">
-                <div className="shimmer h-5 w-28 rounded mb-2" />
-                <div className="shimmer h-8 w-20 rounded" />
+      {/* ════════════════════════════════════════════════════════════
+          ⭐ KPI CARDS — FOREIGN FLOW SUMMARY
+          ════════════════════════════════════════════════════════════ */}
+      {sectorKPI && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: 'Total Inflow', value: formatRupiah(Number(sectorKPI.total_inflow)), color: 'text-emerald-400', icon: TrendingUp },
+            { label: 'Total Outflow', value: formatRupiah(Number(sectorKPI.total_outflow)), color: 'text-red-400', icon: TrendingDown },
+            { label: 'Strong Inflow', value: `${sectorKPI.strong_inflow_count}/${sectorKPI.total_sectors} sectors`, color: 'text-emerald-400', icon: ArrowUp },
+            { label: 'Strong Outflow', value: `${sectorKPI.strong_outflow_count}/${sectorKPI.total_sectors} sectors`, color: 'text-red-400', icon: ArrowDown },
+          ].map((m, i) => {
+            const Icon = m.icon
+            return (
+              <div key={i} className="glass rounded-xl p-4 border border-border/30 card-hover">
+                <Icon className={`w-4 h-4 ${m.color} mb-2`} />
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{m.label}</p>
+                <p className={`text-lg font-black mt-1 ${m.color}`}>{m.value}</p>
               </div>
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 stagger">
-            {sorted
-              .filter(d => d.sector !== 'No Sector')
-              .map((d: any, i: number) => {
-              const cfg = MOMENTUM_CONFIG[d.momentum] || MOMENTUM_CONFIG.NEUTRAL
-              const pct = Math.abs(Number(d.total_net_foreign)) / maxAbsForeign * 100
-              const isInflow = Number(d.total_net_foreign) >= 0
+            )
+          })}
+        </div>
+      )}
 
-              return (
-                <div key={i}
-                  className={`glass rounded-xl p-4 border ${cfg.bg} transition-all card-hover`}
-                  style={{ animationDelay: `${i * 0.04}s` }}
+      {/* Error */}
+      {error && (
+        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 text-red-400 text-sm">
+          <AlertTriangle className="w-5 h-5" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)}><X className="w-4 h-4" /></button>
+        </div>
+      )}
+
+      {/* Loading */}
+      {loading && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="shimmer h-48 rounded-2xl" />
+          ))}
+        </div>
+      )}
+
+      {/* Sector Cards */}
+      {!loading && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {sectors.map((sec) => {
+            const barWidth = Math.min((Math.abs(sec.foreign_flow) / Math.max(...sectors.map(s => Math.abs(s.foreign_flow)), 1)) * 100, 100)
+            const vwmaPct = sec.stock_count > 0 ? (sec.above_vwma_count / sec.stock_count * 100) : 0
+            const breadthPct = sec.stock_count > 0 ? (sec.gainers / sec.stock_count * 100) : 0
+
+            return (
+              <div key={sec.sector}>
+                <div
+                  onClick={() => {
+                    if (selectedSector === sec.sector) { setSelectedSector(null); setSectorStocks([]) }
+                    else { setSelectedSector(sec.sector); fetchSectorStocks(sec.sector) }
+                  }}
+                  className={`glass rounded-2xl p-5 border cursor-pointer transition-all duration-300 ${
+                    selectedSector === sec.sector
+                      ? 'ring-2 ring-purple-400/50 border-purple-400/30'
+                      : 'border-border/30 hover:border-white/[0.08] card-hover'
+                  }`}
                 >
-                  {/* Sector Name */}
-                  <p className="text-xs font-bold text-foreground leading-tight truncate mb-3"
-                    title={d.sector}>
-                    {d.sector}
-                  </p>
-
-                  {/* Momentum badge */}
-                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full"
-                    style={{ background: cfg.color + '20', color: cfg.color }}>
-                    {cfg.label}
-                  </span>
-
-                  {/* Net Foreign */}
-                  <p className={`text-lg font-black mt-2 ${isInflow ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {formatRupiah(Number(d.total_net_foreign))}
-                  </p>
-
-                  {/* Flow bar */}
-                  <div className="mt-2 h-1.5 bg-accent rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-700"
-                      style={{
-                        width: `${pct}%`,
-                        background: `linear-gradient(90deg, ${cfg.color}80, ${cfg.color})`,
-                      }}
-                    />
+                  {/* Top Row: Sector Name + Signal */}
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-black uppercase tracking-wider truncate max-w-[60%]">{sec.sector}</h3>
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                      sec.signal.includes('BULLISH') ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                      sec.signal.includes('BEARISH') ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
+                      'bg-slate-500/20 text-slate-400 border border-slate-500/30'
+                    }`}>{sec.signal}</span>
                   </div>
 
-                  {/* Stats row */}
-                  <div className="mt-3 flex items-center justify-between text-[10px] text-muted-foreground">
-                    <span>{Number(d.stock_count)} emiten</span>
-                    <span className={`font-bold ${Number(d.flow_delta_pct) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                      Δ {Number(d.flow_delta_pct) >= 0 ? '+' : ''}{Number(d.flow_delta_pct)?.toFixed(0)}%
-                    </span>
+                  {/* KPI Grid */}
+                  <div className="grid grid-cols-3 gap-3 mb-3">
+                    <div className="p-2 rounded-xl bg-white/[0.02] border border-white/[0.03]">
+                      <p className="text-[8px] text-muted-foreground uppercase">Momentum</p>
+                      <p className={`text-lg font-black ${sec.momentum_score >= 50 ? 'text-emerald-400' : sec.momentum_score >= 30 ? 'text-amber-400' : 'text-red-400'}`}>
+                        {sec.momentum_score}
+                      </p>
+                    </div>
+                    <div className="p-2 rounded-xl bg-white/[0.02] border border-white/[0.03]">
+                      <p className="text-[8px] text-muted-foreground uppercase">Avg Chg</p>
+                      <p className={`text-lg font-black ${sec.avg_change_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {sec.avg_change_pct >= 0 ? '+' : ''}{sec.avg_change_pct.toFixed(2)}%
+                      </p>
+                    </div>
+                    <div className="p-2 rounded-xl bg-white/[0.02] border border-white/[0.03]">
+                      <p className="text-[8px] text-muted-foreground uppercase">Foreign</p>
+                      <p className={`text-lg font-black ${sec.foreign_flow >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {formatRupiah(sec.foreign_flow)}
+                      </p>
+                    </div>
                   </div>
 
-                  {/* Signal icons */}
-                  {(Number(d.whale_count) > 0 || Number(d.anomaly_count) > 0) && (
-                    <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
-                      {Number(d.whale_count) > 0 && <span>🐋 {d.whale_count}</span>}
-                      {Number(d.anomaly_count) > 0 && <span>⚡ {d.anomaly_count}</span>}
+                  {/* Foreign Flow Bar */}
+                  <div className="space-y-1 mb-3">
+                    <div className="flex justify-between text-[9px] text-muted-foreground uppercase">
+                      <span>Flow Intensity: {sec.flow_intensity}</span>
+                      <span className="font-bold">{sec.stock_count} stocks</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-white/[0.05] overflow-hidden">
+                      <div className={`h-full rounded-full ${sec.foreign_flow >= 0 ? 'bg-emerald-500' : 'bg-red-500'}`} style={{ width: `${barWidth}%` }} />
+                    </div>
+                  </div>
+
+                  {/* Bottom Stats */}
+                  <div className="grid grid-cols-4 gap-2 pt-3 border-t border-white/[0.04] text-center">
+                    <div>
+                      <p className="text-[8px] text-muted-foreground uppercase">VWMA</p>
+                      <p className={`text-xs font-bold ${vwmaPct >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>{vwmaPct.toFixed(0)}%</p>
+                    </div>
+                    <div>
+                      <p className="text-[8px] text-muted-foreground uppercase">Breadth</p>
+                      <p className={`text-xs font-bold ${breadthPct >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>{breadthPct.toFixed(0)}%</p>
+                    </div>
+                    <div>
+                      <p className="text-[8px] text-muted-foreground uppercase">AOV Spike</p>
+                      <p className={`text-xs font-bold ${sec.aov_spike_count > 0 ? 'text-purple-400' : 'text-muted-foreground'}`}>{sec.aov_spike_count}</p>
+                    </div>
+                    <div>
+                      <p className="text-[8px] text-muted-foreground uppercase">Whale</p>
+                      <p className={`text-xs font-bold ${sec.whale_count > 0 ? 'text-amber-400' : 'text-muted-foreground'}`}>{sec.whale_count}</p>
+                    </div>
+                  </div>
+
+                  {/* Top Stock */}
+                  {sec.top_stock_code && (
+                    <div className="mt-3 pt-3 border-t border-white/[0.04] flex items-center justify-between">
+                      <span className="text-[9px] text-muted-foreground">Top: </span>
+                      <Link href={`/stock/${sec.top_stock_code}`} className="font-mono font-black text-xs text-purple-400 hover:text-purple-300">
+                        {sec.top_stock_code}
+                      </Link>
+                      <span className="text-xs text-muted-foreground">{formatRupiah(sec.top_stock_price)}</span>
+                      <span className={`text-[10px] font-bold ${sec.top_stock_change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {sec.top_stock_change >= 0 ? '+' : ''}{sec.top_stock_change.toFixed(2)}%
+                      </span>
                     </div>
                   )}
                 </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+
+                {/* Drill-down Stocks */}
+                {selectedSector === sec.sector && (
+                  <div className="mt-2 glass rounded-2xl border border-purple-400/20 overflow-hidden animate-fade-in">
+                    <div className="p-3 border-b border-white/[0.05] bg-purple-400/[0.02] flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-purple-400" />
+                      <p className="text-xs font-black text-purple-400 uppercase tracking-wider">{sec.sector} — Stocks</p>
+                    </div>
+                    {stocksLoading ? (
+                      <div className="p-4 space-y-2">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="shimmer h-10 rounded-lg" />)}</div>
+                    ) : sectorStocks.length > 0 ? (
+                      <div className="divide-y divide-white/[0.03] max-h-[300px] overflow-y-auto">
+                        {sectorStocks.map((stock) => (
+                          <Link key={stock.stock_code} href={`/stock/${stock.stock_code}`}
+                            className="flex items-center justify-between p-3 hover:bg-white/[0.02] transition-colors group">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-mono font-black text-xs group-hover:text-purple-400 transition-colors">{stock.stock_code}</p>
+                              <p className="text-[9px] text-muted-foreground">{formatRupiah(Number(stock.close))}</p>
+                            </div>
+                            <div className="text-right mx-3">
+                              <p className={`text-xs font-bold ${Number(stock.change_percent) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {Number(stock.change_percent) >= 0 ? '+' : ''}{Number(stock.change_percent).toFixed(2)}%
+                              </p>
+                              <p className={`text-[9px] ${Number(stock.net_foreign_value) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {formatRupiah(Number(stock.net_foreign_value))}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px]">
+                              {Number(stock.aov_ratio_ma20) >= 1.5 && <span className="text-purple-400 font-bold">{Number(stock.aov_ratio_ma20).toFixed(1)}x</span>}
+                              {Number(stock.volume) > Number(stock.ma20_volume) * 1.5 && <Zap className="w-3 h-3 text-amber-400" />}
+                              {stock.whale_signal && <span>🐋</span>}
+                              {stock.big_player_anomaly && <span>⚡</span>}
+                            </div>
+                          </Link>
+                        ))}
+                      </div>
+                    ) : <p className="p-4 text-center text-muted-foreground text-xs">No stocks found</p>}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

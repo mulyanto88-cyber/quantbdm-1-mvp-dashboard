@@ -1,83 +1,93 @@
 import React from 'react'
-import { ArrowRightLeft, ShieldCheck, Zap, Globe, Target, Activity } from 'lucide-react'
+import { ArrowRightLeft, ShieldCheck, Zap, Globe, Target, Shield } from 'lucide-react'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase'
 import { formatRupiah, formatNumber } from '@/lib/utils'
-import SectorRotationWidget from './_components/SectorRotationWidget' // 👈 baru
+import SectorRotationWidget from './_components/SectorRotationWidget'
+import { run } from '@/lib/db'
 
 export const revalidate = 60
 
 // ── Data Fetching ──────────────────────────────────────────────────────────
 async function getMarketBreadth() {
-  const { data: dateData } = await supabase
-    .from('daily_transactions')
-    .select('trading_date')
-    .order('trading_date', { ascending: false })
-    .limit(1)
-  const date = dateData?.[0]?.trading_date
-  if (!date) return null
-
-  const { data } = await supabase
-    .from('daily_transactions')
-    .select('close,change_percent,value,volume,net_foreign_value,aov_ratio_ma20,whale_signal,sector')
-    .eq('trading_date', date)
-    .gt('volume', 0)
-
-  if (!data) return null
-
-  let totalForeign = 0, totalValue = 0, totalVolume = 0, whaleCount = 0
-  let up = 0, down = 0, unchanged = 0
-
-  data.forEach((r: any) => {
-    const netF = Number(r.net_foreign_value) || 0
-    const val  = Number(r.value) || 0
-    const pct  = Number(r.change_percent) || 0
-    totalForeign += netF
-    totalValue   += val
-    totalVolume  += Number(r.volume) || 0
-    if (r.whale_signal) whaleCount++
-    if (pct > 0.1) up++
-    else if (pct < -0.1) down++
-    else unchanged++
-  })
-
-  return { date, totalForeign, totalValue, totalVolume, up, down, unchanged, whaleCount, total: up + down + unchanged }
+  const rows = await run(`
+    SELECT 
+      MAX(trading_date)::VARCHAR AS date,
+      SUM(total_value)::BIGINT AS total_value,
+      SUM(total_volume)::BIGINT AS total_volume,
+      SUM(total_foreign_flow)::BIGINT AS total_foreign,
+      SUM(gainers)::BIGINT AS gainers,
+      SUM(losers)::BIGINT AS losers,
+      SUM(stock_count - gainers - losers)::BIGINT AS unchanged,
+      SUM(whale_count)::BIGINT AS whale_count,
+      SUM(stock_count)::BIGINT AS total
+    FROM market.vw_market_summary
+    WHERE trading_date = (SELECT MAX(trading_date) FROM market.vw_market_summary)
+  `)
+  
+  if (!rows || rows.length === 0) return null
+  const r = rows[0]
+  return {
+    date: r.date,
+    totalForeign: Number(r.total_foreign),
+    totalValue: Number(r.total_value),
+    totalVolume: Number(r.total_volume),
+    up: Number(r.gainers),
+    down: Number(r.losers),
+    unchanged: Number(r.unchanged),
+    whaleCount: Number(r.whale_count),
+    total: Number(r.total),
+  }
 }
 
 async function getHighConviction() {
-  const { data } = await supabase.rpc('scan_high_conviction', {
-    p_min_score: 60,
-    p_min_flow: 5
-  })
-  if (!data) return []
-  return data.map((s: any) => ({
-    stock_code:         s.stock_code,
-    sector:             s.sector,
-    price:              Number(s.price),
-    price_chg_pct:      Number(s.price_chg_pct),
-    conviction_score:   Number(s.conviction_score),
-    institutional_flow: Number(s.institutional_flow),
-    is_stealth:         s.is_stealth,
-  })).sort((a: any, b: any) => b.conviction_score - a.conviction_score).slice(0, 10)
+  return run(`
+    SELECT 
+      stock_code,
+      sector,
+      close AS price,
+      change_percent AS price_chg_pct,
+      smart_money_score AS conviction_score,
+      foreign_30d + COALESCE(broker_net, 0) AS institutional_flow,
+      false AS is_stealth
+    FROM market.vw_smart_money_score
+    WHERE signal = '🚀 STRONG BUY'
+    ORDER BY smart_money_score DESC
+    LIMIT 10
+  `)
 }
 
 async function getBigPlayerActivity() {
-  const { data: broker } = await supabase.rpc('get_broker_top_mover', {
-    p_start_date: '2026-01-01',
-    p_end_date: '2026-05-16',
-    p_limit: 5
-  })
-  const { data: insider } = await supabase.rpc('get_insider_alert', {
-    p_months: 1,
-    p_min_pct_chg: 0.5
-  })
-  const { data: ksei } = await supabase.rpc('get_ksei_movement_alert')
-
-  return {
-    brokers: broker || [],
-    insiders: (insider || []).filter((i: any) => i.alert_level === 'HIGH').slice(0, 5),
-    kseiAlerts: (ksei || []).slice(0, 5),
-  }
+  const [brokers, insiders, kseiMovers] = await Promise.all([
+    run(`
+      SELECT 
+        broker_name AS nama_broker,
+        total_stocks AS saham_count,
+        total_buy_value,
+        total_sell_value,
+        net_value AS total_net_value
+      FROM main.vw_broker_summary
+      ORDER BY ABS(net_value) DESC
+      LIMIT 5
+    `),
+    run(`
+      SELECT * FROM ksei.vw_insider_alerts
+      WHERE alert_level = 'HIGH'
+      ORDER BY ABS(pct_point_change) DESC
+      LIMIT 5
+    `),
+    run(`
+      SELECT 
+        Code AS share_code,
+        Top_Buyer AS investor_name,
+        Top_Buyer_Val AS scripless_diff
+      FROM ksei.monthly_snapshot
+      WHERE Date = (SELECT MAX(Date) FROM ksei.monthly_snapshot)
+        AND Top_Buyer_Val > 0
+      ORDER BY Top_Buyer_Val DESC
+      LIMIT 5
+    `),
+  ])
+  return { brokers, insiders, kseiAlerts: kseiMovers }
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────
@@ -99,19 +109,36 @@ function ScoreRing({ score, size = 48 }: { score: number; size?: number }) {
   )
 }
 
+// ── Stealth Radar Client Component ─────────────────────────────────────────
+async function getStealthRadarData() {
+  return run(`
+    SELECT 
+      Code AS stock_code,
+      Price,
+      CP_Flow_Miliar,
+      Price_Chg_Pct,
+      Signal
+    FROM ksei.vw_stealth_accumulation
+    WHERE Signal != 'NORMAL'
+    ORDER BY ABS(CP_Flow_Miliar) DESC
+    LIMIT 8
+  `)
+}
+
 // ── Page Component ─────────────────────────────────────────────────────────
 export default async function MarketOverview() {
-  const [breadth, highConviction, bigPlayers] = await Promise.all([
+  const [breadth, highConviction, bigPlayers, stealthData] = await Promise.all([
     getMarketBreadth(),
     getHighConviction(),
     getBigPlayerActivity(),
+    getStealthRadarData(),
   ])
 
   if (!breadth) {
     return <div className="p-10 text-center text-muted-foreground">Failed to load market data.</div>
   }
 
-  const { date, totalForeign, totalValue, totalVolume, up, down, unchanged, whaleCount, total } = breadth
+  const { date, totalForeign, totalValue, up, down, unchanged, whaleCount, total } = breadth
   const foreignSentiment = totalForeign > 5e9 ? 'ACCUMULATION' : totalForeign < -5e9 ? 'DISTRIBUTION' : 'NEUTRAL'
 
   return (
@@ -122,9 +149,7 @@ export default async function MarketOverview() {
           ════════════════════════════════════════════════════════════ */}
       <div className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-gradient-to-r from-[#0d1117] via-[#0f172a] to-[#0d1117] shadow-2xl">
         <div className="absolute inset-0 bg-gradient-to-r from-gold-500/5 via-transparent to-emerald-500/5 pointer-events-none" />
-
         <div className="relative z-10 flex flex-wrap items-stretch divide-x divide-white/[0.05]">
-          {/* Sentiment Gauge */}
           <div className="flex items-center gap-3 px-5 py-4 shrink-0">
             <div className="relative">
               <svg className="w-16 h-16 -rotate-90">
@@ -151,12 +176,11 @@ export default async function MarketOverview() {
             </div>
           </div>
 
-          {/* Market Stats */}
           {[
-            { label: 'Turnover',      value: formatRupiah(totalValue),   sub: `${formatNumber(totalVolume)} vol`, color: 'text-gold-400' },
-            { label: 'Foreign Net',   value: formatRupiah(totalForeign), sub: foreignSentiment === 'ACCUMULATION' ? '▲ inflow' : foreignSentiment === 'DISTRIBUTION' ? '▼ outflow' : '⏸ flat', color: foreignSentiment === 'ACCUMULATION' ? 'text-emerald-400' : foreignSentiment === 'DISTRIBUTION' ? 'text-red-400' : 'text-amber-400' },
-            { label: 'Breadth',       value: `${up}↑ ${down}↓`,         sub: `${unchanged} unch · ${((up/total)*100).toFixed(0)}% up`, color: up > down ? 'text-emerald-400' : 'text-red-400' },
-            { label: 'Whale Signals', value: String(whaleCount),         sub: 'AOV anomalies', color: 'text-purple-400' },
+            { label: 'Turnover', value: formatRupiah(Number(totalValue)), sub: 'Total Value', color: 'text-gold-400' },
+            { label: 'Foreign Net', value: formatRupiah(totalForeign), sub: foreignSentiment === 'ACCUMULATION' ? '▲ inflow' : foreignSentiment === 'DISTRIBUTION' ? '▼ outflow' : '⏸ flat', color: foreignSentiment === 'ACCUMULATION' ? 'text-emerald-400' : foreignSentiment === 'DISTRIBUTION' ? 'text-red-400' : 'text-amber-400' },
+            { label: 'Breadth', value: `${up}↑ ${down}↓`, sub: `${unchanged} unch · ${((up/total)*100).toFixed(0)}% up`, color: up > down ? 'text-emerald-400' : 'text-red-400' },
+            { label: 'Whale Signals', value: String(whaleCount), sub: 'AOV anomalies', color: 'text-purple-400' },
           ].map((s, i) => (
             <div key={i} className="flex flex-col justify-center px-5 py-4 min-w-[120px]">
               <p className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest">{s.label}</p>
@@ -168,19 +192,19 @@ export default async function MarketOverview() {
       </div>
 
       {/* ════════════════════════════════════════════════════════════
-          BLOK 2: SECTOR ROTATION (Client Component)
+          BLOK 2: SECTOR ROTATION
           ════════════════════════════════════════════════════════════ */}
       <SectorRotationWidget />
 
       {/* ════════════════════════════════════════════════════════════
-          BLOK 3: SMART MONEY RADAR — High Conviction Cards
+          BLOK 3: SMART MONEY RADAR
           ════════════════════════════════════════════════════════════ */}
       <div className="glass rounded-2xl p-5 border border-white/[0.06]">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Target className="w-4 h-4 text-emerald-400" />
             <h2 className="text-sm font-black text-white uppercase tracking-widest">Smart Money Radar</h2>
-            <span className="text-[9px] text-muted-foreground/40 hidden sm:inline">· High conviction ≥ 60</span>
+            <span className="text-[9px] text-muted-foreground/40 hidden sm:inline">· High conviction</span>
           </div>
           <Link href="/screener" className="text-[9px] font-black text-gold-400 hover:text-white transition-colors uppercase tracking-widest">
             Screener Pro →
@@ -196,33 +220,27 @@ export default async function MarketOverview() {
                   <p className="font-mono font-black text-sm text-foreground group-hover:text-gold-400 transition-colors">{s.stock_code}</p>
                   <p className="text-[9px] text-muted-foreground/50 uppercase truncate max-w-[100px]">{s.sector}</p>
                 </div>
-                {s.is_stealth && (
-                  <span className="text-[7px] bg-purple-500/10 text-purple-400 border border-purple-500/20 px-1.5 py-0.5 rounded-full font-black uppercase">Stealth</span>
-                )}
               </div>
-
               <div className="flex items-end justify-between mb-3">
                 <div className="relative flex items-center gap-2">
-                  <ScoreRing score={s.conviction_score} size={36} />
+                  <ScoreRing score={Number(s.conviction_score)} size={36} />
                   <span className="absolute top-1/2 left-[18px] -translate-y-1/2 -translate-x-1/2 text-[9px] font-black text-white">
-                    {Math.round(s.conviction_score)}
+                    {Math.round(Number(s.conviction_score))}
                   </span>
                   <div>
-                    <p className="font-black text-lg text-foreground">{formatRupiah(s.price)}</p>
-                    <p className={`text-[10px] font-bold ${s.price_chg_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {s.price_chg_pct > 0 ? '+' : ''}{s.price_chg_pct.toFixed(2)}%
+                    <p className="font-black text-lg text-foreground">{formatRupiah(Number(s.price))}</p>
+                    <p className={`text-[10px] font-bold ${Number(s.price_chg_pct) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {Number(s.price_chg_pct) > 0 ? '+' : ''}{Number(s.price_chg_pct).toFixed(2)}%
                     </p>
                   </div>
                 </div>
               </div>
-
               <div className="flex items-center justify-between pt-2 border-t border-white/[0.04]">
                 <span className="text-[9px] text-muted-foreground/60">Inst. Flow</span>
-                <span className="text-[10px] font-bold text-foreground">{s.institutional_flow.toFixed(1)}</span>
+                <span className="text-[10px] font-bold text-foreground">{Number(s.institutional_flow).toFixed(1)}</span>
               </div>
             </Link>
           ))}
-
           {highConviction.length === 0 && (
             <div className="w-full text-center py-8 text-muted-foreground text-sm">
               No high conviction signals at the moment.
@@ -232,10 +250,48 @@ export default async function MarketOverview() {
       </div>
 
       {/* ════════════════════════════════════════════════════════════
-          BLOK 4: BIG PLAYER ACTIVITY — 3 Kolom
+          BLOK 3.5: 🕵️ STEALTH RADAR (PREMIUM)
+          ════════════════════════════════════════════════════════════ */}
+      {stealthData.length > 0 && (
+        <div className="glass rounded-2xl p-5 border border-purple-500/20">
+          <div className="flex items-center gap-2 mb-4">
+            <Shield className="w-4 h-4 text-purple-400" />
+            <h2 className="text-sm font-black text-white uppercase tracking-widest">🕵️ Stealth Radar</h2>
+            <span className="text-[9px] text-muted-foreground/40 hidden sm:inline">· Monthly KSEI</span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {stealthData.map((s: any, i: number) => (
+              <Link key={i} href={`/stock/${s.stock_code}`}
+                className={`glass rounded-xl p-4 border transition-all hover:scale-[1.02] ${
+                  s.Signal.includes('STEALTH') ? 'border-purple-500/30 hover:border-purple-400/50' :
+                  s.Signal.includes('DIP') ? 'border-emerald-500/30 hover:border-emerald-400/50' :
+                  'border-red-500/30 hover:border-red-400/50'
+                }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-mono font-black text-sm">{s.stock_code}</span>
+                  <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-bold ${
+                    s.Signal.includes('STEALTH') ? 'bg-purple-500/20 text-purple-400' :
+                    s.Signal.includes('DIP') ? 'bg-emerald-500/20 text-emerald-400' :
+                    'bg-red-500/20 text-red-400'
+                  }`}>{s.Signal}</span>
+                </div>
+                <p className="text-lg font-black">{formatRupiah(s.Price)}</p>
+                <div className="flex justify-between text-[10px] mt-2">
+                  <span className="text-muted-foreground">CP Flow: <span className="text-purple-400 font-bold">{Number(s.CP_Flow_Miliar).toFixed(1)}M</span></span>
+                  <span className={Number(s.Price_Chg_Pct) >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                    {Number(s.Price_Chg_Pct) >= 0 ? '+' : ''}{Number(s.Price_Chg_Pct).toFixed(1)}%
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════
+          BLOK 4: BIG PLAYER ACTIVITY
           ════════════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        {/* Broker Top Movers */}
         <div className="glass rounded-xl p-4 border border-white/[0.06]">
           <div className="flex items-center gap-1.5 mb-3">
             <ArrowRightLeft className="w-3.5 h-3.5 text-blue-400" />
@@ -248,8 +304,8 @@ export default async function MarketOverview() {
                   <p className="text-[11px] font-bold text-foreground truncate">{b.nama_broker?.slice(0, 20)}</p>
                   <p className="text-[8px] text-muted-foreground/50">{b.saham_count} saham</p>
                 </div>
-                <span className={`text-[10px] font-black shrink-0 ml-2 ${b.total_net_value > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {formatRupiah(b.total_net_value)}
+                <span className={`text-[10px] font-black shrink-0 ml-2 ${Number(b.total_net_value) > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {formatRupiah(Number(b.total_net_value))}
                 </span>
               </div>
             ))}
@@ -257,7 +313,6 @@ export default async function MarketOverview() {
           </div>
         </div>
 
-        {/* Insider Alerts */}
         <div className="glass rounded-xl p-4 border border-white/[0.06]">
           <div className="flex items-center gap-1.5 mb-3">
             <ShieldCheck className="w-3.5 h-3.5 text-red-400" />
@@ -283,11 +338,10 @@ export default async function MarketOverview() {
           </div>
         </div>
 
-        {/* KSEI Whale Alerts */}
         <div className="glass rounded-xl p-4 border border-white/[0.06]">
           <div className="flex items-center gap-1.5 mb-3">
             <Globe className="w-3.5 h-3.5 text-purple-400" />
-            <h3 className="text-[10px] font-black text-purple-400 uppercase tracking-widest">KSEI Movers</h3>
+            <h3 className="text-[10px] font-black text-purple-400 uppercase tracking-widest">KSEI Top Buyers</h3>
           </div>
           <div className="space-y-2">
             {bigPlayers.kseiAlerts.map((k: any, i: number) => {
@@ -300,7 +354,7 @@ export default async function MarketOverview() {
                     <p className="text-[8px] text-muted-foreground/50 truncate max-w-[130px]">{k.investor_name?.slice(0, 18)}</p>
                   </div>
                   <span className={`text-[9px] font-black shrink-0 ml-2 ${isAccum ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {isAccum ? '▲' : '▼'} {formatNumber(Math.abs(Number(k.scripless_diff)))}
+                    {isAccum ? '▲' : '▼'} {formatRupiah(Math.abs(Number(k.scripless_diff)))}
                   </span>
                 </Link>
               )
